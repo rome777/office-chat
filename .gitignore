@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# env (실제 키는 절대 커밋하지 않는다)
+.env
+.env*.local
+
+# Supabase local
+supabase/.temp/
+
+# misc
+.DS_Store
+*.log
+.vercel
