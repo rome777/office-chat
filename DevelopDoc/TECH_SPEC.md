@@ -5,8 +5,8 @@
 
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
-> **현재 구현 (2026-09-28)**: Step 1 만 **임시 구조**로 돌아간다 — Next.js + Socket.IO 서버(`server.mjs`), 메모리 저장.
-> 이 문서의 2~8절(Supabase)은 Step 2 부터의 목표 구조다. 임시 구조는 13절에 적었다.
+> **현재 구현 (2026-09-28)**: Step 1 이 **Vercel + Supabase** 로 배포돼 있다 (https://office-chat-two.vercel.app). 로그인 없이 `messages` 테이블 하나를 쓴다.
+> 2~8절은 Step 2 부터의 목표 구조다. 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
 
 ---
 
@@ -306,35 +306,58 @@ erDiagram
 
 | 조건 | 결과 | 대응 |
 |---|---|---|
-| (Step 1 임시) 서버 재시작 | 모든 대화가 사라진다. 메시지 id 가 1부터 다시 시작한다 | 서버마다 `bootId` 를 두고, 바뀌면 클라이언트가 목록을 비운 뒤 새로 받는다 (옛 id 와 섞이지 않음). Step 2 에서 DB 저장으로 해결 |
-| (Step 1 임시) 메시지 500건 초과 | 오래된 것부터 메모리에서 지워진다 | Step 2 에서 DB 저장 |
-| 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패". 실제로는 저장됐을 수 있다 | 저장됐으면 방송이 와서 실패 표시가 사라진다. "다시 보내기"를 눌러도 같은 `clientId` 라 한 번만 저장된다 (2026-09-28 테스트 통과) |
+| 구독 직후 1~2초 | 그 사이에 저장된 메시지의 실시간 이벤트가 빠질 수 있다 (2026-09-28, 테이블을 만든 직후 첫 테스트에서 A 0건·B 1건만 받음. 재실행은 10건 모두 받음) | 구독되면 바로 한 번, 2초 뒤 한 번 더 `id` 로 동기화한다. 빠진 것은 여기서 채워진다 |
+| 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패". 실제로는 저장됐을 수 있다 | 저장됐으면 실시간 이벤트가 와서 실패 표시가 사라진다. "다시 보내기"를 눌러도 같은 `client_id` 라 한 번만 저장된다 (2026-09-28 테스트 통과) |
 | 전송 실패한 메시지가 있는 채로 새로고침 | 실패한 메시지가 화면에서 사라진다 (브라우저에만 있었음) | 알려진 한계 |
+| 재연결까지 500건 넘게 쌓임 | 동기화는 한 번에 500건까지만 받는다 | Step 4 페이지네이션에서 해결 |
 
-## 13. Step 1 임시 구조 (현재 구현)
+## 13. 현재 구조 (Step 1) 와 배포
 
-Docker 가 없어 Supabase 를 로컬에서 못 돌리고, 외부 계정 없이 먼저 띄우기로 해서 이렇게 만들었다 (2026-09-28).
-**Vercel 에는 이대로 배포할 수 없다** (서버리스라 Socket.IO 상시 연결을 유지하지 못함). Step 2 에서 2~8절 구조로 바꾼다.
+2026-09-28 에 로컬 임시 구조(Socket.IO + 메모리)로 먼저 띄웠다가, 같은 날 원격 배포를 위해 **Vercel + Supabase** 로 옮겼다.
+Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우기 때문이다. `server.mjs` 와 Socket.IO 는 지웠다.
+
+| 항목 | 값 |
+|---|---|
+| 배포 URL | https://office-chat-two.vercel.app (`office-chat.vercel.app` 은 다른 사람 것) |
+| Vercel 프로젝트 | `somsaps-projects/office-chat` |
+| DB | Supabase `office-chat-db` (Vercel 마켓플레이스, 무료 요금제, 서울 `icn1`) |
+| 환경 변수 | Supabase 연동이 Vercel 에 자동으로 넣는다. 로컬은 `npx vercel env pull .env.local` |
 
 | 파일 | 역할 |
 |---|---|
-| `server.mjs` | Next.js 요청 처리 + Socket.IO 서버. 메시지를 메모리 배열에 저장 |
-| `components/ChatRoom.tsx` | 채팅 화면, 소켓 연결, 전송·재전송·동기화 |
+| `supabase/migrations/20260928090000_step1_messages.sql` | `messages` 테이블, Step 1 임시 RLS, 실시간 구독 등록 |
+| `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
+| `components/ChatRoom.tsx` | 채팅 화면. 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/NicknameForm.tsx` | 닉네임 입장 화면 (닉네임은 브라우저 `localStorage` 에 기억) |
-| `scripts/step1-check.cjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`) |
+| `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 끝나면 테스트 메시지를 지운다 |
 
-소켓 이벤트
+### Step 1 임시 권한 — Step 2 에서 반드시 바꾼다
 
-| 이벤트 | 방향 | 내용 |
-|---|---|---|
-| 접속 시 `auth.nickname` | 클라이언트 → 서버 | 1~20자가 아니면 접속 거부 |
-| `sync { afterId, bootId }` | 클라이언트 → 서버 | 접속·재접속 때마다. 같은 서버면 `afterId` 이후만, 처음이거나 서버가 바뀌었으면 최근 50건과 `reset: true` |
-| `message:send { clientId, body }` | 클라이언트 → 서버 | 공백·2000자 초과는 거부. 같은 `clientId` 는 저장된 것을 그대로 돌려준다 (멱등) |
-| `message:new` | 서버 → 전원 | 저장된 메시지 |
-| `presence { online }` | 서버 → 전원 | 접속자 수 |
+| 누가 | 할 수 있는 것 |
+|---|---|
+| 익명(anon) | 모든 메시지 읽기, `client_id`·`author`·`body` 세 컬럼만 넣어 쓰기 |
+| 익명(anon) | `id`·`created_at` 지정, 수정, 삭제는 **불가** (컬럼 권한으로 막음, 테스트 통과) |
 
-알아 둘 함정
+- DB 제약: `author` 1~20자, `body` 1~2000자, 둘 다 공백만은 안 됨.
+- **누구나 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
+
+### 배포 방법
+
+```bash
+npx vercel deploy --prod
+```
+
+DB 구조를 바꿀 때는 `supabase/migrations/` 에 새 파일을 만들고 원격에 적용한다. `.env.local` 을 불러온 셸에서 실행한다.
+
+```bash
+npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
+```
+
+### 알아 둘 함정
+
+- **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
+- **Supabase 연동을 처음 설치할 때 약관 동의가 필요하다**: CLI 가 링크를 주고 멈춘다. 계정 주인이 브라우저에서 동의해야 한다.
+- **연동 설치가 `.agents/`, `skills-lock.json` 을 만든다**: 에이전트 도구 파일이라 `.gitignore` 로 뺐다.
 - **한글 입력 중 Enter**: 조합 중인 Enter 를 전송으로 처리하면 두 번 보내질 수 있다. `isComposing` 이면 전송하지 않는다.
 - **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
-- **Windows 에서 `npm run dev` 를 종료해도 node 가 남을 수 있다**: 3000 포트가 계속 잡혀 있으면 해당 node 프로세스를 끈다.

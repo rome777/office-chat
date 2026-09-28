@@ -4,18 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs",
+    "dev": "next dev",
     "build": "next build",
-    "start": "node server.mjs --prod",
+    "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:step1": "node scripts/step1-check.cjs"
+    "check:step1": "node --env-file=.env.local scripts/step1-check.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "next": "^16.3.6",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "socket.io": "^4.8.4",
-    "socket.io-client": "^4.8.4"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

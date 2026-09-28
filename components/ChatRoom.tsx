@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import { getSupabase } from "@/lib/supabase";
 import type { ChatMessage, ConnectionState, PendingMessage } from "@/lib/types";
 
 const SEND_TIMEOUT_MS = 5000;
+const INITIAL_HISTORY = 50;
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
   connecting: "연결 중",
@@ -26,27 +28,29 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
-type SendAck = { ok: true; message: ChatMessage } | { ok: false; error: string };
-type SyncAck = { bootId: string; reset: boolean; messages: ChatMessage[] };
+function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
+  if (error.name === "AbortError" || error.code === "20") return "서버 응답이 없습니다";
+  if (error.code === "23514") return "빈 메시지이거나 너무 깁니다";
+  if (!navigator.onLine || /fetch/i.test(error.message ?? "")) return "연결이 끊겨 보내지 못했습니다";
+  return error.message ?? "보내지 못했습니다";
+}
 
 export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLeave: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [conn, setConn] = useState<ConnectionState>("connecting");
-  const [connError, setConnError] = useState<string | null>(null);
+  const [fatal, setFatal] = useState<string | null>(null);
   const [online, setOnline] = useState(0);
   const [draft, setDraft] = useState("");
   const [hasUnseen, setHasUnseen] = useState(false);
 
-  const socketRef = useRef<Socket | null>(null);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
   const lastIdRef = useRef(0);
-  const bootIdRef = useRef<string | null>(null);
-  const [serverRestarted, setServerRestarted] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const forceScrollRef = useRef(false);
 
-  // 서버 id 를 키로 합친다. 같은 메시지가 두 번 와도 한 번만 그린다.
+  // 서버 id 를 키로 합친다. 같은 메시지가 실시간·동기화로 두 번 와도 한 번만 그린다.
   const merge = useCallback((incoming: ChatMessage[]) => {
     if (incoming.length === 0) return;
     setMessages((prev) => {
@@ -56,62 +60,78 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
       lastIdRef.current = next[next.length - 1].id;
       return next;
     });
-    const saved = new Set(incoming.map((m) => m.clientId));
+    const saved = new Set(incoming.map((m) => m.client_id));
     setPending((prev) => prev.filter((p) => !saved.has(p.clientId)));
   }, []);
 
-  useEffect(() => {
-    const socket = io({ auth: { nickname } });
-    socketRef.current = socket;
+  // 처음엔 최근 50건, 재연결 뒤엔 마지막으로 받은 id 이후만 받아 온다
+  const sync = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
+    const query = supabase.from("messages").select("*");
+    const { data, error } =
+      lastIdRef.current > 0
+        ? await query.gt("id", lastIdRef.current).order("id", { ascending: true }).limit(500)
+        : await query.order("id", { ascending: false }).limit(INITIAL_HISTORY);
+    if (!error && data) merge(data as ChatMessage[]);
+  }, [merge]);
 
-    socket.on("connect", () => {
-      setConn("connected");
-      setConnError(null);
-      socket.emit(
-        "sync",
-        { afterId: lastIdRef.current, bootId: bootIdRef.current },
-        (res: SyncAck) => {
-          if (res.reset) {
-            // 처음 접속했거나 서버가 재시작됨: 이전 id 와 겹치지 않게 목록을 새로 채운다
-            if (bootIdRef.current !== null) setServerRestarted(true);
-            lastIdRef.current = 0;
-            setMessages([]);
-          }
-          bootIdRef.current = res.bootId;
-          merge(res.messages);
-        },
-      );
+  useEffect(() => {
+    let supabase: SupabaseClient;
+    try {
+      supabase = getSupabase();
+    } catch (e) {
+      setFatal((e as Error).message);
+      return;
+    }
+    supabaseRef.current = supabase;
+
+    let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+    const channel: RealtimeChannel = supabase.channel("room:general", {
+      config: { presence: { key: newClientId() } },
     });
-    socket.on("disconnect", (reason) => {
-      setConn("disconnected");
-      // 서버가 끊은 경우는 자동 재연결이 안 되므로 직접 다시 붙는다
-      if (reason === "io server disconnect") socket.connect();
-    });
-    socket.io.on("reconnect_attempt", () => setConn("reconnecting"));
-    socket.on("connect_error", (err) => {
-      if (socket.active) {
-        // 네트워크·서버 다운: 자동으로 다시 시도한다
-        setConn("reconnecting");
-        setConnError("서버에 연결할 수 없습니다. 다시 연결하는 중입니다.");
-      } else {
-        // 서버가 접속을 거부함 (닉네임 오류 등): 자동 재시도하지 않는다
-        setConn("disconnected");
-        setConnError(err.message);
-      }
-    });
-    socket.on("message:new", (m: ChatMessage) => merge([m]));
-    socket.on("presence", ({ online }: { online: number }) => setOnline(online));
+
+    channel
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => merge([payload.new as ChatMessage]),
+      )
+      .on("presence", { event: "sync" }, () => {
+        setOnline(Object.keys(channel.presenceState()).length);
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setConn("connected");
+          void sync();
+          // 구독 직후 잠깐은 실시간 이벤트가 빠질 수 있다 (2026-09-28 첫 테스트에서 확인). 한 번 더 맞춘다.
+          resyncTimer = setTimeout(() => void sync(), 2000);
+          void channel.track({ nickname });
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setConn("reconnecting"); // supabase-js 가 자동으로 다시 붙는다
+        } else if (status === "CLOSED") {
+          setConn("disconnected");
+        }
+      });
+
+    const goOffline = () => setConn("disconnected");
+    const goOnline = () => setConn("reconnecting");
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
 
     return () => {
-      socket.disconnect();
-      socketRef.current = null;
+      clearTimeout(resyncTimer);
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+      void supabase.removeChannel(channel);
+      supabaseRef.current = null;
     };
-  }, [nickname, merge]);
+  }, [nickname, merge, sync]);
 
-  function send(body: string, clientId = newClientId()) {
+  async function send(body: string, clientId = newClientId()) {
     const text = body.trim();
-    if (!text) return;
-    const socket = socketRef.current;
+    const supabase = supabaseRef.current;
+    if (!text || !supabase) return;
     forceScrollRef.current = true;
 
     const mark = (status: PendingMessage["status"], error?: string) =>
@@ -120,25 +140,36 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
         return [...rest, { clientId, author: nickname, body: text, status, error }];
       });
 
-    if (!socket?.connected) {
+    if (!navigator.onLine) {
       mark("failed", "연결이 끊겨 보내지 못했습니다");
       return;
     }
     mark("sending");
-    socket.timeout(SEND_TIMEOUT_MS).emit(
-      "message:send",
-      { clientId, body: text },
-      (err: Error | null, res: SendAck) => {
-        if (err) return mark("failed", "서버 응답이 없습니다");
-        if (!res.ok) return mark("failed", res.error);
-        merge([res.message]);
-      },
-    );
+
+    try {
+      // 같은 client_id 가 이미 있으면 저장하지 않는다 (ON CONFLICT DO NOTHING)
+      const { data, error } = await supabase
+        .from("messages")
+        .upsert(
+          { client_id: clientId, author: nickname, body: text },
+          { onConflict: "client_id", ignoreDuplicates: true },
+        )
+        .select()
+        .abortSignal(AbortSignal.timeout(SEND_TIMEOUT_MS));
+      if (error) return mark("failed", sendErrorMessage(error));
+      if (data && data.length > 0) return merge(data as ChatMessage[]);
+
+      // 이미 저장돼 있던 메시지 (다시 보내기): 저장된 것을 가져와 합친다
+      const existing = await supabase.from("messages").select("*").eq("client_id", clientId);
+      if (existing.data?.length) merge(existing.data as ChatMessage[]);
+    } catch (e) {
+      mark("failed", sendErrorMessage(e as Error));
+    }
   }
 
   function submit() {
     if (!draft.trim()) return;
-    send(draft);
+    void send(draft);
     setDraft("");
   }
 
@@ -168,6 +199,17 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
     }
   }, [messages, pending]);
 
+  if (fatal) {
+    return (
+      <main className="entry">
+        <div className="entry-card">
+          <h1>설정이 필요합니다</h1>
+          <p className="error-text">{fatal}</p>
+        </div>
+      </main>
+    );
+  }
+
   const canSend = draft.trim().length > 0;
 
   return (
@@ -178,7 +220,7 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
           {conn === "connected" && <span className="muted">접속 {online}명</span>}
         </div>
         <div className="header-right">
-          <span className={`conn conn-${conn}`} title={connError ?? undefined}>
+          <span className={`conn conn-${conn}`}>
             <span className="dot" />
             {CONNECTION_LABEL[conn]}
           </span>
@@ -189,16 +231,7 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
         </div>
       </header>
 
-      <p className="notice">임시 서버입니다. 서버를 다시 시작하면 대화가 사라집니다.</p>
-      {connError && conn !== "connected" && <p className="notice error">{connError}</p>}
-      {serverRestarted && (
-        <p className="notice error">
-          서버가 다시 시작되어 이전 대화가 지워졌습니다.{" "}
-          <button className="link" onClick={() => setServerRestarted(false)}>
-            닫기
-          </button>
-        </p>
-      )}
+      <p className="notice">테스트 버전입니다. 로그인 없이 누구나 읽고 쓸 수 있으니 중요한 내용은 쓰지 마세요.</p>
 
       <div className="messages" ref={listRef} onScroll={onScroll}>
         {messages.length === 0 && pending.length === 0 && (
@@ -208,7 +241,7 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
           <article key={m.id} className={`msg ${m.author === nickname ? "mine" : ""}`}>
             <div className="msg-meta">
               <strong>{m.author}</strong>
-              <time dateTime={m.createdAt}>{formatTime(m.createdAt)}</time>
+              <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>
             </div>
             <p className="msg-body">{m.body}</p>
           </article>
@@ -223,7 +256,7 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
             {p.status === "failed" && (
               <div className="msg-actions">
                 <span className="error-text">{p.error}</span>
-                <button className="link" onClick={() => send(p.body, p.clientId)}>
+                <button className="link" onClick={() => void send(p.body, p.clientId)}>
                   다시 보내기
                 </button>
                 <button className="link" onClick={() => discard(p.clientId)}>

@@ -23,3 +23,12 @@ next-env.d.ts
 
 # 개인 도구 설정
 .claude/
+
+.vercel
+.env*
+!.env.example
+
+
+# Vercel 연동이 설치한 에이전트 도구 파일
+.agents/
+skills-lock.json

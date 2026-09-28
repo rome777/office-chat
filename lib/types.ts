@@ -1,9 +1,9 @@
 export type ChatMessage = {
   id: number;
-  clientId: string;
+  client_id: string;
   author: string;
   body: string;
-  createdAt: string;
+  created_at: string;
 };
 
 /** 서버 저장 전, 화면에만 있는 메시지 */
