@@ -92,12 +92,12 @@ erDiagram
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`, `user_id`, `message_id`, `channel_id`, `type`(`mention`), `read_at` | 유일 (user_id, message_id, type) → **한 번만 생성** |
+| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`), `channel_id`, `message_id`, `created_at`, `read_at` | 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 본문은 저장하지 않는다. `channel_id`·`message_id` 는 nullable — 캘린더를 붙일 때 `type = 'event'` 와 `event_id` 를 추가 마이그레이션으로 넣는다 (7절 "알림") |
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
 
-인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스.
+인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스, `notifications (user_id, id desc)`.
 
 마이그레이션은 `supabase/migrations/*.sql` 로 관리하고, SQL 편집기에서 손으로 고친 내용도 반드시 파일로 옮긴다.
 
@@ -113,7 +113,7 @@ erDiagram
 | `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에) |
 | `attachments` | 그 채널의 멤버 | 서버 API 만 |
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
-| `notifications` | 본인만 | DB 트리거만 |
+| `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
 | `admin_logs` | 관리자만 | DB 트리거만 |
 
 **작성자 위조 방지**: `messages.user_id` 는 기본값 `auth.uid()` 에 정책으로 같은 값을 강제한다. 클라이언트가 다른 ID 를 보내면 거부된다.
@@ -137,6 +137,7 @@ erDiagram
 ### 재접속
 
 - 연결 상태가 끊김 → 다시 연결됨으로 바뀌면, **마지막으로 받은 `id` 보다 큰 메시지만** 조회해서 합친다.
+- 알림도 같은 방식으로 마지막 알림 `id` 이후만 받아 온다. 끊긴 동안 쌓인 알림은 하나씩 띄우지 않고 "알림 N개" 토스트 하나로 묶는다.
 - 연결 상태는 화면 위쪽에 "연결됨 / 끊김 / 재연결 중"으로 표시한다 (F1-4).
 
 ### 검증해야 할 가정
@@ -151,11 +152,44 @@ erDiagram
 - **대화별 미읽음 수** = 내 `last_read_message_id` 보다 큰, 남이 쓴 메시지 수.
 - **메시지별 안 읽은 사람 수** = 작성자를 뺀 멤버 가운데 `last_read_message_id < 메시지 id` 인 사람 수. 멤버의 `read_positions` 를 구독해서 화면에서 계산한다 (소규모 조직 전제).
 
-### 멘션 (F3-5)
+### 알림 (F3-5)
 
-- `messages` INSERT 트리거가 본문에서 `@handle` 을 찾고, **그 채널 멤버인 사람에게만** `notifications` 를 만든다.
-- 유일 제약 (user_id, message_id, type) 덕분에 재전송돼도 알림은 한 번만 생긴다.
-- 알림을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 이전 페이지에 있으면 그 주변을 불러온다.
+**만들기 (DB)** — `messages` INSERT 트리거가 받는 사람을 정해 `notifications` 를 넣는다.
+
+| 순서 | `type` | 받는 사람 |
+|---|---|---|
+| 1 | `mention` | 본문의 `@handle` 가운데 **그 채널 멤버인 사람** |
+| 2 | `thread_reply` | `parent_id` 가 있으면: 부모 메시지 작성자 + 그 스레드에 이미 답한 사람 (채널 멤버만) |
+| 3 | `dm` | DM 채널이면 상대방 |
+
+- 모든 경우에 **보낸 사람은 뺀다.**
+- 위 순서대로 `on conflict (user_id, message_id) do nothing` 으로 넣는다. DM 에서 `@B` 를 부르면 B 에게는 `mention` 하나만 남는다. 재전송돼도 `client_id` 로 메시지가 한 건이라 알림도 한 건이다.
+- 알림에는 본문을 저장하지 않는다. 미리보기는 `messages` 를 RLS 로 읽는다 — 채널에서 빠진 사람은 옛 알림을 눌러도 본문을 못 본다.
+
+**띄우기 (화면)** — 내 `notifications` INSERT 를 구독하다가 새 알림이 오면:
+
+| 상황 | 동작 |
+|---|---|
+| 그 대화를 보고 있고 탭이 보인다 | 띄우지 않고 바로 `read_at` 을 채운다 |
+| 탭이 보인다 (`document.visibilityState === 'visible'`) | 화면 구석에 토스트 |
+| 탭이 안 보이고 브라우저 알림 권한이 있다 | `new Notification(제목, { body, tag: 알림 id })` |
+| 탭이 안 보이고 권한이 없다 | 탭 제목에 `(N)` 을 붙인다 |
+
+- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자.
+- 안 읽은 알림 수는 상황과 관계없이 알림 버튼 배지와 탭 제목에 보인다.
+- 알림(토스트·브라우저 알림·목록)을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 답글이면 스레드 패널을 연다. 이전 페이지에 있으면 그 주변을 불러온다. 브라우저 알림은 `window.focus()` 뒤에 이동한다.
+
+**함정**
+
+- 브라우저 알림 권한은 **사용자가 버튼을 눌렀을 때만** 요청할 수 있다. 로그인 뒤 "알림 켜기" 배너를 둔다. 거부하면 다시 묻지 못하므로 배너에 브라우저 설정에서 켜는 방법을 적는다.
+- 브라우저 알림은 **HTTPS 나 `localhost` 에서만** 동작한다. 팀원이 `http://<IP>:3000` 으로 들어오면 브라우저 알림이 뜨지 않는다 (토스트는 뜬다). 배포 URL 이나 각자의 `localhost` 에서 확인한다.
+- 같은 사람이 탭을 여러 개 열면 탭마다 구독이 와서 알림이 여러 번 뜬다. `tag` 를 알림 `id` 로 주면 브라우저가 하나로 합친다.
+
+**추후 확장 — 일정 알림** (PRD 7절 "추후 추가 예정")
+
+캘린더를 붙일 때는 `events` 테이블과 `notifications.event_id` 를 추가하고 `type = 'event'` 를 쓴다.
+"시작 10분 전" 같은 알림은 메시지 트리거가 아니라 예약 작업(`pg_cron`)이 `notifications` 에 넣는다.
+**넣는 곳만 다르고, 그 뒤 구독·토스트·브라우저 알림·목록은 그대로 쓴다.** 그래서 화면은 알림을 `type` 별로 그리고, 메시지가 없는 알림도 처리할 수 있게 만든다.
 
 ### 첨부 (F3-2)
 
