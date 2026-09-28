@@ -16,3 +16,10 @@ supabase/.temp/
 .DS_Store
 *.log
 .vercel
+
+# TypeScript / Next.js 생성 파일
+next-env.d.ts
+*.tsbuildinfo
+
+# 개인 도구 설정
+.claude/
