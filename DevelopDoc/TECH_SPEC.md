@@ -82,6 +82,11 @@ erDiagram
   channels ||--o{ read_positions : ""
   profiles ||--o{ notifications : "받는 사람"
   messages ||--o{ notifications : ""
+  rooms ||--o{ events : "회의실"
+  profiles ||--o{ events : "만든 사람"
+  events ||--o{ event_attendees : ""
+  profiles ||--o{ event_attendees : "참석자"
+  events ||--o{ notifications : ""
 ```
 
 | 테이블 | 주요 컬럼 | 비고 |
@@ -92,12 +97,26 @@ erDiagram
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`), `channel_id`, `message_id`, `created_at`, `read_at` | 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 본문은 저장하지 않는다. `channel_id`·`message_id` 는 nullable — 캘린더를 붙일 때 `type = 'event'` 와 `event_id` 를 추가 마이그레이션으로 넣는다 (7절 "알림") |
+| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`), `channel_id`, `message_id`, `event_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 유일 (user_id, event_id, type) where type in (`event_invite`, `event_reminder`) → 초대·10분 전 알림은 한 번만. 본문은 저장하지 않는다 |
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
+| `rooms` | `id`, `name`(유일), `capacity`, `location` | 회의실. 시드로 넣는다 |
+| `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at` | 회의. `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
+| `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다 |
 
-인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스, `notifications (user_id, id desc)`.
+회의실 이중 예약은 DB 가 막는다 (`btree_gist` 확장 필요). 화면에서 검사하면 두 사람이 동시에 누를 때 둘 다 통과한다.
+
+```sql
+exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
+  where (room_id is not null and canceled_at is null)
+```
+
+`'[)'` 라서 10:00~11:00 과 11:00~12:00 은 겹치지 않는다. 취소한 회의는 자리를 비운다.
+
+인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스, `notifications (user_id, id desc)`, `event_attendees (user_id)`, `events (starts_at)`.
+
+확장: `pg_trgm`(검색), `btree_gist`(회의실 제약), `pg_cron`(10분 전 알림).
 
 마이그레이션은 `supabase/migrations/*.sql` 로 관리하고, SQL 편집기에서 손으로 고친 내용도 반드시 파일로 옮긴다.
 
@@ -115,6 +134,11 @@ erDiagram
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
 | `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
 | `admin_logs` | 관리자만 | DB 트리거만 |
+| `rooms` | 로그인 사용자 모두 | 관리자만 |
+| `events` | 만든 사람과 참석자만 | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음 |
+| `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
+
+**남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다.
 
 **작성자 위조 방지**: `messages.user_id` 는 기본값 `auth.uid()` 에 정책으로 같은 값을 강제한다. 클라이언트가 다른 ID 를 보내면 거부된다.
 
@@ -175,9 +199,10 @@ erDiagram
 | 탭이 안 보이고 브라우저 알림 권한이 있다 | `new Notification(제목, { body, tag: 알림 id })` |
 | 탭이 안 보이고 권한이 없다 | 탭 제목에 `(N)` 을 붙인다 |
 
-- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자.
+- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자. 일정 알림은 `{회의 제목}`, 본문은 "초대됨·시간 변경·취소됨·10분 후 시작"과 시각·회의실.
 - 안 읽은 알림 수는 상황과 관계없이 알림 버튼 배지와 탭 제목에 보인다.
-- 알림(토스트·브라우저 알림·목록)을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 답글이면 스레드 패널을 연다. 이전 페이지에 있으면 그 주변을 불러온다. 브라우저 알림은 `window.focus()` 뒤에 이동한다.
+- 알림(토스트·브라우저 알림·목록)을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 답글이면 스레드 패널을 연다. 이전 페이지에 있으면 그 주변을 불러온다. 일정 알림은 `/calendar?e={event_id}` 로 간다. 브라우저 알림은 `window.focus()` 뒤에 이동한다.
+- 화면은 알림을 `type` 별로 그린다. 일정 알림에는 메시지가 없다.
 
 **함정**
 
@@ -185,11 +210,34 @@ erDiagram
 - 브라우저 알림은 **HTTPS 나 `localhost` 에서만** 동작한다. 팀원이 `http://<IP>:3000` 으로 들어오면 브라우저 알림이 뜨지 않는다 (토스트는 뜬다). 배포 URL 이나 각자의 `localhost` 에서 확인한다.
 - 같은 사람이 탭을 여러 개 열면 탭마다 구독이 와서 알림이 여러 번 뜬다. `tag` 를 알림 `id` 로 주면 브라우저가 하나로 합친다.
 
-**추후 확장 — 일정 알림** (PRD 7절 "추후 추가 예정")
+일정 알림을 만드는 곳은 아래 "캘린더·회의 예약"에 있다. **넣는 곳만 다르고, 구독·토스트·브라우저 알림·목록은 메시지 알림과 같다.**
 
-캘린더를 붙일 때는 `events` 테이블과 `notifications.event_id` 를 추가하고 `type = 'event'` 를 쓴다.
-"시작 10분 전" 같은 알림은 메시지 트리거가 아니라 예약 작업(`pg_cron`)이 `notifications` 에 넣는다.
-**넣는 곳만 다르고, 그 뒤 구독·토스트·브라우저 알림·목록은 그대로 쓴다.** 그래서 화면은 알림을 `type` 별로 그리고, 메시지가 없는 알림도 처리할 수 있게 만든다.
+### 캘린더·회의 예약 (F7)
+
+**화면** — `/calendar`
+
+- 주간 보기: 내가 만들었거나 초대받은 회의(`event_attendees` 에 내가 있는 것). 취소된 회의는 줄을 그어 보인다.
+- 회의 만들기: 제목, 날짜·시작·끝, 회의실, 참석자. 회의실을 고르면 `room_busy` 로 그날 예약된 시간대를 회색으로 보여 준다. 참석자는 DM 의 사람 검색(WU-08)을 다시 쓴다.
+- 회의 상세: 참석자별 응답, 수락·거절 버튼. 만든 사람에게는 수정·취소 버튼.
+- 저장은 `events` 한 행과 `event_attendees` 여러 행을 **한 번에** 넣어야 한다 → `create_event(...)` 함수 하나로 묶는다. 회의실이 겹치면 제약 오류를 "이미 예약된 시간입니다"로 바꿔 보여 준다.
+
+**일정 알림 만들기 (DB)**
+
+| `type` | 만드는 곳 | 받는 사람 |
+|---|---|---|
+| `event_invite` | `event_attendees` INSERT 트리거 | 새 참석자 (만든 사람 제외) |
+| `event_update` | `events` UPDATE 트리거 — 제목·시각·회의실이 바뀔 때 | 거절하지 않은 참석자 (고친 사람 제외) |
+| `event_cancel` | `events` UPDATE 트리거 — `canceled_at` 이 채워질 때 | 거절하지 않은 참석자 (취소한 사람 제외) |
+| `event_reminder` | `pg_cron` 1분마다: 10분 안에 시작하고 취소되지 않은 회의 | 거절하지 않은 참석자 (만든 사람 포함) |
+
+- 10분 전 알림은 유일 제약 덕분에 1분마다 돌아도 한 번만 들어간다.
+- 시작 시각이 바뀌면 그 회의의 `event_reminder` 를 지워서 새 시각에 다시 보낸다.
+
+**함정**
+
+- **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
+- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. `<input type="datetime-local">` 값은 한국 시각으로 보고 변환한다.
+- **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
 
 ### 첨부 (F3-2)
 
@@ -263,6 +311,7 @@ erDiagram
 ├─ app/
 │  ├─ login/
 │  ├─ c/[channelId]/          채팅 화면
+│  ├─ calendar/               캘린더·회의 예약
 │  └─ api/
 │     ├─ ai/{summarize,todos,tone}/
 │     └─ attachments/
