@@ -5,6 +5,9 @@
 
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
+> **현재 구현 (2026-09-28)**: Step 1 이 **Vercel + Supabase** 로 배포돼 있다 (https://office-chat-two.vercel.app). 로그인 없이 `messages` 테이블 하나를 쓴다.
+> 2~8절은 Step 2 부터의 목표 구조다. 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
+
 ---
 
 ## 1. 설계 원칙
@@ -79,6 +82,11 @@ erDiagram
   channels ||--o{ read_positions : ""
   profiles ||--o{ notifications : "받는 사람"
   messages ||--o{ notifications : ""
+  rooms ||--o{ events : "회의실"
+  profiles ||--o{ events : "만든 사람"
+  events ||--o{ event_attendees : ""
+  profiles ||--o{ event_attendees : "참석자"
+  events ||--o{ notifications : ""
 ```
 
 | 테이블 | 주요 컬럼 | 비고 |
@@ -89,12 +97,26 @@ erDiagram
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`, `user_id`, `message_id`, `channel_id`, `type`(`mention`), `read_at` | 유일 (user_id, message_id, type) → **한 번만 생성** |
+| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`), `channel_id`, `message_id`, `event_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 유일 (user_id, event_id, type) where type in (`event_invite`, `event_reminder`) → 초대·10분 전 알림은 한 번만. 본문은 저장하지 않는다 |
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
+| `rooms` | `id`, `name`(유일), `capacity`, `location` | 회의실. 시드로 넣는다 |
+| `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at` | 회의. `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
+| `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다 |
 
-인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스.
+회의실 이중 예약은 DB 가 막는다 (`btree_gist` 확장 필요). 화면에서 검사하면 두 사람이 동시에 누를 때 둘 다 통과한다.
+
+```sql
+exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
+  where (room_id is not null and canceled_at is null)
+```
+
+`'[)'` 라서 10:00~11:00 과 11:00~12:00 은 겹치지 않는다. 취소한 회의는 자리를 비운다.
+
+인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스, `notifications (user_id, id desc)`, `event_attendees (user_id)`, `events (starts_at)`.
+
+확장: `pg_trgm`(검색), `btree_gist`(회의실 제약), `pg_cron`(10분 전 알림).
 
 마이그레이션은 `supabase/migrations/*.sql` 로 관리하고, SQL 편집기에서 손으로 고친 내용도 반드시 파일로 옮긴다.
 
@@ -110,8 +132,13 @@ erDiagram
 | `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에) |
 | `attachments` | 그 채널의 멤버 | 서버 API 만 |
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
-| `notifications` | 본인만 | DB 트리거만 |
+| `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
 | `admin_logs` | 관리자만 | DB 트리거만 |
+| `rooms` | 로그인 사용자 모두 | 관리자만 |
+| `events` | 만든 사람과 참석자만 | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음 |
+| `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
+
+**남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다.
 
 **작성자 위조 방지**: `messages.user_id` 는 기본값 `auth.uid()` 에 정책으로 같은 값을 강제한다. 클라이언트가 다른 ID 를 보내면 거부된다.
 
@@ -134,6 +161,7 @@ erDiagram
 ### 재접속
 
 - 연결 상태가 끊김 → 다시 연결됨으로 바뀌면, **마지막으로 받은 `id` 보다 큰 메시지만** 조회해서 합친다.
+- 알림도 같은 방식으로 마지막 알림 `id` 이후만 받아 온다. 끊긴 동안 쌓인 알림은 하나씩 띄우지 않고 "알림 N개" 토스트 하나로 묶는다.
 - 연결 상태는 화면 위쪽에 "연결됨 / 끊김 / 재연결 중"으로 표시한다 (F1-4).
 
 ### 검증해야 할 가정
@@ -148,11 +176,68 @@ erDiagram
 - **대화별 미읽음 수** = 내 `last_read_message_id` 보다 큰, 남이 쓴 메시지 수.
 - **메시지별 안 읽은 사람 수** = 작성자를 뺀 멤버 가운데 `last_read_message_id < 메시지 id` 인 사람 수. 멤버의 `read_positions` 를 구독해서 화면에서 계산한다 (소규모 조직 전제).
 
-### 멘션 (F3-5)
+### 알림 (F3-5)
 
-- `messages` INSERT 트리거가 본문에서 `@handle` 을 찾고, **그 채널 멤버인 사람에게만** `notifications` 를 만든다.
-- 유일 제약 (user_id, message_id, type) 덕분에 재전송돼도 알림은 한 번만 생긴다.
-- 알림을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 이전 페이지에 있으면 그 주변을 불러온다.
+**만들기 (DB)** — `messages` INSERT 트리거가 받는 사람을 정해 `notifications` 를 넣는다.
+
+| 순서 | `type` | 받는 사람 |
+|---|---|---|
+| 1 | `mention` | 본문의 `@handle` 가운데 **그 채널 멤버인 사람** |
+| 2 | `thread_reply` | `parent_id` 가 있으면: 부모 메시지 작성자 + 그 스레드에 이미 답한 사람 (채널 멤버만) |
+| 3 | `dm` | DM 채널이면 상대방 |
+
+- 모든 경우에 **보낸 사람은 뺀다.**
+- 위 순서대로 `on conflict (user_id, message_id) do nothing` 으로 넣는다. DM 에서 `@B` 를 부르면 B 에게는 `mention` 하나만 남는다. 재전송돼도 `client_id` 로 메시지가 한 건이라 알림도 한 건이다.
+- 알림에는 본문을 저장하지 않는다. 미리보기는 `messages` 를 RLS 로 읽는다 — 채널에서 빠진 사람은 옛 알림을 눌러도 본문을 못 본다.
+
+**띄우기 (화면)** — 내 `notifications` INSERT 를 구독하다가 새 알림이 오면:
+
+| 상황 | 동작 |
+|---|---|
+| 그 대화를 보고 있고 탭이 보인다 | 띄우지 않고 바로 `read_at` 을 채운다 |
+| 탭이 보인다 (`document.visibilityState === 'visible'`) | 화면 구석에 토스트 |
+| 탭이 안 보이고 브라우저 알림 권한이 있다 | `new Notification(제목, { body, tag: 알림 id })` |
+| 탭이 안 보이고 권한이 없다 | 탭 제목에 `(N)` 을 붙인다 |
+
+- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자. 일정 알림은 `{회의 제목}`, 본문은 "초대됨·시간 변경·취소됨·10분 후 시작"과 시각·회의실.
+- 안 읽은 알림 수는 상황과 관계없이 알림 버튼 배지와 탭 제목에 보인다.
+- 알림(토스트·브라우저 알림·목록)을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 답글이면 스레드 패널을 연다. 이전 페이지에 있으면 그 주변을 불러온다. 일정 알림은 `/calendar?e={event_id}` 로 간다. 브라우저 알림은 `window.focus()` 뒤에 이동한다.
+- 화면은 알림을 `type` 별로 그린다. 일정 알림에는 메시지가 없다.
+
+**함정**
+
+- 브라우저 알림 권한은 **사용자가 버튼을 눌렀을 때만** 요청할 수 있다. 로그인 뒤 "알림 켜기" 배너를 둔다. 거부하면 다시 묻지 못하므로 배너에 브라우저 설정에서 켜는 방법을 적는다.
+- 브라우저 알림은 **HTTPS 나 `localhost` 에서만** 동작한다. 팀원이 `http://<IP>:3000` 으로 들어오면 브라우저 알림이 뜨지 않는다 (토스트는 뜬다). 배포 URL 이나 각자의 `localhost` 에서 확인한다.
+- 같은 사람이 탭을 여러 개 열면 탭마다 구독이 와서 알림이 여러 번 뜬다. `tag` 를 알림 `id` 로 주면 브라우저가 하나로 합친다.
+
+일정 알림을 만드는 곳은 아래 "캘린더·회의 예약"에 있다. **넣는 곳만 다르고, 구독·토스트·브라우저 알림·목록은 메시지 알림과 같다.**
+
+### 캘린더·회의 예약 (F7)
+
+**화면** — `/calendar`
+
+- 주간 보기: 내가 만들었거나 초대받은 회의(`event_attendees` 에 내가 있는 것). 취소된 회의는 줄을 그어 보인다.
+- 회의 만들기: 제목, 날짜·시작·끝, 회의실, 참석자. 회의실을 고르면 `room_busy` 로 그날 예약된 시간대를 회색으로 보여 준다. 참석자는 DM 의 사람 검색(WU-08)을 다시 쓴다.
+- 회의 상세: 참석자별 응답, 수락·거절 버튼. 만든 사람에게는 수정·취소 버튼.
+- 저장은 `events` 한 행과 `event_attendees` 여러 행을 **한 번에** 넣어야 한다 → `create_event(...)` 함수 하나로 묶는다. 회의실이 겹치면 제약 오류를 "이미 예약된 시간입니다"로 바꿔 보여 준다.
+
+**일정 알림 만들기 (DB)**
+
+| `type` | 만드는 곳 | 받는 사람 |
+|---|---|---|
+| `event_invite` | `event_attendees` INSERT 트리거 | 새 참석자 (만든 사람 제외) |
+| `event_update` | `events` UPDATE 트리거 — 제목·시각·회의실이 바뀔 때 | 거절하지 않은 참석자 (고친 사람 제외) |
+| `event_cancel` | `events` UPDATE 트리거 — `canceled_at` 이 채워질 때 | 거절하지 않은 참석자 (취소한 사람 제외) |
+| `event_reminder` | `pg_cron` 1분마다: 10분 안에 시작하고 취소되지 않은 회의 | 거절하지 않은 참석자 (만든 사람 포함) |
+
+- 10분 전 알림은 유일 제약 덕분에 1분마다 돌아도 한 번만 들어간다.
+- 시작 시각이 바뀌면 그 회의의 `event_reminder` 를 지워서 새 시각에 다시 보낸다.
+
+**함정**
+
+- **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
+- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. `<input type="datetime-local">` 값은 한국 시각으로 보고 변환한다.
+- **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
 
 ### 첨부 (F3-2)
 
@@ -226,6 +311,7 @@ erDiagram
 ├─ app/
 │  ├─ login/
 │  ├─ c/[channelId]/          채팅 화면
+│  ├─ calendar/               캘린더·회의 예약
 │  └─ api/
 │     ├─ ai/{summarize,todos,tone}/
 │     └─ attachments/
@@ -252,9 +338,16 @@ erDiagram
 ## 11. 협업 규칙 (GitHub)
 
 - 저장소 하나, Fork 는 쓰지 않는다.
-- `main` 은 항상 배포 가능한 상태. 직접 푸시하지 않는다.
-- 브랜치: `feat/WU-08-dm` 처럼 단위 작업 번호를 붙인다.
-- PR 제목: `[WU-08] DM`. 한 명이 보고 머지한다.- **매일 18:00** 머지 후 배포 URL 을 셋이 함께 확인한다.
+
+| 브랜치 | 용도 | 들어오는 곳 |
+|---|---|---|
+| `main` | 배포용. 항상 시연 가능한 상태 | `develop` 에서만 PR 로 |
+| `develop` | 팀원들이 개발한 내용을 모으는 곳 | 개인 기능 브랜치에서 PR 로 |
+| `develop-<이름>-<기능>` | 사람별·기능별 작업. 예: `develop-hslee-step1-chat` | `develop` 에서 새로 딴다 |
+
+- `main` 과 `develop` 에는 직접 푸시하지 않는다.
+- PR 제목에 작업 번호를 붙인다. 예: `[WU-05] 실시간 송수신`. 한 명이 보고 머지한다.
+- **매일 18:00** `develop` 을 `main` 에 머지하고, 시연 URL 을 셋이 함께 확인한다.
 
 ## 12. 알려진 메시지 유실·중복 조건
 
@@ -262,4 +355,58 @@ erDiagram
 
 | 조건 | 결과 | 대응 |
 |---|---|---|
-| (테스트 후 기입) | | |
+| 구독 직후 1~2초 | 그 사이에 저장된 메시지의 실시간 이벤트가 빠질 수 있다 (2026-09-28, 테이블을 만든 직후 첫 테스트에서 A 0건·B 1건만 받음. 재실행은 10건 모두 받음) | 구독되면 바로 한 번, 2초 뒤 한 번 더 `id` 로 동기화한다. 빠진 것은 여기서 채워진다 |
+| 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패". 실제로는 저장됐을 수 있다 | 저장됐으면 실시간 이벤트가 와서 실패 표시가 사라진다. "다시 보내기"를 눌러도 같은 `client_id` 라 한 번만 저장된다 (2026-09-28 테스트 통과) |
+| 전송 실패한 메시지가 있는 채로 새로고침 | 실패한 메시지가 화면에서 사라진다 (브라우저에만 있었음) | 알려진 한계 |
+| 재연결까지 500건 넘게 쌓임 | 동기화는 한 번에 500건까지만 받는다 | Step 4 페이지네이션에서 해결 |
+
+## 13. 현재 구조 (Step 1) 와 배포
+
+2026-09-28 에 로컬 임시 구조(Socket.IO + 메모리)로 먼저 띄웠다가, 같은 날 원격 배포를 위해 **Vercel + Supabase** 로 옮겼다.
+Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우기 때문이다. `server.mjs` 와 Socket.IO 는 지웠다.
+
+| 항목 | 값 |
+|---|---|
+| 배포 URL | https://office-chat-two.vercel.app (`office-chat.vercel.app` 은 다른 사람 것) |
+| Vercel 프로젝트 | `somsaps-projects/office-chat` |
+| DB | Supabase `office-chat-db` (Vercel 마켓플레이스, 무료 요금제, 서울 `icn1`) |
+| 환경 변수 | Supabase 연동이 Vercel 에 자동으로 넣는다. 로컬은 `npx vercel env pull .env.local` |
+
+| 파일 | 역할 |
+|---|---|
+| `supabase/migrations/20260928090000_step1_messages.sql` | `messages` 테이블, Step 1 임시 RLS, 실시간 구독 등록 |
+| `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
+| `components/ChatRoom.tsx` | 채팅 화면. 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
+| `components/NicknameForm.tsx` | 닉네임 입장 화면 (닉네임은 브라우저 `localStorage` 에 기억) |
+| `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 끝나면 테스트 메시지를 지운다 |
+
+### Step 1 임시 권한 — Step 2 에서 반드시 바꾼다
+
+| 누가 | 할 수 있는 것 |
+|---|---|
+| 익명(anon) | 모든 메시지 읽기, `client_id`·`author`·`body` 세 컬럼만 넣어 쓰기 |
+| 익명(anon) | `id`·`created_at` 지정, 수정, 삭제는 **불가** (컬럼 권한으로 막음, 테스트 통과) |
+
+- DB 제약: `author` 1~20자, `body` 1~2000자, 둘 다 공백만은 안 됨.
+- **누구나 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
+
+### 배포 방법
+
+```bash
+npx vercel deploy --prod
+```
+
+DB 구조를 바꿀 때는 `supabase/migrations/` 에 새 파일을 만들고 원격에 적용한다. `.env.local` 을 불러온 셸에서 실행한다.
+
+```bash
+npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
+```
+
+### 알아 둘 함정
+
+- **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
+- **Supabase 연동을 처음 설치할 때 약관 동의가 필요하다**: CLI 가 링크를 주고 멈춘다. 계정 주인이 브라우저에서 동의해야 한다.
+- **연동 설치가 `.agents/`, `skills-lock.json` 을 만든다**: 에이전트 도구 파일이라 `.gitignore` 로 뺐다.
+- **한글 입력 중 Enter**: 조합 중인 Enter 를 전송으로 처리하면 두 번 보내질 수 있다. `isComposing` 이면 전송하지 않는다.
+- **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
+- **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
