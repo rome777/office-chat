@@ -1,15 +1,13 @@
-// ② 캘린더 데이터. 화면은 이 파일의 함수만 부른다.
-// 지금은 브라우저 메모리의 가짜 데이터다 (새로고침하면 처음 상태로 돌아간다).
-// WU-02 로 테이블·함수가 생기면 각 함수 안만 Supabase 호출로 바꾼다:
-//   listMyEvents·getEvent → events + event_attendees 조회 (RLS 가 참석자만 보여 준다)
-//   roomBusy → room_busy(room_id, from, to)   createEvent → create_event(...)
-//   updateEvent·cancelEvent → events update   respond → event_attendees update
-// 가짜 데이터도 DB 와 같은 규칙(참석자만 보기, 회의실 겹침 거부, 만든 사람만 수정)을 지킨다.
-// 그래야 화면의 오류 처리를 지금 시험할 수 있다.
+// ② 캘린더 데이터 (Supabase). 화면은 이 파일의 함수만 부른다.
+// 권한은 DB 가 지킨다 (TECH_SPEC 5절, supabase/migrations/20260929100000_db_v1.sql):
+//   events 조회 — 만든 사람과 참석자만. 수정·취소 — 만든 사람만. 삭제 없음 (canceled_at 으로 취소)
+//   event_attendees — 그 회의 참여자가 조회, 추가·삭제는 만든 사람, 본인은 response 만
+//   회의 만들기 — create_event() 한 번에 회의 + 참석자 (만든 사람은 accepted)
+//   회의실 예약 현황 — room_busy() 로 시각만 (남의 회의 제목·참석자는 주지 않는다)
+//   회의실 겹침 — events_no_double_booking 제약이 막는다 (23P01). 두 사람이 동시에 눌러도 하나만 성공
 
 import type { AttendeeResponse, CalendarEvent, EventAttendee, Room } from "@/lib/types/calendar";
-import { DEMO_ME_ID } from "@/components/people/directory";
-import { addDays, fromKstInput, kstDateKey, startOfKstWeek, toMs } from "./time";
+import { getSupabase } from "@/lib/supabase";
 
 export type EventWithAttendees = CalendarEvent & { attendees: EventAttendee[] };
 
@@ -25,7 +23,7 @@ export type EventInput = {
 
 export type BusySlot = { starts_at: string; ends_at: string };
 
-/** 같은 회의실이 겹치는 시간에 이미 잡혀 있다 (DB 의 exclude 제약 오류에 해당) */
+/** 같은 회의실이 겹치는 시간에 이미 잡혀 있다 (DB 의 exclude 제약 오류 23P01) */
 export class RoomConflictError extends Error {
   constructor() {
     super("이미 예약된 시간입니다");
@@ -33,7 +31,7 @@ export class RoomConflictError extends Error {
   }
 }
 
-/** 권한 없음 (RLS 거부에 해당) */
+/** 권한 없음 (RLS 거부, 또는 RLS 에 가려 0행이 바뀐 경우) */
 export class ForbiddenError extends Error {
   constructor(message = "권한이 없습니다") {
     super(message);
@@ -41,226 +39,199 @@ export class ForbiddenError extends Error {
   }
 }
 
+/** DB 의 events 제약과 같다 */
 export const TITLE_MAX = 100;
+export const DESCRIPTION_MAX = 2000;
 
-// ── 가짜 데이터 ─────────────────────────────────────────────
+const EVENT_COLUMNS =
+  "id, title, description, starts_at, ends_at, room_id, created_by, created_at, updated_at, canceled_at";
+const WITH_ATTENDEES = `${EVENT_COLUMNS}, attendees:event_attendees(event_id, user_id, response, responded_at)`;
 
-let me = DEMO_ME_ID;
+// ── 공통 ────────────────────────────────────────────────────
 
-/** 가짜 데이터에서 "보는 사람"을 바꾼다 (A·B·C 권한 차이를 화면에서 시험하려고). 로그인이 붙으면 없앤다 */
-export function setDemoViewer(userId: string) {
-  me = userId;
+/** 로그인한 나. 쿠키의 세션에서 읽는다 (네트워크 없음). 권한은 DB 가 토큰으로 다시 확인한다 */
+export async function getMyId(): Promise<string> {
+  const { data } = await getSupabase().auth.getSession();
+  const id = data.session?.user.id;
+  if (!id) throw new ForbiddenError("로그인이 필요합니다");
+  return id;
 }
-export const getDemoViewer = () => me;
 
-const rooms: Room[] = [
-  { id: "room-1", name: "회의실 1 (소)", capacity: 4, location: "3층" },
-  { id: "room-2", name: "회의실 2 (중)", capacity: 8, location: "3층" },
-  { id: "room-3", name: "회의실 3 (대)", capacity: 16, location: "5층" },
-];
+type DbError = { code?: string; message: string };
 
-const events: CalendarEvent[] = [];
-const attendees: EventAttendee[] = [];
-
-function seed() {
-  const monday = kstDateKey(startOfKstWeek(new Date()));
-  const day = (n: number) => kstDateKey(addDays(new Date(`${monday}T00:00:00+09:00`), n));
-  const at = (n: number, time: string) => fromKstInput(day(n), time).toISOString();
-  const now = new Date().toISOString();
-  const add = (
-    id: string,
-    title: string,
-    dayIndex: number,
-    from: string,
-    to: string,
-    room_id: string | null,
-    created_by: string,
-    others: [string, AttendeeResponse][],
-    canceled = false,
-  ) => {
-    events.push({
-      id,
-      title,
-      description: null,
-      starts_at: at(dayIndex, from),
-      ends_at: at(dayIndex, to),
-      room_id,
-      created_by,
-      created_at: now,
-      updated_at: now,
-      canceled_at: canceled ? now : null,
-    });
-    attendees.push({ event_id: id, user_id: created_by, response: "accepted", responded_at: now });
-    for (const [user_id, response] of others) {
-      attendees.push({
-        event_id: id,
-        user_id,
-        response,
-        responded_at: response === "pending" ? null : now,
-      });
-    }
-  };
-  // B 가 A 를 초대한 회의 (A 수락)
-  add("ev-1", "주간 기획 회의", 1, "10:00", "11:00", "room-1", "demo-b", [["demo-a", "accepted"]]);
-  // A 가 B 를 초대 (B 아직 응답 안 함)
-  add("ev-2", "디자인 리뷰", 2, "14:00", "15:30", "room-2", "demo-a", [
-    ["demo-b", "pending"],
-    ["demo-d", "accepted"],
-  ]);
-  // B 가 들어가지 않은 회의 — B 에게는 회의실 현황의 회색 칸으로만 보여야 한다
-  add("ev-3", "영업 전략 (비공개)", 1, "13:00", "14:00", "room-1", "demo-c", [["demo-admin", "accepted"]]);
-  // 취소된 회의 — 줄을 그어 보이고, 회의실 자리는 비운다
-  add("ev-4", "취소된 점심 세미나", 3, "12:00", "13:00", "room-3", "demo-b", [["demo-e", "declined"]], true);
-  // 회의실 없이 잡은 회의
-  add("ev-5", "1:1 면담", 4, "16:00", "16:30", null, "demo-f", [["demo-b", "accepted"]]);
+function friendly(error: DbError): Error {
+  if (error.code === "23P01") return new RoomConflictError();
+  if (error.code === "42501") return new ForbiddenError();
+  if (error.code === "23514") {
+    return new Error(`제목(1~${TITLE_MAX}자)·설명(${DESCRIPTION_MAX}자까지)·시각을 확인해 주세요`);
+  }
+  if (error.code === "23503") return new Error("없는 회의실이나 사람이 들어 있습니다");
+  return new Error(error.message);
 }
-seed();
-
-// ── 규칙 ────────────────────────────────────────────────────
-
-const isParticipant = (eventId: string, userId: string) =>
-  attendees.some((a) => a.event_id === eventId && a.user_id === userId);
-
-const withAttendees = (e: CalendarEvent): EventWithAttendees => ({
-  ...e,
-  attendees: attendees.filter((a) => a.event_id === e.id).map((a) => ({ ...a })),
-});
-
-// '[)' 범위: 10:00~11:00 과 11:00~12:00 은 겹치지 않는다
-const overlaps = (aStart: string, aEnd: string, bStart: string, bEnd: string) =>
-  toMs(aStart) < toMs(bEnd) && toMs(bStart) < toMs(aEnd);
-
-const byStart = (a: { starts_at: string }, b: { starts_at: string }) =>
-  toMs(a.starts_at) - toMs(b.starts_at);
 
 function validate(input: EventInput) {
   const title = input.title.trim();
-  if (!title || title.length > TITLE_MAX) throw new Error(`제목은 1~${TITLE_MAX}자로 적어 주세요`);
-  if (!(toMs(input.ends_at) > toMs(input.starts_at))) {
+  if (!title || [...title].length > TITLE_MAX) throw new Error(`제목은 1~${TITLE_MAX}자로 적어 주세요`);
+  if ((input.description?.length ?? 0) > DESCRIPTION_MAX) {
+    throw new Error(`설명은 ${DESCRIPTION_MAX}자까지입니다`);
+  }
+  if (!(new Date(input.ends_at).getTime() > new Date(input.starts_at).getTime())) {
     throw new Error("끝나는 시각이 시작보다 늦어야 합니다");
   }
 }
 
-// crypto.randomUUID 는 https·localhost 에서만 있다 (같은 네트워크의 http://<IP>:3000 접속 대비)
-function newId(): string {
-  return typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `ev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function assertRoomFree(input: EventInput, ignoreEventId?: string) {
-  if (!input.room_id) return;
-  const clash = events.some(
-    (e) =>
-      e.id !== ignoreEventId &&
-      e.room_id === input.room_id &&
-      e.canceled_at === null &&
-      overlaps(e.starts_at, e.ends_at, input.starts_at, input.ends_at),
-  );
-  if (clash) throw new RoomConflictError();
-}
+/** uuid 가 아니면 DB 가 22P02 오류를 낸다. 주소의 ?e= 가 잘못돼도 "찾을 수 없음"으로 보이게 미리 거른다 */
+const isUuid = (s: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 // ── 화면이 부르는 함수 ──────────────────────────────────────
 
 export async function listRooms(): Promise<Room[]> {
-  return rooms.map((r) => ({ ...r }));
+  const { data, error } = await getSupabase()
+    .from("rooms")
+    .select("id, name, capacity, location")
+    .order("name");
+  if (error) throw friendly(error);
+  return data ?? [];
 }
 
-/** 내가 만들었거나 초대받은 회의 중 [from, to) 와 겹치는 것 */
+/** 내가 만들었거나 초대받은 회의 중 [from, to) 와 겹치는 것 (RLS 가 남의 회의를 가린다) */
 export async function listMyEvents(from: Date, to: Date): Promise<EventWithAttendees[]> {
-  const f = from.toISOString();
-  const t = to.toISOString();
-  return events
-    .filter((e) => isParticipant(e.id, me) && overlaps(e.starts_at, e.ends_at, f, t))
-    .sort(byStart)
-    .map(withAttendees);
+  const { data, error } = await getSupabase()
+    .from("events")
+    .select(WITH_ATTENDEES)
+    .lt("starts_at", to.toISOString())
+    .gt("ends_at", from.toISOString())
+    .order("starts_at");
+  if (error) throw friendly(error);
+  return (data ?? []) as EventWithAttendees[];
 }
 
-/** 참석자가 아니면 null (남의 회의는 id 를 알아도 못 본다) */
+/** 참석자가 아니면 null (남의 회의는 id 를 알아도 RLS 가 0행으로 돌려준다) */
 export async function getEvent(id: string): Promise<EventWithAttendees | null> {
-  const e = events.find((x) => x.id === id);
-  return e && isParticipant(e.id, me) ? withAttendees(e) : null;
+  if (!isUuid(id)) return null;
+  const { data, error } = await getSupabase()
+    .from("events")
+    .select(WITH_ATTENDEES)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw friendly(error);
+  return (data as EventWithAttendees | null) ?? null;
 }
 
 /** 회의실의 예약된 시간대만 돌려준다 (제목·참석자는 주지 않는다) */
 export async function roomBusy(roomId: string, from: Date, to: Date): Promise<BusySlot[]> {
-  const f = from.toISOString();
-  const t = to.toISOString();
-  return events
-    .filter(
-      (e) => e.room_id === roomId && e.canceled_at === null && overlaps(e.starts_at, e.ends_at, f, t),
-    )
-    .sort(byStart)
-    .map((e) => ({ starts_at: e.starts_at, ends_at: e.ends_at }));
+  const { data, error } = await getSupabase().rpc("room_busy", {
+    p_room_id: roomId,
+    p_from: from.toISOString(),
+    p_to: to.toISOString(),
+  });
+  if (error) throw friendly(error);
+  return (data ?? []) as BusySlot[];
 }
 
 export async function createEvent(input: EventInput): Promise<EventWithAttendees> {
   validate(input);
-  assertRoomFree(input);
-  const now = new Date().toISOString();
-  const event: CalendarEvent = {
-    id: newId(),
-    title: input.title.trim(),
-    description: input.description?.trim() || null,
-    starts_at: input.starts_at,
-    ends_at: input.ends_at,
-    room_id: input.room_id,
-    created_by: me,
-    created_at: now,
-    updated_at: now,
-    canceled_at: null,
-  };
-  events.push(event);
-  attendees.push({ event_id: event.id, user_id: me, response: "accepted", responded_at: now });
-  for (const user_id of new Set(input.attendee_ids)) {
-    if (user_id !== me) {
-      attendees.push({ event_id: event.id, user_id, response: "pending", responded_at: null });
-    }
-  }
-  return withAttendees(event);
+  const { data: id, error } = await getSupabase().rpc("create_event", {
+    p_title: input.title.trim(),
+    p_starts_at: input.starts_at,
+    p_ends_at: input.ends_at,
+    p_room_id: input.room_id,
+    p_attendee_ids: [...new Set(input.attendee_ids)],
+    p_description: input.description?.trim() || null,
+  });
+  if (error) throw friendly(error);
+  const created = await getEvent(id as string);
+  if (!created) throw new Error("회의를 만들었지만 다시 읽지 못했습니다. 새로고침해 주세요");
+  return created;
 }
 
-/** 만든 사람만. 남아 있는 참석자의 응답은 그대로 두고, 새 참석자는 "응답 전"으로 넣는다 */
-export async function updateEvent(id: string, input: EventInput): Promise<EventWithAttendees> {
-  const event = events.find((e) => e.id === id);
-  if (!event || !isParticipant(id, me)) throw new ForbiddenError("회의를 찾을 수 없습니다");
-  if (event.created_by !== me) throw new ForbiddenError("만든 사람만 고칠 수 있습니다");
-  if (event.canceled_at) throw new ForbiddenError("취소된 회의는 고칠 수 없습니다");
+/** 만든 사람만. 남아 있는 참석자의 응답은 그대로 두고, 새 참석자는 "응답 전"으로 넣는다.
+ *  회의 내용과 참석자를 따로 저장한다 (DB 에 한 번에 고치는 함수가 없다) — 참석자 저장이 실패하면 알린다.
+ *  baseAttendeeIds: 폼을 열 때의 참석자. 주면 "폼에서 뺀 사람"만 지운다 (그 사이 다른 탭에서 넣은 사람은 둔다) */
+export async function updateEvent(
+  id: string,
+  input: EventInput,
+  baseAttendeeIds?: string[],
+): Promise<EventWithAttendees> {
+  const current = await getEvent(id);
+  if (!current) throw new ForbiddenError("회의를 찾을 수 없습니다");
+  const me = await getMyId();
+  if (current.created_by !== me) throw new ForbiddenError("만든 사람만 고칠 수 있습니다");
+  if (current.canceled_at) throw new ForbiddenError("취소된 회의는 고칠 수 없습니다");
   validate(input);
-  assertRoomFree(input, id);
 
-  Object.assign(event, {
-    title: input.title.trim(),
-    description: input.description?.trim() || null,
-    starts_at: input.starts_at,
-    ends_at: input.ends_at,
-    room_id: input.room_id,
-    updated_at: new Date().toISOString(),
-  });
+  const supabase = getSupabase();
+  const { data: updated, error } = await supabase
+    .from("events")
+    .update({
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      starts_at: input.starts_at,
+      ends_at: input.ends_at,
+      room_id: input.room_id,
+    })
+    .eq("id", id)
+    .is("canceled_at", null) // 폼을 연 사이 취소됐으면 고치지 않는다
+    .select("id");
+  if (error) throw friendly(error);
+  if (!updated?.length) throw new ForbiddenError("회의가 취소됐거나 고칠 권한이 없습니다");
+
   const keep = new Set([me, ...input.attendee_ids]);
-  for (let i = attendees.length - 1; i >= 0; i--) {
-    if (attendees[i].event_id === id && !keep.has(attendees[i].user_id)) attendees.splice(i, 1);
+  const had = new Set(current.attendees.map((a) => a.user_id));
+  const base = new Set(baseAttendeeIds ?? had);
+  const remove = [...had].filter((u) => base.has(u) && !keep.has(u));
+  const add = [...keep].filter((u) => !had.has(u));
+  if (remove.length) {
+    const { error: e } = await supabase
+      .from("event_attendees")
+      .delete()
+      .eq("event_id", id)
+      .in("user_id", remove);
+    if (e) throw new Error(`회의는 고쳤지만 참석자를 빼지 못했습니다: ${friendly(e).message}`);
   }
-  for (const user_id of keep) {
-    if (!isParticipant(id, user_id)) {
-      attendees.push({ event_id: id, user_id, response: "pending", responded_at: null });
-    }
+  if (add.length) {
+    // 다른 탭에서 같은 사람을 동시에 넣어도 오류 없이 한 행만 남게
+    const { error: e } = await supabase
+      .from("event_attendees")
+      .upsert(add.map((user_id) => ({ event_id: id, user_id })), {
+        onConflict: "event_id,user_id",
+        ignoreDuplicates: true,
+      });
+    if (e) throw new Error(`회의는 고쳤지만 참석자를 넣지 못했습니다: ${friendly(e).message}`);
   }
-  return withAttendees(event);
+
+  const fresh = await getEvent(id);
+  if (!fresh) throw new Error("회의를 고쳤지만 다시 읽지 못했습니다. 새로고침해 주세요");
+  return fresh;
 }
 
 /** 만든 사람만. 지우지 않고 canceled_at 을 채운다 (회의실 자리는 비워진다) */
 export async function cancelEvent(id: string): Promise<void> {
-  const event = events.find((e) => e.id === id);
-  if (!event || !isParticipant(id, me)) throw new ForbiddenError("회의를 찾을 수 없습니다");
-  if (event.created_by !== me) throw new ForbiddenError("만든 사람만 취소할 수 있습니다");
-  event.canceled_at ??= new Date().toISOString();
+  const { data, error } = await getSupabase()
+    .from("events")
+    .update({ canceled_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("canceled_at", null)
+    .select("id");
+  if (error) throw friendly(error);
+  if (!data?.length) {
+    const still = await getEvent(id);
+    if (!still) throw new ForbiddenError("회의를 찾을 수 없습니다");
+    if (!still.canceled_at) throw new ForbiddenError("만든 사람만 취소할 수 있습니다");
+    // 이미 취소돼 있으면 그대로 둔다
+  }
 }
 
-/** 본인 응답만 바꾼다 */
+/** 본인 응답만 바꾼다 (RLS). responded_at 은 DB 트리거가 채운다 */
 export async function respond(id: string, response: AttendeeResponse): Promise<void> {
-  const row = attendees.find((a) => a.event_id === id && a.user_id === me);
-  if (!row) throw new ForbiddenError("초대받은 회의가 아닙니다");
-  row.response = response;
-  row.responded_at = new Date().toISOString();
+  const me = await getMyId();
+  const { data, error } = await getSupabase()
+    .from("event_attendees")
+    .update({ response })
+    .eq("event_id", id)
+    .eq("user_id", me)
+    .select("event_id");
+  if (error) throw friendly(error);
+  if (!data?.length) throw new ForbiddenError("초대받은 회의가 아닙니다");
 }
