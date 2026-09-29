@@ -37,7 +37,40 @@
   padding: 10px 12px;
 }
 
-.card button {
+.card .error {
+  color: var(--bad);
+  font-size: 14px;
+}
+
+.card .notice {
+  font-size: 14px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card .tab,
+.card .tabActive {
+  flex: 1;
+  background: none;
+  color: inherit;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px;
+  font-weight: 500;
+  opacity: 0.6;
+}
+
+.card .tabActive {
+  border-bottom-color: var(--accent);
+  opacity: 1;
+}
+
+.card button[type="submit"] {
   background: var(--accent);
   color: var(--accent-text);
   border: none;
