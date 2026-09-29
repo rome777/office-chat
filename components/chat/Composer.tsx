@@ -11,6 +11,26 @@ import MentionPicker, { filterMembers, mentionQueryAt } from "./MentionPicker";
 import type { Member } from "./useChannelMembers";
 import s from "./chat.module.css";
 
+// 첨부·말투 버튼 아이콘. 헤더의 해·달 아이콘(ThemeToggle)과 같은 선 두께·둥근 끝, 색은 글자색을 따른다
+function ClipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path transform="rotate(45 12 12)" d="M10 17V8.6a2 2 0 0 1 4 0V19a3.5 3.5 0 0 1-7 0V6.5a5 5 0 0 1 10 0v11" />
+    </svg>
+  );
+}
+
+function ToneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12.13 3.63A9.5 9 0 0 0 3.07 17.1L2.2 21.3 7.29 20.76A9.5 9 0 0 0 20.76 11.82" />
+      <path d="M18.7 1Q19.9 4.1 23 5.3 19.9 6.5 18.7 9.6 17.5 6.5 14.4 5.3 17.5 4.1 18.7 1Z" />
+      <circle cx="7.4" cy="12.8" r="0.4" fill="currentColor" />
+      <circle cx="11.6" cy="12.8" r="0.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 export default function Composer({
   placeholder,
   members,
@@ -189,7 +209,7 @@ export default function Composer({
               aria-label="파일 첨부"
               title="파일 첨부 (PNG·JPEG·PDF, 5MB 이하)"
             >
-              📎
+              <ClipIcon />
             </button>
           </>
         )}
@@ -202,9 +222,10 @@ export default function Composer({
               disabled={draft.trim().length === 0}
               aria-haspopup="menu"
               aria-expanded={toneMenu}
+              aria-label="말투 변환"
               title="말투 변환 (신하·선비·정중) — 미리 보고 승인해야 전송"
             >
-              🎭
+              <ToneIcon />
             </button>
             {toneMenu && (
               <ul className={s.toneMenu} role="menu">
