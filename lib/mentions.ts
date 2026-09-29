@@ -9,6 +9,32 @@ const NAME_CHAR = /[\p{L}\p{N}_-]/u;
 
 export type MentionPerson = { handle: string; display_name: string; department: string | null };
 
+// ── 모두·부서 멘션 (2026-09-30, 20260930090000_group_mentions.sql) ──
+// 본문에는 바뀌지 않는 글자를 저장한다. handle 은 20자까지라 이 글자들과 겹치지 않는다.
+/** 이 채널 멤버 전체. 화면에는 "@모두" */
+export const ALL_TOKEN = "all-members-in-channel";
+export const ALL_LABEL = "모두";
+/** 그 부서와 모든 하위 부서 소속 가운데 이 채널 멤버. 화면에는 "@부서명" */
+export const orgToken = (unitId: string) => `org-${unitId.toLowerCase()}`;
+export const isGroupToken = (token: string) => token === ALL_TOKEN || token.startsWith("org-");
+
+export type MentionUnit = { id: string; name: string; parent_id: string | null };
+
+/** 모두·부서의 이름표 (글자 → 이름). 사람 이름표(mentionLabels)와 합쳐 쓴다 */
+export function groupLabels(units: readonly MentionUnit[]): Map<string, string> {
+  return new Map([[ALL_TOKEN, ALL_LABEL], ...units.map((u) => [orgToken(u.id), u.name] as [string, string])]);
+}
+
+/** 그 부서와 모든 상위 부서의 id (가까운 것부터). 부서 멘션은 하위 부서까지 부르므로, 내가 불렸는지 볼 때 쓴다 */
+export function unitChain(unitId: string | null, units: readonly MentionUnit[]): string[] {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const chain: string[] = [];
+  for (let u = unitId ? byId.get(unitId) : undefined; u && !chain.includes(u.id); u = u.parent_id ? byId.get(u.parent_id) : undefined) {
+    chain.push(u.id);
+  }
+  return chain;
+}
+
 /**
  * handle(소문자) → 화면에 보일 이름. 같은 이름이 둘 이상이면 "이름(부서)" 로 구분한다.
  * 입력창에 넣는 글자도 이것이라, 보낼 때 이 글자로 누구인지 되찾는다 (storeMentions)

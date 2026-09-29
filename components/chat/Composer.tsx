@@ -7,9 +7,9 @@ import { useMemo, useRef, useState } from "react";
 import { ATTACHMENT_ACCEPT, attachmentProblem, formatBytes } from "@/lib/attachments";
 import { TONE_MODES, type ToneMode } from "@/lib/tone";
 import { mentionLabels, storeMentions } from "@/lib/mentions";
-import { useMentionLabels } from "@/components/people/directory";
+import { useMentionLabels, useOrgUnits } from "@/components/people/directory";
 import SafeText from "./SafeText";
-import MentionPicker, { filterMembers, mentionQueryAt } from "./MentionPicker";
+import MentionPicker, { channelGroups, filterMentions, mentionQueryAt, type MentionItem } from "./MentionPicker";
 import type { Member } from "./useChannelMembers";
 import s from "./chat.module.css";
 
@@ -69,7 +69,9 @@ export default function Composer({
   const textRef = useRef<HTMLTextAreaElement>(null);
   // 첨부만 있고 글이 없어도 보낼 수 있다
   const canSend = draft.trim().length > 0 || file !== null;
-  const candidates = mention ? filterMembers(members, mention.query, selfId) : [];
+  const units = useOrgUnits();
+  const groups = useMemo(() => channelGroups(members, units, selfId), [members, units, selfId]);
+  const candidates = mention ? filterMentions(members, groups, mention.query, selfId) : [];
   // 멘션 이름표: 회사 명부(동명이인은 "이름(부서)"), 받기 전에는 채널 멤버로. 넣을 때와 보낼 때 같은 이름표를 쓴다
   const company = useMentionLabels();
   const memberLabels = useMemo(() => mentionLabels(members), [members]);
@@ -81,10 +83,11 @@ export default function Composer({
     if (found?.query !== mention?.query) setActive(0);
   }
 
-  function pickMention(m: Member) {
+  function pickMention(it: MentionItem) {
     if (!mention) return;
     const caret = mention.start + 1 + mention.query.length;
-    const insert = `@${labels.get(m.handle.toLowerCase()) ?? m.display_name} `;
+    const shown = it.kind === "person" ? (labels.get(it.member.handle.toLowerCase()) ?? it.member.display_name) : it.label;
+    const insert = `@${shown} `;
     const next = draft.slice(0, mention.start) + insert + draft.slice(caret);
     setDraft(next);
     setMention(null);

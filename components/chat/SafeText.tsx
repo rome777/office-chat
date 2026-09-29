@@ -3,6 +3,7 @@
 // 링크는 http·https 로 시작하는 것만 바꾼다 (TECH_SPEC 7절). `javascript:` 같은 주소는 글자 그대로 남는다.
 
 import { Fragment, type ReactNode } from "react";
+import { isGroupToken } from "@/lib/mentions";
 import s from "./chat.module.css";
 
 // 1: 주소, 2: 멘션. 멘션은 앞이 글자가 아닐 때만 인정한다 (a@b.com 같은 메일 주소는 멘션이 아니다)
@@ -27,9 +28,10 @@ export default function SafeText({
   /**
    * 주면 `@handle` 을 강조한다. `handles` 를 주면 그 안에 있는 것(채널 멤버)만 강조한다.
    * `me` 와 같으면 나를 부른 것으로 더 눈에 띄게 한다. 대소문자는 가리지 않는다.
-   * `names`(handle → 이름, lib/mentions)를 주면 아이디 대신 `@이름` 으로 보여 준다 — 멤버가 아니어도 이름으로, 강조만 하지 않는다
+   * `names`(handle → 이름, lib/mentions)를 주면 아이디 대신 `@이름` 으로 보여 준다 — 멤버가 아니어도 이름으로, 강조만 하지 않는다.
+   * `@모두`·`@부서` 는 `names` 에 있으면 늘 강조한다. `mine`(나를 부르는 글자: 내 handle·모두·내 부서들)에 있으면 나를 부른 것으로 본다
    */
-  mentions?: { me?: string; handles?: ReadonlySet<string>; names?: ReadonlyMap<string, string> };
+  mentions?: { me?: string; handles?: ReadonlySet<string>; names?: ReadonlyMap<string, string>; mine?: ReadonlySet<string> };
 }) {
   const out: ReactNode[] = [];
   let last = 0;
@@ -53,7 +55,8 @@ export default function SafeText({
       const name = mention.slice(1).toLowerCase();
       const label = mentions.names?.get(name);
       const shown = label ? `@${label}` : whole;
-      if (mentions.handles && !mentions.handles.has(name)) {
+      const group = isGroupToken(name) && !!label;
+      if (!group && mentions.handles && !mentions.handles.has(name)) {
         if (!label) continue; // 멤버가 아니고 모르는 사람이면 글자 그대로
         out.push(text.slice(last, start), shown); // 멤버가 아니면 이름으로만 (강조 없음)
         last = start + whole.length;
@@ -61,7 +64,7 @@ export default function SafeText({
       }
       out.push(text.slice(last, start));
       out.push(
-        <span key={start} className={`${s.mention} ${name === mentions.me?.toLowerCase() ? s.mentionMe : ""}`}>
+        <span key={start} className={`${s.mention} ${name === mentions.me?.toLowerCase() || mentions.mine?.has(name) ? s.mentionMe : ""}`}>
           {shown}
         </span>,
       );

@@ -1,7 +1,7 @@
 // ① 메시지 한 건
 
 import { formatBytes } from "@/lib/attachments";
-import { useMentionLabels } from "@/components/people/directory";
+import { useMentionLabels, useMyMentionTokens } from "@/components/people/directory";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
 import AttachmentView from "./AttachmentView";
 import SafeText from "./SafeText";
@@ -39,6 +39,7 @@ export function MessageItem({
   onOpenThread?: () => void;
 }) {
   const names = useMentionLabels(); // 멘션을 아이디 대신 이름으로 (lib/mentions)
+  const callsMe = useMyMentionTokens(myHandle); // @모두·@내 부서도 나를 부른 것으로 강조
   return (
     <article
       data-message-id={message.id}
@@ -55,7 +56,7 @@ export function MessageItem({
       </div>
       {message.body && (
         <p className={s.body}>
-          <SafeText text={message.body} mentions={{ me: myHandle, handles, names }} />
+          <SafeText text={message.body} mentions={{ me: myHandle, handles, names, mine: callsMe }} />
         </p>
       )}
       {files && files.length > 0 && <AttachmentView files={files} />}
