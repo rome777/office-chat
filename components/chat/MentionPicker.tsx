@@ -1,6 +1,7 @@
 "use client";
 
-// ① 입력창의 @ 자동완성 목록. 채널 멤버를 handle·이름으로 거른다. 고르면 "@handle " 로 바꿔 넣는다.
+// ① 입력창의 @ 자동완성 목록. 채널 멤버를 이름·부서·직급으로 거른다. 고르면 "@이름 " 을 넣고, 보낼 때 아이디로 바꿔 저장한다 (lib/mentions).
+// 아이디는 화면에 보이지 않는다 — 동명이인은 부서·직급으로 가린다 (2026-09-29).
 // 키보드(↑↓·Enter·Tab·Esc)는 Composer 가 받아서 이 목록을 움직인다.
 
 import type { Member } from "./useChannelMembers";
@@ -17,8 +18,8 @@ export function filterMembers(members: Member[], query: string, selfId: string |
   const q = query.toLowerCase();
   return members
     .filter((m) => m.id !== selfId)
-    .filter((m) => !q || m.handle.toLowerCase().includes(q) || m.display_name.toLowerCase().includes(q))
-    .sort((a, b) => Number(!a.handle.toLowerCase().startsWith(q)) - Number(!b.handle.toLowerCase().startsWith(q)))
+    .filter((m) => !q || [m.display_name, m.department, m.title].some((v) => (v ?? "").toLowerCase().includes(q)))
+    .sort((a, b) => Number(!a.display_name.toLowerCase().startsWith(q)) - Number(!b.display_name.toLowerCase().startsWith(q)))
     .slice(0, limit);
 }
 
@@ -46,8 +47,10 @@ export default function MentionPicker({
             onPick(m);
           }}
         >
-          <strong>{m.display_name}</strong> <span className="muted">@{m.handle}</span>
-          {m.department && <span className="muted"> · {m.department}</span>}
+          <strong>{m.display_name}</strong>
+          {[m.department, m.title].filter(Boolean).map((v) => (
+            <span key={v} className="muted"> · {v}</span>
+          ))}
         </li>
       ))}
     </ul>

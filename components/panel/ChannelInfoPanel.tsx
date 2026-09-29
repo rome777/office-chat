@@ -161,7 +161,7 @@ export default function ChannelInfoPanel() {
           {members.map((m) => (
             <li key={m.id}>
               <span>
-                <strong>{m.display_name}</strong> <span className="muted">@{m.handle}</span>
+                <strong>{m.display_name}</strong>
                 {m.department && <span className="muted"> · {m.department}</span>}
                 {roles[m.id] === "admin" && <span className={s.adminBadge}>관리자</span>}
                 {channelKind && m.can_invite && <span className={s.inviteBadge}>초대 권한</span>}

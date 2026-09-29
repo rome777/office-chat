@@ -12,6 +12,7 @@ export type Member = {
   handle: string;
   display_name: string;
   department: string | null;
+  title: string | null; // 직급 (@ 자동완성에서 동명이인을 가린다)
   can_invite: boolean; // 이 채널에 남을 넣고 초대 권한을 줄 수 있다 (만든 사람은 처음부터 true)
 };
 type Profile = Omit<Member, "can_invite">;
@@ -29,7 +30,7 @@ export function useChannelMembers(channelId: string) {
       // memberships → profiles 를 FK 로 붙여 한 번에 받는다
       const { data } = await supabase
         .from("memberships")
-        .select("user_id, can_invite, profiles(id, handle, display_name, department)")
+        .select("user_id, can_invite, profiles(id, handle, display_name, department, title)")
         .eq("channel_id", channelId);
       if (!alive || !data) return;
       setMembers(

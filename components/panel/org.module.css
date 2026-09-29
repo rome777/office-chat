@@ -88,14 +88,6 @@
   color: var(--accent-text);
 }
 
-.handle {
-  font-size: 12px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dm {
   flex: none;
   font-size: 12px;

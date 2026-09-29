@@ -5,11 +5,13 @@
 //   - 근거 메시지 번호가 보낸 목록에 없으면 버린다
 //   - 기한은 모델이 옮겨 적은 due_quote 가 그 근거 메시지에 실제로 있을 때만 인정한다. 아니면 "미정"(null)
 //   - 담당자는 그 채널 멤버(이름·handle)와 맞을 때만 인정한다. 아니면 "미정"(null)
+//   - 본문의 "@아이디" 는 "@이름" 으로 바꿔 보낸다 (lib/mentions) — 할 일 문장에 아이디가 섞여 나오지 않게. 기한 근거도 바꾼 본문과 맞춘다
 
 import { NextResponse, type NextRequest } from "next/server";
 import { AiError, complete } from "@/lib/ai/openai";
 import { logUsage, overLimit } from "@/lib/ai/usage";
 import { getServerSupabase } from "@/lib/supabase-server";
+import { mentionLabels, showMentions } from "@/lib/mentions";
 
 const MAX_MESSAGES = 200;
 const DEFAULT_RECENT = 50;
@@ -107,12 +109,16 @@ export async function POST(request: NextRequest) {
     .eq("channel_id", channelId);
   const members = (memberRows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean);
   const nameOf = new Map(members.map((m) => [m.id, m.display_name]));
+  const { data: everyone } = await supabase.from("profiles").select("handle, display_name, department").limit(1000);
+  const labels = mentionLabels(everyone ?? []);
+  const shown = (body: string) => showMentions(body, labels);
   const lines = messages.map((m) => {
     const who = m.author ?? (m.user_id ? nameOf.get(m.user_id) : undefined) ?? "알 수 없음";
     const when = seoul(new Date(m.created_at), { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-    return `[${m.id}] ${who} ${when}: ${m.body.replace(/\s+/g, " ").slice(0, 500)}`;
+    return `[${m.id}] ${who} ${when}: ${shown(m.body).replace(/\s+/g, " ").slice(0, 500)}`;
   });
-  const memberList = members.map((m) => `${m.display_name}(@${m.handle})`).join(", ") || "(없음)";
+  const labelOf = (m: Member) => labels.get(m.handle.toLowerCase()) ?? m.display_name;
+  const memberList = members.map(labelOf).join(", ") || "(없음)";
 
   try {
     const result = await complete({
@@ -133,7 +139,7 @@ export async function POST(request: NextRequest) {
     const findMember = (raw: unknown): Member | null => {
       if (typeof raw !== "string" || !raw.trim()) return null;
       const key = raw.trim().replace(/^@/, "").toLowerCase();
-      return members.find((m) => m.display_name.toLowerCase() === key || m.handle.toLowerCase() === key) ?? null;
+      return members.find((m) => [m.display_name, labelOf(m), m.handle].some((v) => v.toLowerCase() === key)) ?? null;
     };
 
     let dropped = 0;
@@ -149,7 +155,7 @@ export async function POST(request: NextRequest) {
         const quote = typeof it.due_quote === "string" ? it.due_quote.trim() : "";
         const dueOk =
           typeof it.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(it.due) && !Number.isNaN(Date.parse(it.due)) &&
-          quote.length > 0 && squash(evidence.body).includes(squash(quote));
+          quote.length > 0 && squash(shown(evidence.body)).includes(squash(quote));
         const who = findMember(it.assignee);
         return {
           task,

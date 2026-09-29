@@ -7,7 +7,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Person } from "@/lib/types/people";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import { getPeople } from "@/components/people/directory";
+import { getPeople, useMentionLabels } from "@/components/people/directory";
+import { showMentions } from "@/lib/mentions";
 import { listMyChannels, listMyDms } from "@/components/sidebar/channelSource";
 import { LockIcon } from "@/components/sidebar/ActionIcons";
 import { formatKstDay, formatKstTime } from "@/components/calendar/time";
@@ -30,6 +31,7 @@ export default function SearchBox() {
   const [tick, setTick] = useState(0);
   const [labels, setLabels] = useState<Map<string, { name: string; locked: boolean }>>(new Map());
   const [people, setPeople] = useState<Map<string, Person>>(new Map());
+  const mentionNames = useMentionLabels(); // 본문의 "@아이디" 를 "@이름" 으로 보이고, 이름으로도 멘션을 찾는다
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
 
@@ -47,7 +49,7 @@ export default function SearchBox() {
     let alive = true;
     setLoading(true);
     const timer = setTimeout(() => {
-      void searchMessages(trimmed, { channelId: onlyHere ? channel.id : undefined }).then(
+      void searchMessages(trimmed, { channelId: onlyHere ? channel.id : undefined, labels: mentionNames }).then(
         (r) => {
           if (!alive) return;
           setFound({ ...r, query: trimmed.normalize("NFC") });
@@ -67,7 +69,7 @@ export default function SearchBox() {
       alive = false;
       clearTimeout(timer);
     };
-  }, [trimmed, tooShort, onlyHere, channel.id, tick]);
+  }, [trimmed, tooShort, onlyHere, channel.id, tick, mentionNames]);
 
   // 결과에 보일 대화 이름과 작성자 이름
   useEffect(() => {
@@ -186,7 +188,7 @@ export default function SearchBox() {
           )}
           <ul id={listId} className={s.results} role="listbox" aria-label="검색 결과">
             {hits.map((h, i) => {
-              const [before, match, after] = snippet(h.body, found!.query);
+              const [before, match, after] = snippet(showMentions(h.body, mentionNames), found!.query);
               const who = h.user_id ? (people.get(h.user_id)?.display_name ?? "…") : (h.author ?? "익명");
               return (
                 <li
