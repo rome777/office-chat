@@ -355,3 +355,29 @@
 .channelActions + .section {
   margin-top: 16px;
 }
+
+/* ── 미읽음 배지 ── */
+
+.badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* 부서 표시가 있으면 배지는 그 옆에 붙인다 */
+.dmMeta + .badge {
+  margin-left: 6px;
+}
+
+/* 안 읽은 것이 있는 대화는 이름을 진하게 */
+.hasUnread .channelName {
+  font-weight: 700;
+}

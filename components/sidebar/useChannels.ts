@@ -2,9 +2,10 @@
 
 // ② 내가 가입한 채널 목록. 채널을 만들거나 가입하면 쓰는 곳 모두 함께 갱신된다.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ChannelSummary, DmSummary } from "@/lib/types/channel";
 import { listMyChannels, listMyDms, subscribeChannels } from "./channelSource";
+import { getUnread, subscribeUnread } from "./unread";
 
 export function useMyChannels(): { channels: ChannelSummary[] | null; error: string | null } {
   const [channels, setChannels] = useState<ChannelSummary[] | null>(null);
@@ -68,4 +69,13 @@ export function useMyDms(): { dms: DmSummary[] | null; error: string | null } {
   }, []);
 
   return { dms, error };
+}
+
+/** 채널 하나의 미읽음 수. 저장소(unread.ts)가 바뀔 때만 다시 그린다 */
+export function useUnread(channelId: string): number {
+  return useSyncExternalStore(
+    subscribeUnread,
+    () => getUnread(channelId),
+    () => 0, // 서버에서 그릴 때는 모른다
+  );
 }

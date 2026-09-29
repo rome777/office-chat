@@ -213,6 +213,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - `memberships` DELETE 는 실시간 필터를 걸 수 없어서 전부 받고 `channel_id` 로 거른다.
 - Step 1 익명 메시지(작성자 없음)는 멤버 전원이 대상이다.
 
+**구현 (2026-09-29, ② `components/sidebar/unread.ts`)** — 채널·DM 목록의 미읽음 배지
+
+- 미읽음 수 = `last_read_message_id` 보다 큰 **최상위(`parent_id` 없음)·지우지 않은** 메시지 가운데 남이 쓴 것(익명 포함). ① 이 최상위 메시지로만 읽음을 남기므로 답글은 세지 않는다 — 답글까지 세면 스레드에만 답이 달린 채널은 배지가 줄지 않는다.
+- 채널마다 개수만 묻는다 (`count: exact, head: true`). 왼쪽 칸과 헤더 목록이 모듈 하나의 저장소를 같이 본다.
+- 실시간: `messages` INSERT·UPDATE(RLS 로 내가 볼 수 있는 행만 온다)와 내 `read_positions` 를 구독해서 **그 채널만** 300ms 모아 다시 센다. 가입·탈퇴는 채널 목록 구독(`subscribeChannels`)이 알려 주면 전부 다시 센다. 구독이 붙을 때마다 전부 다시 센다.
+- 지금 보고 있는 대화에는 숫자를 띄우지 않는다 (보는 동안 ① 이 읽음을 남긴다). 99 를 넘으면 `99+`.
+
 ### 알림 (F3-5)
 
 **만들기 (DB)** — `messages` INSERT 트리거가 받는 사람을 정해 `notifications` 를 넣는다.

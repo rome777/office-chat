@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { GENERAL_ID } from "./channelSource";
 import NewDmDialog from "./NewDmDialog";
+import ChannelRowButton from "./ChannelRowButton";
 import { useMyDms } from "./useChannels";
 import s from "./sidebar.module.css";
 
@@ -53,11 +54,10 @@ export default function DmList({
           const active = d.id === channel.id;
           return (
             <li key={d.id}>
-              <button
-                type="button"
-                className={`${s.item} ${s.channelButton} ${active ? s.active : ""}`}
-                aria-current={active ? "page" : undefined}
-                aria-label={`${d.other.display_name} 님과 DM`}
+              <ChannelRowButton
+                channelId={d.id}
+                label={`${d.other.display_name} 님과 DM`}
+                active={active}
                 onClick={() => go(d.id, d.other.display_name)}
               >
                 <span aria-hidden="true">@</span>
@@ -67,7 +67,7 @@ export default function DmList({
                     {d.other.department}
                   </span>
                 )}
-              </button>
+              </ChannelRowButton>
             </li>
           );
         })}

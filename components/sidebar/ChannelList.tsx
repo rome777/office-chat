@@ -8,6 +8,7 @@ import type { ChannelSummary } from "@/lib/types/channel";
 import BrowseChannelsDialog from "./BrowseChannelsDialog";
 import CreateChannelDialog from "./CreateChannelDialog";
 import { GENERAL_ID } from "./channelSource";
+import ChannelRowButton from "./ChannelRowButton";
 import { useMyChannels } from "./useChannels";
 import s from "./sidebar.module.css";
 
@@ -51,16 +52,15 @@ export default function ChannelList({
           const active = c.id === channel.id;
           return (
             <li key={c.id}>
-              <button
-                type="button"
-                className={`${s.item} ${s.channelButton} ${active ? s.active : ""}`}
-                aria-current={active ? "page" : undefined}
-                aria-label={c.type === "private" ? `${c.name} (비공개)` : c.name}
+              <ChannelRowButton
+                channelId={c.id}
+                label={c.type === "private" ? `${c.name} (비공개)` : c.name}
+                active={active}
                 onClick={() => open(c)}
               >
                 <span aria-hidden="true">{c.type === "private" ? "🔒" : "#"}</span>
                 <span className={s.channelName}>{c.name}</span>
-              </button>
+              </ChannelRowButton>
             </li>
           );
         })}
