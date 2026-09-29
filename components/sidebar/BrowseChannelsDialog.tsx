@@ -103,7 +103,7 @@ export default function BrowseChannelsDialog({
                   disabled={joining !== null}
                   onClick={() => void join(c)}
                 >
-                  {joining === c.id ? "가입 중…" : "가입"}
+                  {joining === c.id ? "참여 중…" : "참여"}
                 </button>
               )}
             </li>
