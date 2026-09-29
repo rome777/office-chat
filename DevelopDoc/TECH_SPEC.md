@@ -32,7 +32,7 @@
 | DB | Supabase Postgres | 관계형 데이터, RLS, 전문 검색 확장 |
 | 실시간 | Supabase Realtime (Postgres Changes) | DB 변경을 구독 → 원칙 1 이 자동으로 지켜진다 |
 | 파일 | Supabase Storage (비공개 버킷) | 서명 URL 로 권한 있는 사람만 다운로드 |
-| AI | **OpenAI** (2026-09-29 결정, 기본 모델 `gpt-4o-mini`, `OPENAI_MODEL` 로 바꿈), 서버에서만 호출 | 키가 브라우저에 노출되지 않는다 |
+| AI | **OpenAI** `gpt-4o-mini` (2026-09-29 결정), 서버에서만 호출 | 키가 브라우저에 노출되지 않는다 |
 | 배포 | Vercel | PR 마다 미리보기 URL |
 
 **버린 대안**: Socket.IO 직접 구현은 가장 많이 배우지만, 인증·저장·권한까지 3일 안에 직접 만들기 어렵다.
@@ -388,7 +388,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 ### 공통 모듈과 말투 변환 (2026-09-29)
 
-- `lib/ai/openai.ts` 의 `complete({ system, user, maxTokens, json })` 하나로 부른다. 20초가 넘으면 "AI 응답이 늦습니다". 키가 없거나 틀리거나 제공자 한도에 걸리면 화면에 그대로 보여 줄 문구로 `AiError` 를 던진다.
+- `lib/ai/openai.ts` 의 `complete({ system, user, maxTokens, json })` 하나로 부른다. 모델(`gpt-4o-mini`)과 가격(100만 토큰당 입력 0.15·출력 0.60 달러, 2026-09-29 OpenAI 가격 페이지)은 이 파일의 상수다. 비용은 이 가격으로 계산해 `ai_usage_logs.cost_usd` 에 남긴다. 환경 변수는 `OPENAI_API_KEY` 하나. 20초가 넘으면 "AI 응답이 늦습니다". 키가 없거나 틀리거나 제공자 한도에 걸리면 화면에 그대로 보여 줄 문구로 `AiError` 를 던진다.
 - `lib/ai/usage.ts`: `overLimit()` 가 본인 `ai_usage_logs` 를 세어 분당 5회·하루 100회를 검사한다 (실제로 AI 를 부른 `ok`·`error`·`timeout` 만 센다). `logUsage()` 가 모든 요청을 남긴다 — 상한에 걸리면 `rate_limited`, 키가 없으면 `denied`.
 - 말투 변환 `POST /api/ai/tone` 은 바꾼 문장만 돌려주고 **보내지 않는다**. 화면의 🎭 버튼 → 모드 선택 → 미리보기 → "이걸로 보내기"를 눌러야 전송된다. 실패하면 "원래 문장 보내기".
   원문을 고치면 미리보기를 닫는다 (바뀐 문장이 원문과 어긋나지 않게). 멘션·주소·숫자는 그대로 두라고 지시한다.
@@ -453,8 +453,6 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 브라우저·서버 | 공개 키 (RLS 적용) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **서버만** | RLS 를 건너뛴다. 시드·첨부 검사 전용 |
 | `OPENAI_API_KEY` | **서버만** | AI 호출 (2026-09-29 제공자 OpenAI 로 결정). 없으면 AI 기능은 "AI 키가 설정되지 않았습니다"를 띄우고 채팅은 그대로 된다 |
-| `OPENAI_MODEL` | 서버만 | 없으면 `gpt-4o-mini` |
-| `OPENAI_PRICE_INPUT_PER_1M` · `OPENAI_PRICE_OUTPUT_PER_1M` | 서버만 | 100만 토큰당 달러. `ai_usage_logs.cost_usd` 계산에 쓴다. 없으면 비용을 0 으로 기록한다. `gpt-4o-mini` 표준 가격은 입력 0.15·출력 0.60 (2026-09-29, platform.openai.com/docs/pricing). 모델을 바꾸면 가격도 바꾼다 |
 | `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:users`) 비밀번호 |
 
 값은 `.env.local` 과 Vercel 환경 변수에만 둔다. 저장소에는 이름만 적은 `.env.example` 을 올린다.
