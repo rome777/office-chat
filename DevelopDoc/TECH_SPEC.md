@@ -88,11 +88,15 @@ erDiagram
   events ||--o{ event_attendees : ""
   profiles ||--o{ event_attendees : "참석자"
   events ||--o{ notifications : ""
+  org_units ||--o{ org_units : "상위 조직"
+  org_units ||--o{ profiles : "소속"
+  org_units ||--|| channels : "부서 채널"
 ```
 
 | 테이블 | 주요 컬럼 | 비고 |
 |---|---|---|
-| `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`, `role`(`admin`·`member`) | 로그인한 사람은 모두 조회 가능 (조직도 검색). `role` 은 본인이 못 바꾼다 |
+| `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`(직급), `role`(`admin`·`member`), `org_unit_id`(소속, 2026-09-29) | 로그인한 사람은 모두 조회 가능 (조직도 검색). `role`·`org_unit_id` 는 본인이 못 바꾼다 |
+| `org_units` | `id`, `name`, `kind`(`company`·`division`·`hq`·`team` = 회사·사업부·본부·팀), `parent_id`, `leader_id`(조직의 장), `channel_id`(유일), `sort_order` | 조직도 (2026-09-29 추가, 아래 "조직도·부서 채널"). 조직마다 대화방이 하나. 회사는 `#일반` |
 | `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at` | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값 |
 | `memberships` | `channel_id`, `user_id`, `joined_at` | 기본 키 (channel_id, user_id) |
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
@@ -139,6 +143,17 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 사용자를 지우면 그 사람의 profiles·멤버십·회의는 같이 지워지지만, **메시지가 남아 있으면 지워지지 않는다** (작성자 FK). 계정은 지우지 말고 비활성화한다
 - 알림을 만드는 트리거(멘션·스레드 답글·DM·일정)와 10분 전 알림 `pg_cron` 작업은 **아직 없다** — 알림 작업(③)에서 새 마이그레이션으로 추가한다
 
+### 조직도·부서 채널 (2026-09-29, `20260929145000_org_units.sql`)
+
+v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이다 (시연 회사의 직급·부서를 보여 주고, 로그인하면 자기 부서 채널이 이미 있게).
+
+- 조직은 회사 → 사업부 → 본부 → 팀. 본부가 회사 바로 밑에 있어도 된다 (시드의 경영지원본부). 맨 위(회사)만 `parent_id` 가 비고, 그 채널은 `#일반` 이다
+- 조직을 넣을 때 `channel_id` 를 주지 않으면 **트리거가 같은 이름의 비공개 채널을 만든다** (`created_by` 없음). 조직 이름을 바꾸면 채널 이름도 바뀐다
+- 사람의 소속은 `profiles.org_unit_id` 하나다. 정해지거나 바뀌면 트리거(`sync_org_memberships`)가 **그 조직과 모든 상위 조직의 채널에 넣고, 나머지 부서 채널에서는 뺀다** (관리자가 손님으로 넣어 둔 다른 부서 채널도 빠진다). 조직을 다른 상위 조직 밑으로 옮기면 그 아래 사람을 모두 다시 맞춘다
+- 직급은 `profiles.title`, 직책(대표·사업부장·본부장·팀장)은 따로 저장하지 않고 `org_units.leader_id` 로 정한다. 조직의 장은 자기가 이끄는 조직에 속한다 (본부장은 본부 채널까지, 그 밑 팀 채널에는 없다)
+- `profiles.department` 는 그대로 두고 시드가 소속 조직 이름을 넣는다 (사람 찾기가 부서 이름으로 찾는다)
+- 여기서 한 것이 **upsert 로는 안 된다**: `insert ... on conflict` 도 before insert 트리거가 먼저 돌아 채널이 하나 더 생긴다. 시드는 있는지 먼저 보고 insert·update 를 나눈다
+
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
 권한 테스트가 전부 RLS 에 달려 있으므로, 이후 변경도 정책 전체를 함께 보고 반영한다.
 
@@ -147,7 +162,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | 테이블 | 읽기 | 쓰기 |
 |---|---|---|
 | `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만 |
-| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 비공개 채널 추가와 멤버 제거는 관리자만 |
+| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 비공개 채널 추가와 멤버 제거는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
+| `org_units` | 로그인 사용자 모두 | 서버·시드만 (클라이언트 쓰기 권한 없음). 소속(`profiles.org_unit_id`)도 update 컬럼 권한이 없어 서버만 바꾼다 — 소속이 곧 부서 채널 멤버십이라서 |
 | `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에) |
 | `attachments` | 그 채널의 멤버 | 서버 API 만 |
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
@@ -388,6 +404,14 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **구현 (2026-09-29, `ChannelInfoPanel`)**: 채널 종류·멤버 목록(관리자 표시)·관리자에게만 "내보내기"와 "멤버 추가"(② 의 `PeoplePicker`)·관리자에게만 이 채널의 관리 기록(`admin_logs` 를 `target->>channel_id` 로 거름)·"이 채널에서 나가기"(DM 과 `#일반` 은 없음).
   권한이 없으면 RLS 가 0건을 지우므로(오류가 아님) 지운 행 수로 성공을 판단한다. 멤버 목록은 실시간으로 바뀐다 (`useChannelMembers`).
 
+### 조직도 (2026-09-29, ③ `OrgChartPanel`)
+
+- 헤더의 "조직도" 버튼 → 오른쪽 패널. **지금 채널이 부서 채널이면 그 부서와 하위 조직만**, 그 밖(프로젝트 채널·DM)에서는 회사 전체를 보여 준다
+- 위쪽 경로(회사 › 사업부 › 본부 › 팀)를 누르면 범위가 넓어지고, 하위 조직의 "보기"로 좁힌다. 채널을 바꾸면 그 채널의 부서로 돌아간다
+- 조직마다 장을 맨 위에(직책 배지), 나머지는 직급(`RANK_ORDER`, `lib/types/org.ts`) → 이름 순. 인원 수는 하위 조직까지 합친 수
+- 사람의 "메시지"를 누르면 ② 의 `startDm` 으로 DM 을 열고 패널을 닫는다
+- `org_units` 와 소속 있는 `profiles` 를 한 번에 받아 1분 동안 기억한다 (`orgSource.ts`). 조직이 적어 나무 모양은 브라우저에서 만든다
+
 ### 안전한 출력 (F4-6)
 
 - 메시지는 React 기본 텍스트 출력만 쓴다. `dangerouslySetInnerHTML` 은 쓰지 않는다.
@@ -467,22 +491,22 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
-│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
+│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · OrgChartPanel(조직도) · orgSource(org_units)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
 │  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
 │  ├─ ai/                         AI 공통 — openai.ts(호출·시간 초과·비용) · usage.ts(요청 상한·ai_usage_logs 기록). ① 이 말투 변환 때 만들었고 요약·할 일(③)도 쓴다
 │  ├─ tone.ts                     ① 말투 변환 모드 (신하·선비·정중) — 입력창과 서버가 같이 씀
-│  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③
+│  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③ · org.ts ③
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · seed-10k (예정)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · seed-10k · seed-company(시연 회사)
 └─ .env.example
 ```
 
-오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다.
+오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 패널은 다섯 가지다: `thread` ① · `summary` · `todos` · `channelInfo` · `orgChart` ③ (`orgChart` 는 2026-09-29 에 공통 틀에 한 줄 추가).
 
 ## 10. 환경 변수
 
@@ -492,7 +516,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 브라우저·서버 | 공개 키 (RLS 적용) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **서버만** | RLS 를 건너뛴다. 시드·첨부 검사 전용 |
 | `OPENAI_API_KEY` | **서버만** | AI 호출 (2026-09-29 제공자 OpenAI 로 결정). 없으면 AI 기능은 "AI 키가 설정되지 않았습니다"를 띄우고 채팅은 그대로 된다 |
-| `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:users`) 비밀번호 |
+| `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:company`) 비밀번호 |
 
 값은 `.env.local` 과 Vercel 환경 변수에만 둔다. 저장소에는 이름만 적은 `.env.example` 을 올린다.
 
@@ -562,6 +586,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
+| `supabase/migrations/20260929145000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -575,7 +600,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 15개). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
-| `scripts/seed-users.mjs` | 시연 계정 4명 만들기 (`npm run seed:users`). 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 이미 있으면 비밀번호·이름·역할만 맞춘다 |
+| `scripts/seed-company.mjs` | 시연 회사 만들기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함): 조직 17개·직원 37명(원래 시연 계정 4명 포함)·프로젝트 채널 2개·샘플 대화·샘플 회의·회의실. 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 여러 번 돌려도 되고, 있는 것은 이름·소속·직급·비밀번호만 맞춘다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
@@ -620,7 +645,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
 - **`supabase db query` 는 한 번에 SQL 문장 하나만 받는다**: 여러 문장을 넣으면 `cannot insert multiple commands into a prepared statement`. 마이그레이션을 미리 시험하려면 트랜잭션으로 묶어 되돌릴 수 있는 Postgres 클라이언트가 필요하다 (2026-09-29 에는 임시 폴더에 `pg` 를 깔아 `begin; …; rollback;` 으로 시험했다). Docker 가 없어 로컬 Supabase(`supabase start`)는 못 띄운다.
 - **가입하면 "메일을 너무 자주 보냈습니다"(rate limit)로 막힌다**: 가입 확인 메일을 Supabase 기본 메일 서버로 보내는데, 시간당 보낼 수 있는 수가 아주 적다 (2026-09-29 로컬 시험 중 발생).
-  시험 계정은 `npm run seed:users` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
+  시험 계정은 `npm run seed:company` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
 - **Next.js 는 페이지를 이동할 때(`router.push`) 탭 제목을 다시 씌운다**: `document.title` 에 붙인 알림 수 `(N)` 이 이동할 때마다 사라진다 (2026-09-29). 알림 버튼이 1초마다 확인해서 빠졌으면 다시 붙인다.
@@ -629,3 +654,4 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
   구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.
+- **`supabase db push` 는 올리지 않은 마이그레이션을 전부 올린다**: 다른 사람이 아직 작업 중인 파일이 폴더에 있으면 그것까지 원격에 들어간다. 적용 전에 `npx supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"` 으로 무엇이 올라갈지 본다. 파일 이름의 시각이 이미 적용된 것보다 앞서면 `db push` 가 거부한다 (`--include-all` 필요) (2026-09-29, `20260929145000_org_units` 를 만들 때 `20260929150000_invite_rights` 가 적용 전이었다)

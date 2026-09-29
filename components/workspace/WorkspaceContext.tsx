@@ -12,7 +12,8 @@ export type PanelState =
   | { kind: "thread"; messageId: number } // ① 스레드
   | { kind: "summary" } // ③ AI 요약
   | { kind: "todos" } // ③ AI 할 일
-  | { kind: "channelInfo" }; // ③ 채널 정보(멤버·내보내기·관리 기록)
+  | { kind: "channelInfo" } // ③ 채널 정보(멤버·내보내기·관리 기록)
+  | { kind: "orgChart" }; // ③ 조직도 (부서 채널이면 그 부서만)
 
 export type Me = { name: string };
 
