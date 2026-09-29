@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import ChannelList from "./ChannelList";
+import DmList from "./DmList";
 import s from "./sidebar.module.css";
 
 export default function ChannelTitle() {
@@ -43,10 +44,17 @@ export default function ChannelTitle() {
           className={s.titleButton}
           aria-expanded={open}
           aria-controls={switcherId}
-          aria-label={`${channel.name}${channel.type === "private" ? " (비공개)" : ""} 채널 — 채널 목록`}
+          aria-label={
+            channel.type === "dm"
+              ? `${channel.name} 님과 DM — 채널 목록`
+              : `${channel.name}${channel.type === "private" ? " (비공개)" : ""} 채널 — 채널 목록`
+          }
           onClick={() => setOpen((v) => !v)}
         >
-          <span aria-hidden="true">{channel.type === "private" ? "🔒" : "#"}</span> {channel.name}
+          <span aria-hidden="true">
+            {channel.type === "dm" ? "@" : channel.type === "private" ? "🔒" : "#"}
+          </span>{" "}
+          {channel.name}
           <span className={s.caret} aria-hidden="true">
             ▾
           </span>
@@ -55,6 +63,8 @@ export default function ChannelTitle() {
       {open && (
         <div id={switcherId} className={s.switcher} role="region" aria-label="채널 바꾸기">
           <ChannelList onPicked={() => setOpen(false)} />
+          <p className={s.switcherSection}>다이렉트 메시지</p>
+          <DmList onPicked={() => setOpen(false)} />
           <Link href="/calendar" className={`${s.item} ${s.link} ${s.switcherCalendar}`}>
             캘린더
           </Link>

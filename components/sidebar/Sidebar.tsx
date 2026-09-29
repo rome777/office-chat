@@ -1,9 +1,10 @@
 "use client";
 
-// ② 왼쪽 칸. 채널 목록·채널 만들기·채널 찾기, 캘린더 링크. 미읽음 배지·DM 목록이 여기에 붙는다.
+// ② 왼쪽 칸. 채널 목록·채널 만들기·채널 찾기, DM 목록·새 메시지, 캘린더 링크. 미읽음 배지가 여기에 붙는다.
 
 import Link from "next/link";
 import ChannelList from "./ChannelList";
+import DmList from "./DmList";
 import s from "./sidebar.module.css";
 
 export default function Sidebar() {
@@ -13,6 +14,8 @@ export default function Sidebar() {
       <p className={s.section}>채널</p>
       {/* 왼쪽 칸은 좁은 화면에서도 숨겨질 뿐 늘 그려지므로, 여기서 "보던 채널에서 빠짐"을 처리한다 */}
       <ChannelList guardCurrent />
+      <p className={s.section}>다이렉트 메시지</p>
+      <DmList syncCurrent />
       <p className={s.section}>일정</p>
       <ul className={s.list}>
         <li>

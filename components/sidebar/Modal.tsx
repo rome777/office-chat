@@ -20,6 +20,8 @@ export default function Modal({ onClose, children }: { onClose: () => void; chil
     // 초점이 어디에 있든 Esc 로 닫는다. preventDefault 로 헤더의 채널 목록이 같이 닫히지 않게 알린다
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // 안쪽 입력창이 Esc 를 스스로 처리하면(예: 사람 찾기의 검색어 지우기) 닫지 않는다
+      if ((e.target as Element | null)?.closest?.("[data-own-escape]")) return;
       e.preventDefault();
       close.current();
     };

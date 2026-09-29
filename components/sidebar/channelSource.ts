@@ -6,8 +6,9 @@
 //   memberships 조회 — 같은 채널 멤버끼리만 → 가입 안 한 공개 채널의 멤버 수는 알 수 없다 (null)
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import type { ChannelSummary, ChannelType } from "@/lib/types/channel";
+import type { ChannelSummary, ChannelType, DmSummary } from "@/lib/types/channel";
 import { getSupabase } from "@/lib/supabase";
+import { getPeople } from "@/components/people/directory";
 
 /** DB 의 channels_name 제약과 같다 */
 export const NAME_MAX = 40;
@@ -84,6 +85,9 @@ export function channelNameProblem(raw: string): string | null {
 }
 
 // ── 공통 ────────────────────────────────────────────────────
+
+/** 로그인한 나 (DM 상대 고르기에서 나를 빼는 데도 쓴다) */
+export const getMyUserId = () => myId();
 
 async function myId(): Promise<string> {
   // 쿠키의 세션에서 읽는다 (네트워크 없음). 권한은 어차피 DB 가 토큰으로 다시 확인한다
@@ -224,4 +228,50 @@ export async function joinChannel(channelId: string): Promise<ChannelSummary> {
   if (readError) throw friendly(readError);
   const counts = await memberCounts([channelId]);
   return summarize(data as Row, true, counts.get(channelId));
+}
+
+// ── DM ──────────────────────────────────────────────────────
+// DM 은 멤버 2명인 채널이다 (type = 'dm'). 만들기는 create_dm(other_user_id) 로만 한다 —
+// 같은 두 사람이면 dm_key 가 같아서 몇 번을 불러도 대화방은 하나다. 관리자도 남의 DM 은 못 본다 (RLS).
+// 남이 나에게 DM 을 시작하면 내 memberships 가 생기므로, 위의 실시간 구독이 목록을 다시 불러온다.
+
+/** 내 DM 목록. 상대 이름순.
+ *  왼쪽 칸과 헤더 목록이 같은 이벤트로 동시에 부르므로, 진행 중인 요청이 있으면 그 결과를 같이 쓴다 */
+let dmsInFlight: Promise<DmSummary[]> | null = null;
+export function listMyDms(): Promise<DmSummary[]> {
+  dmsInFlight ??= fetchMyDms().finally(() => {
+    dmsInFlight = null;
+  });
+  return dmsInFlight;
+}
+
+async function fetchMyDms(): Promise<DmSummary[]> {
+  const me = await myId();
+  // mine: 내 멤버십이 있는 DM 만 (inner join), all: 그 DM 의 두 멤버 — 같은 채널 멤버라서 상대 행도 읽힌다
+  const { data, error } = await getSupabase()
+    .from("channels")
+    .select("id, mine:memberships!inner(user_id), all:memberships(user_id)")
+    .eq("mine.user_id", me)
+    .eq("type", "dm");
+  if (error) throw friendly(error);
+  const pairs = ((data ?? []) as { id: string; all: { user_id: string }[] }[])
+    .map((d) => ({ id: d.id, other: d.all.find((m) => m.user_id !== me)?.user_id }))
+    .filter((d): d is { id: string; other: string } => Boolean(d.other)); // 상대가 탈퇴한 DM 은 뺀다
+  const people = new Map((await getPeople(pairs.map((d) => d.other))).map((p) => [p.id, p]));
+  return pairs
+    .map((d) => ({ id: d.id, other: people.get(d.other)! })) // getPeople 은 모르는 id 도 자리표시로 돌려준다
+    .sort((a, b) => a.other.display_name.localeCompare(b.other.display_name, "ko"));
+}
+
+/** 상대와의 DM 을 열거나(이미 있으면 그 방) 새로 만든다. 채널 id 를 돌려준다 */
+export async function startDm(otherUserId: string): Promise<string> {
+  const { data, error } = await getSupabase().rpc("create_dm", { other_user_id: otherUserId });
+  if (error) {
+    if (error.code === "22023") throw new Error("DM 상대가 올바르지 않습니다");
+    throw friendly(error);
+  }
+  // DM 을 만들기 전에 시작된 목록 요청을 같이 쓰면 새 DM 이 빠진 목록을 받는다 → 새로 받게 한다
+  dmsInFlight = null;
+  notifyChannelsChanged();
+  return data as string;
 }
