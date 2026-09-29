@@ -230,11 +230,14 @@
 
 /* 첨부 */
 .attachButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
+  color: inherit;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 10px;
-  font-size: 18px;
 }
 
 .fileRow {
