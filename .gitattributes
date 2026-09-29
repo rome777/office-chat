@@ -1,0 +1,17 @@
+# 줄바꿈을 LF 로 고정한다 (2026-09-29).
+# 팀원마다 운영체제·편집기·AI 도구가 달라서, 윈도우에서 저장하면 파일 전체가 CRLF 로 바뀌어
+# 내용은 같은데 모든 줄이 바뀐 것처럼 보이고 머지 충돌이 났다 (PR #16 의 README.md).
+# 이 설정이 있으면 저장소에는 늘 LF 로 들어가고, 꺼낼 때도 LF 로 나온다.
+
+* text=auto eol=lf
+
+# 글자가 아닌 파일은 줄바꿈을 건드리지 않는다
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary

@@ -346,6 +346,7 @@
 .field input,
 .field select,
 .field textarea,
+.timeSelect select,
 .roomBoardHead input,
 .dialog input {
   font: inherit;
@@ -419,4 +420,16 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+}
+
+/* 시·분 목록 두 개를 한 칸에 붙인다 */
+.timeSelect {
+  display: flex;
+  gap: 4px;
+}
+
+.timeSelect select {
+  flex: 1;
+  min-width: 68px;
+  cursor: pointer;
 }

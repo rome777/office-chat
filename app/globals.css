@@ -1,7 +1,10 @@
 /* 공통 — 색·글꼴 같은 공통 값과 기본 모양만 둔다.
    화면별 스타일은 각 컴포넌트 옆의 *.module.css 에 쓴다 (여러 사람이 이 파일에 덧붙이면 충돌한다). */
 
+/* 테마: 사용자가 고른 것(html 의 data-theme, ② components/sidebar/theme.ts)이 있으면 그것을, 없으면 컴퓨터 설정을 따른다.
+   color-scheme 은 스크롤바·체크박스·날짜 칸 같은 브라우저 기본 부품도 테마에 맞추라는 표시다 (없으면 다크에서 흰색으로 튄다) */
 :root {
+  color-scheme: light dark;
   --bg: #f7f7f8;
   --surface: #ffffff;
   --text: #1d1d1f;
@@ -15,8 +18,13 @@
   --bad: #e03131;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #161618;
     --surface: #1f1f23;
     --text: #ececf1;
@@ -26,6 +34,19 @@
     --accent-text: #0d0d10;
     --mine: #262b40;
   }
+}
+
+/* 컴퓨터가 라이트여도 다크를 고르면 (위와 같은 값) */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161618;
+  --surface: #1f1f23;
+  --text: #ececf1;
+  --muted: #9a9aa5;
+  --border: #33333a;
+  --accent: #6b8afd;
+  --accent-text: #0d0d10;
+  --mine: #262b40;
 }
 
 * {

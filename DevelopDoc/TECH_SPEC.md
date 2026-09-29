@@ -5,8 +5,8 @@
 
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
-> **현재 구현 (2026-09-29)**: **DB v1(4·5절)이 원격 Supabase 에 적용돼 있다.** `develop` 은 이메일 로그인 뒤 `#일반` 채널에서 대화한다.
-> 운영 배포(https://office-chat-two.vercel.app)는 아직 Step 1 화면(로그인 없음)이라, `#일반` 한 채널만 익명으로 읽고 쓰는 **임시 호환**을 DB 에 남겨 뒀다 (13절).
+> **현재 구현 (2026-09-29)**: **DB v1(4·5절)이 원격 Supabase 에 적용돼 있고, 운영 배포(https://office-chat-two.vercel.app)도 로그인 버전이다** (2026-09-29 16:01, PR #14).
+> 운영 URL 에서 `check:attach` 20개·`check:ai` 19개 통과. 익명으로 `#일반` 을 쓰던 **Step 1 임시 호환**은 DB 에 아직 남아 있다 — 이제 쓰는 화면이 없으니 없앤다 (13절).
 > 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
 
 ---
@@ -294,7 +294,12 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **회의 고치기는 한 번에 저장되지 않는다**: `events` 수정 뒤 `event_attendees` 추가·삭제를 따로 부른다 (한 번에 고치는 DB 함수가 없다). 참석자 저장이 실패하면 회의 내용만 바뀐 채 남으므로 화면에 "회의는 고쳤지만 참석자를 …하지 못했습니다"를 띄운다. 자주 문제가 되면 `update_event(...)` 함수를 만든다.
 - **DB 시각 문자열은 `+00:00` 형식이다**: 화면에서 만든 `toISOString()`(`Z`)과 글자로 비교하면 같은 시각도 다르게 나온다. 시각 비교는 밀리초(`Date.getTime()`)로만 한다 (`components/calendar/time.ts` 의 `toMs`).
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
-- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. `<input type="datetime-local">` 값은 한국 시각으로 보고 변환한다.
+- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. 회의 폼의 날짜(`<input type="date">`)와 시·분 목록 값은 한국 시각으로 보고 변환한다 (`time.ts` 의 `fromKstInput`).
+- **시각 입력은 `<input type="time">` 을 쓰지 않는다** (2026-09-29): Chrome 의 시간 선택은 12 다음에 1 로 끝없이 도는 바퀴이고 오전·오후가 헷갈린다. `TimeSelect` 가 시(00~23)·분(5분 단위) 목록 두 개로 받는다. 시작을 바꾸면 끝이 원래 간격(없거나 거꾸로면 1시간)만큼 따라가고, 23:55 를 넘지 않는다.
+- **다크 모드에서 브라우저 기본 부품(스크롤바·체크박스·라디오·날짜 칸 아이콘)이 흰색으로 튄다** → 공통 `globals.css` 의 `:root` 에 `color-scheme` 을 둔다 (2026-09-29, 팀에 알리고 공통 파일을 고침). 이것이 없으면 브라우저가 자기 부품을 늘 라이트로 그린다. 화면별 CSS 에 `color-scheme` 을 따로 두지 않는다 — 사용자가 고른 테마와 어긋난다.
+- **라이트·다크 테마 (②, `components/sidebar/theme.ts`·`ThemeToggle.tsx`)**: 헤더·캘린더·로그인의 해·달 스위치(선 아이콘 두 칸, 누른 쪽 적용). 고르면 쿠키 `office-chat-theme` 에 1년 기억하고 `<html data-theme="light|dark">` 를 건다. 고르지 않았으면 컴퓨터 설정(`prefers-color-scheme`)을 따른다. `globals.css` 는 `data-theme` 가 있으면 그것을, 없으면 컴퓨터 설정을 쓴다.
+  - **깜빡임 없음**: `app/layout.tsx`(공통, 2026-09-29 팀에 알림)가 쿠키를 읽어 서버에서 `data-theme` 를 붙여 보낸다. `light`·`dark` 가 아닌 값은 무시한다. 그래서 레이아웃이 요청마다 그려진다(`ƒ`).
+  - 스위치의 켜진 칸은 CSS 가 `data-theme`·컴퓨터 설정을 보고 정한다 (서버에서 그린 첫 화면부터 맞음). 다른 탭에서 바꾸면 `localStorage` 의 `storage` 이벤트로 따라간다.
 - **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
 
 ### 첨부 (F3-2)
@@ -512,6 +517,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `?m=<메시지 id>`(① 이 이동·강조), 회의는 `/calendar?e=<회의 id>`(②).
   `?m=` 은 새로고침 없이 `router.push` 로 붙여도 동작하고, ① 이 처리한 뒤 주소에서 `m` 만 지운다 (같은 메시지로 다시 이동할 수 있게). 없는 메시지면 가운데 칸에 안내가 뜬다.
 - **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM 은 SDK 를 넣지 않고 REST API 를 `fetch` 로 부른다 (`lib/ai/openai.ts`, 2026-09-29).
+- **줄바꿈은 LF 로 고정한다** (`.gitattributes`, 2026-09-29): 윈도우에서 저장해도 저장소에는 LF 로 들어간다. 없을 때는 README 가 통째로 CRLF 로 바뀌어 모든 줄이 바뀐 것처럼 보이고 머지 충돌이 났다 (PR #16). 이미지·PDF 는 바이너리로 둔다.
 - **WORK_UNITS 진행 현황 표는 작업을 끝낸 사람이 바로 고친다** (2026-09-29, 규칙 원본은 저장소 최상단 `CLAUDE.md`). 개발이나 테스트를 마치면 그 작업의 줄(상태·날짜·한 줄 설명)과 완료 조건 체크박스를 **같은 커밋에** 고친다.
   붙어 있는 줄이라 머지 충돌이 날 수 있다. 충돌이 나면 두 사람의 줄을 모두 살린다.
 
@@ -577,7 +583,7 @@ DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도�
 
 - 이 동안 `messages.user_id` 는 비어 있을 수 있고(익명 메시지), 익명 메시지의 작성자는 `author` 컬럼(닉네임 1~20자)에 있다. 화면은 `author` 가 있으면 그것을, 없으면 profiles 의 이름을 쓴다.
 - **누구나 `#일반` 에 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
-- **없애는 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤. 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌린다 (할 일 목록은 호환 파일 머리말). 그때 `check:step1` 도 로그인 기준으로 바꾸거나 지운다.
+- **없애는 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤 — **2026-09-29 16:01 에 바뀌었다 (PR #14). 이제 없애도 된다.** 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌린다 (할 일 목록은 호환 파일 머리말). 그때 `check:step1` 도 로그인 기준으로 바꾸거나 지운다.
 
 ### 배포 방법
 

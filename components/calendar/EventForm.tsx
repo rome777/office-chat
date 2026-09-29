@@ -18,7 +18,11 @@ import {
   type EventWithAttendees,
 } from "./source";
 import { addDays, formatKstTime, fromKstInput, toKstInput, toMs } from "./time";
+import TimeSelect, { fromMinutes, toMinutes } from "./TimeSelect";
 import s from "./calendar.module.css";
+
+/** 끝 시각이 따라갈 때 넘지 않는 마지막 칸 (23:55) */
+const LAST_SLOT = 23 * 60 + 55;
 
 export default function EventForm({
   rooms,
@@ -52,6 +56,14 @@ export default function EventForm({
   const [busyError, setBusyError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 시작을 바꾸면 끝도 같은 간격만큼 따라간다 (간격이 없거나 거꾸로면 1시간). 하루를 넘기지 않게 23:55 에서 멈춘다
+  function changeStart(next: string) {
+    const gap = toMinutes(endTime) - toMinutes(startTime);
+    const keep = gap > 0 ? gap : 60;
+    setStartTime(next);
+    setEndTime(fromMinutes(Math.min(toMinutes(next) + keep, LAST_SLOT)));
+  }
 
   const startsAt = date && startTime ? fromKstInput(date, startTime) : null;
   const endsAt = date && endTime ? fromKstInput(date, endTime) : null;
@@ -154,24 +166,14 @@ export default function EventForm({
             <span>날짜</span>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
-          <label className={s.field}>
+          <div className={s.field} role="group" aria-label="시작 시각">
             <span>시작</span>
-            <input
-              type="time"
-              step={300}
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-            />
-          </label>
-          <label className={s.field}>
+            <TimeSelect label="시작" value={startTime} onChange={changeStart} />
+          </div>
+          <div className={s.field} role="group" aria-label="끝 시각">
             <span>끝</span>
-            <input
-              type="time"
-              step={300}
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-            />
-          </label>
+            <TimeSelect label="끝" value={endTime} onChange={setEndTime} />
+          </div>
         </div>
         {!timeOk && <p className={s.hint}>끝나는 시각이 시작보다 늦어야 합니다.</p>}
 
