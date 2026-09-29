@@ -57,8 +57,8 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
       ? supabase.from("channels").select("id, name, type").in("id", channelIds)
       : Promise.resolve({ data: [] as { id: string; name: string | null; type: string }[] }),
     eventIds.length
-      ? supabase.from("events").select("id, title, starts_at").in("id", eventIds)
-      : Promise.resolve({ data: [] as { id: string; title: string; starts_at: string }[] }),
+      ? supabase.from("events").select("id, title, starts_at, rooms(name)").in("id", eventIds)
+      : Promise.resolve({ data: [] as { id: string; title: string; starts_at: string; rooms: unknown }[] }),
   ]);
   const msgById = new Map((messages.data ?? []).map((m) => [m.id, m]));
   const chById = new Map((channels.data ?? []).map((c) => [c.id, c]));
@@ -76,7 +76,10 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
       const when = ev
         ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ev.starts_at))
         : "";
-      return { ...n, title: ev?.title ?? "회의", preview: [TYPE_LABEL[n.type], when].filter(Boolean).join(" · ") };
+      // 회의에서 빠졌거나 지워진 회의면 RLS 가 주지 않는다
+      const room = (ev?.rooms as { name?: string } | null | undefined)?.name;
+      const preview = ev ? [when, room].filter(Boolean).join(" · ") : "볼 수 없는 회의입니다";
+      return { ...n, title: ev?.title ?? "회의", preview };
     }
     const m = n.message_id ? msgById.get(n.message_id) : undefined;
     const ch = n.channel_id ? chById.get(n.channel_id) : undefined;

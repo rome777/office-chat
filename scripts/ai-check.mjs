@@ -110,6 +110,33 @@ try {
     check("말투 변환 결과가 온다 (전송은 하지 않음)", tone.status === 200 && typeof tone.body.text === "string", `(${tone.status} ${tone.body.text ?? tone.body.error})`);
   }
 
+  // ── 할 일 추출 ──
+  const cTodo = await C.post("/api/ai/todos", { channel_id: X.data.id, range: "recent" });
+  check("비회원 C 가 할 일 추출을 요청하면 403 (AI 를 부르지 않음)", cTodo.status === 403, `(${cTodo.status})`);
+  const Z = await A.sb.from("channels").insert({ name: `AI검사Z-${run}`, type: "private" }).select().single();
+  made.channels.push(Z.data.id);
+  for (const body of ["보고서 초안 좀 봐 주실 수 있나요?", "네, 제가 검토해 볼게요", "고마워요"]) await say(Z.data.id, body);
+  const todoX = await A.post("/api/ai/todos", { channel_id: X.data.id, range: "recent" });
+  const todoZ = await A.post("/api/ai/todos", { channel_id: Z.data.id, range: "recent" });
+  const { count: before } = await admin.from("todos").select("*", { count: "exact", head: true }).in("channel_id", [X.data.id, Z.data.id]);
+  check("할 일을 뽑기만 하고 저장 버튼을 누르기 전에는 todos 에 없다", before === 0, `(${before}건)`);
+  if (!hasKey) {
+    check("키가 없으면 할 일 추출은 오류 문구를 준다 (503)", todoX.status === 503, `(${todoX.status})`);
+  } else {
+    const xItems = todoX.body.items ?? [];
+    check("할 일마다 근거 번호·담당자·기한 칸이 온다", todoX.status === 200 && xItems.length > 0 && xItems.every((t) => sentIds.has(t.evidence_message_id) && "assignee_name" in t && "due" in t), `(${todoX.status} ${todoX.body.error ?? xItems.length})`);
+    const zItems = todoZ.body.items ?? [];
+    check('기한이 없는 대화에서는 기한이 "미정"(null)', todoZ.status === 200 && zItems.every((t) => t.due === null), `(${JSON.stringify(zItems.map((t) => t.due))})`);
+    if (xItems[0]) {
+      const ok = await A.sb.from("todos").insert({ channel_id: X.data.id, task: xItems[0].task, assignee: xItems[0].assignee_id, due: xItems[0].due, evidence_message_id: xItems[0].evidence_message_id }).select("id");
+      check("승인하면 저장된다", ok.data?.length === 1, `(${ok.error?.message ?? "ok"})`);
+    }
+  }
+  const { data: yMsg } = await admin.from("messages").select("id").eq("channel_id", Y.data.id).limit(1).single();
+  const wrongEvidence = await A.sb.from("todos").insert({ channel_id: X.data.id, task: "다른 채널 근거", evidence_message_id: yMsg.id });
+  const cTodoSave = await C.sb.from("todos").insert({ channel_id: X.data.id, task: "C 가 끼어듦" });
+  check("다른 채널 메시지를 근거로 하거나 비회원이면 저장이 거부된다", !!wrongEvidence.error && !!cTodoSave.error, `(${wrongEvidence.error?.code}, ${cTodoSave.error?.code})`);
+
   // ── 요청 상한 ──
   await admin.from("ai_usage_logs").insert(Array.from({ length: 5 }, () => ({ user_id: A.id, feature: "summarize", status: "ok" })));
   const over = await A.post("/api/ai/summarize", { channel_id: X.data.id, range: "recent" });

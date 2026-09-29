@@ -86,3 +86,96 @@
   margin-left: 6px;
   font-size: 12px;
 }
+
+/* 채널 정보 */
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.info p {
+  margin: 4px 0 0;
+}
+
+.infoTitle {
+  margin: 0;
+  font-size: 16px;
+}
+
+.infoHead {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.memberList,
+.logList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memberList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.logList li {
+  font-size: 13px;
+}
+
+.adminBadge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--mine);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* AI 할 일 */
+.todoList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.todoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.todoCheck {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.todoDone .todoCheck {
+  text-decoration: line-through;
+  color: var(--muted);
+}

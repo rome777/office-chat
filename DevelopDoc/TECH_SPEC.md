@@ -279,6 +279,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 - 10분 전 알림은 유일 제약 덕분에 1분마다 돌아도 한 번만 들어간다.
 - 시작 시각이 바뀌면 그 회의의 `event_reminder` 를 지워서 새 시각에 다시 보낸다.
+- **구현 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행)**: `20260929140000_event_notifications.sql`. 10분 전 알림은 `send_event_reminders()` 를 `pg_cron` 작업 `event-reminders`(`* * * * *`)가 부른다. 제목·시각·회의실이 아니라 설명만 바꾸면 알림이 없다.
+  알림 목록에는 회의 제목과 "시작 시각 · 회의실"이 보이고, 누르면 `/calendar?e=<회의 id>` (캘린더(②)가 상세를 연다). 확인: `npm run check:events` (실제 `pg_cron` 이 도는지 최대 90초 기다린다).
 
 **함정**
 
@@ -357,6 +359,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 - 채널 설정 화면에 멤버 목록과 "내보내기" 버튼을 둔다. 버튼은 관리자에게만 보이지만, **실제 권한은 RLS 가 검사**한다.
 - `memberships` DELETE 트리거가 `admin_logs` 에 기록한다.
+- **구현 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행, `ChannelInfoPanel`)**: 채널 종류·멤버 목록(관리자 표시)·관리자에게만 "내보내기"와 "멤버 추가"(② 의 `PeoplePicker`)·관리자에게만 이 채널의 관리 기록(`admin_logs` 를 `target->>channel_id` 로 거름)·"이 채널에서 나가기"(DM 과 `#일반` 은 없음).
+  권한이 없으면 RLS 가 0건을 지우므로(오류가 아님) 지운 행 수로 성공을 판단한다. 멤버 목록은 실시간으로 바뀐다 (`useChannelMembers`).
 
 ### 안전한 출력 (F4-6)
 
@@ -392,6 +396,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - `lib/ai/usage.ts`: `overLimit()` 가 본인 `ai_usage_logs` 를 세어 분당 5회·하루 100회를 검사한다 (실제로 AI 를 부른 `ok`·`error`·`timeout` 만 센다). `logUsage()` 가 모든 요청을 남긴다 — 상한에 걸리면 `rate_limited`, 키가 없으면 `denied`.
 - 말투 변환 `POST /api/ai/tone` 은 바꾼 문장만 돌려주고 **보내지 않는다**. 화면의 🎭 버튼 → 모드 선택 → 미리보기 → "이걸로 보내기"를 눌러야 전송된다. 실패하면 "원래 문장 보내기".
   원문을 고치면 미리보기를 닫는다 (바뀐 문장이 원문과 어긋나지 않게). 멘션·주소·숫자는 그대로 두라고 지시한다.
+
+### 할 일 추출 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행)
+
+- `POST /api/ai/todos { channel_id, range }` → `[{ task, assignee_id, assignee_name, due, due_quote, evidence_message_id }]`. **제안만 돌려준다.** 할 일 패널에서 "저장"을 눌러야 `todos` 에 들어간다 (저장한 사람은 기본값 `auth.uid()`, RLS 가 같은 채널의 근거만 허용).
+- 서버가 지어낸 것을 버린다: 근거 번호가 보낸 목록에 없으면 항목을 버리고, 기한은 `due_quote` 가 **그 근거 메시지 본문에 실제로 있을 때만**(공백 무시) 인정하고, 담당자는 채널 멤버의 이름·handle 과 맞을 때만 인정한다. 나머지는 null → 화면은 "미정".
+- 모델에게 **오늘부터 3주치 달력(날짜·요일)** 을 같이 준다. 오늘 날짜만 주면 요일 계산을 틀렸다 (2026-09-29 화요일에 "이번 주 금요일"을 9월 30일(수)로 답함 → 달력을 주니 3회 모두 10월 2일).
+- 저장한 할 일은 채널 멤버 누구나 완료 표시(`done_at`)하고, 만든 사람만 지운다.
 
 ### 요약 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행)
 
@@ -521,6 +532,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929110000_attachment_message.sql` | 첨부 메시지 저장 함수 `post_attachment_message()`, `attachments` 실시간 등록 |
 | `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
+| `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -531,6 +543,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
 | `scripts/notifications-check.mjs` | 알림 트리거·실시간·권한 검사 (`npm run check:notify`, 16개) |
+| `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 15개). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-users.mjs` | 시연 계정 4명 만들기 (`npm run seed:users`). 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 이미 있으면 비밀번호·이름·역할만 맞춘다 |
