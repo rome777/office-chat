@@ -5,8 +5,9 @@
 
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
-> **현재 구현 (2026-09-28)**: Step 1 이 **Vercel + Supabase** 로 배포돼 있다 (https://office-chat-two.vercel.app). 로그인 없이 `messages` 테이블 하나를 쓴다.
-> 2~8절은 Step 2 부터의 목표 구조다. 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
+> **현재 구현 (2026-09-29)**: **DB v1(4·5절)이 원격 Supabase 에 적용돼 있다.** `develop` 은 이메일 로그인 뒤 `#일반` 채널에서 대화한다.
+> 운영 배포(https://office-chat-two.vercel.app)는 아직 Step 1 화면(로그인 없음)이라, `#일반` 한 채널만 익명으로 읽고 쓰는 **임시 호환**을 DB 에 남겨 뒀다 (13절).
+> 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
 
 ---
 
@@ -119,6 +120,24 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 확장: `pg_trgm`(검색), `btree_gist`(회의실 제약), `pg_cron`(10분 전 알림).
 
 마이그레이션은 `supabase/migrations/*.sql` 로 관리하고, SQL 편집기에서 손으로 고친 내용도 반드시 파일로 옮긴다.
+**이미 적용한 파일은 고치지 않는다.** 바꿀 것이 있으면 새 파일을 만든다 (원격 적용 기록과 어긋나면 `db push` 가 꼬인다).
+
+### DB v1 을 만들면서 정한 것 (2026-09-29, `20260929100000_db_v1.sql`)
+
+- `profiles.handle` 은 영문·숫자·`_`·`-`·한글 1~20자 (멘션 강조 `SafeText` 와 같은 글자). 대소문자를 가리지 않고 유일하다.
+  가입하면 트리거가 profiles 를 만든다: handle 은 가입 정보의 `handle` → 메일 앞부분 순, 겹치면 숫자를 붙인다. 이름은 가입 정보의 `display_name`. `role` 은 가입 정보로 정하지 않는다
+- 가입하면 **`#일반` 채널(id `00000000-0000-0000-0000-000000000001`)에 자동으로 들어간다** (전사 공개 채널)
+- `channels.created_by` 는 null 이 될 수 있다 (시스템이 만든 `#일반`, 탈퇴한 사람). DM 은 `name` 을 비운다
+- `messages.body` 의 빈 값은 **DB 제약이 아니라 쓰기 정책**이 막는다 (클라이언트는 42501). 첨부만 있는 메시지를 서버(service role)가 빈 본문으로 넣을 수 있게 하려고
+- 답글은 같은 채널의 최상위 메시지에만 단다 (트리거, 한 단계만)
+- `read_positions` 는 뒤로 가지 않는다 (트리거가 큰 값을 남긴다). 쓰기는 `mark_read(channel_id, message_id)` 함수로 한다 — supabase-js `upsert` 는 충돌 시 `channel_id` 까지 SET 해서 권한 오류(42501)가 난다
+- `notifications` 는 메시지 알림이면 `message_id`·`channel_id`, 일정 알림이면 `event_id` 만 채우도록 제약으로 강제한다
+- `todos.assignee` 는 profiles id(null = 미정), `due` 는 날짜(null = 미정), 완료 표시용 `done_at` 을 뒀다
+- `admin_logs.target` 은 jsonb (`{channel_id, user_id}`). 남을 채널에 넣거나 빼면 트리거가 남긴다 (본인 가입·나가기·DM·서버 작업은 빼고)
+- `ai_usage_logs.status` 는 `ok`·`error`·`timeout`·`rate_limited`·`denied`
+- 첨부 버킷 `attachments` 도 이 파일이 만든다 (비공개, 5MB, PNG·JPEG·PDF)
+- 사용자를 지우면 그 사람의 profiles·멤버십·회의는 같이 지워지지만, **메시지가 남아 있으면 지워지지 않는다** (작성자 FK). 계정은 지우지 말고 비활성화한다
+- 알림을 만드는 트리거(멘션·스레드 답글·DM·일정)와 10분 전 알림 `pg_cron` 작업은 **아직 없다** — 알림 작업(③)에서 새 마이그레이션으로 추가한다
 
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
 권한 테스트가 전부 RLS 에 달려 있으므로, 이후 변경도 정책 전체를 함께 보고 반영한다.
@@ -141,6 +160,14 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 **남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다.
 
 **작성자 위조 방지**: `messages.user_id` 는 기본값 `auth.uid()` 에 정책으로 같은 값을 강제한다. 클라이언트가 다른 ID 를 보내면 거부된다.
+
+**컬럼 권한** (2026-09-29): 테이블마다 anon·authenticated 권한을 모두 거둔 뒤 필요한 컬럼만 다시 준다. 그래서 클라이언트는
+`user_id`·`created_by`·`role`·`id`·`created_at` 같은 컬럼을 아예 보낼 수 없다 (보내면 42501). 무엇을 줬는지는 `20260929100000_db_v1.sql` 에 테이블마다 적었다.
+
+**위 표에서 정한 것** (2026-09-29): 관리자는 비공개 채널도 본다 (멤버를 넣어야 하므로). **DM 은 관리자도 못 본다.** 공개·비공개 채널은 본인이 나갈 수 있다 (DM 은 못 나간다).
+정책끼리 서로를 조회하는 곳(`memberships`, `events`↔`event_attendees`)은 `is_member()`·`is_event_participant()` 같은 security definer 함수로 끊었다.
+
+모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과).
 
 **관리자 권한 상승 방지**: `profiles.role` 은 사용자가 수정할 수 없게 컬럼 권한이나 트리거로 막는다.
 
@@ -167,6 +194,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ### 검증해야 할 가정
 
 - Realtime 이 구독자마다 RLS 를 적용하는지, **멤버에서 빠진 뒤 기존 연결로 새 메시지가 오지 않는지** 1일차에 직접 확인한다 (Step 4 통과 조건). 안 되면 멤버 제거 시 해당 사용자의 구독을 끊는 방법을 따로 만든다.
+  → **확인함 (2026-09-29, `npm run check:db`)**: 비회원 C 와 익명 구독에는 이벤트가 0건 왔다. 관리자가 B 를 뺀 뒤 A 가 보낸 메시지는 B 의 열려 있던 구독에 0건 왔다. 따로 구독을 끊을 필요는 없다.
+  단, `memberships` 의 DELETE 이벤트는 RLS 를 거치지 않고 기본 키(`channel_id`·`user_id`)가 구독자 모두에게 간다 (Supabase 의 동작). 누가 어느 채널에서 나갔는지 정도가 보인다.
 
 ## 7. 기능별 구현
 
@@ -260,6 +289,9 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 - 키셋 방식: `where channel_id = ? and id < 커서 order by id desc limit 50`
 - 처음에는 최근 50건, 위로 올리면 이전 50건. 전체를 한 번에 받지 않는다.
+- 화면의 목록은 항상 "가장 오래 받은 것 ~ 최신"이 **빈틈없이 이어지게** 둔다. 그래서 받은 범위보다 오래된 메시지로 이동(`?m=`)하면 그 메시지까지 사이를 1000건씩 모두 받아 채우고, 위로 10건을 더 받는다.
+  - 알려진 한계: 1만 건 채널에서 맨 처음 메시지로 이동하면 1만 건을 다 받아 그린다. 이동은 알림·검색에서 최근 메시지로 가는 일이 대부분이라 이대로 둔다 (2026-09-29).
+- 이전 메시지를 위에 붙일 때 보던 자리를 지키는 것은 `MessageList` 가 **원래 첫 메시지의 위치 차**로 직접 맞춘다 (브라우저의 `overflow-anchor` 는 끈다). 전체 높이 차로 재면 그사이 창 폭이 바뀌어 줄바꿈이 달라졌을 때 틀어진다.
 - 1만 건 시드는 `scripts/seed-10k` 로 만들고, 조회 시간을 재서 [WORK_UNITS.md](WORK_UNITS.md) 에 기록한다.
 
 ### 검색 (F4-2)
@@ -276,7 +308,9 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ### 안전한 출력 (F4-6)
 
 - 메시지는 React 기본 텍스트 출력만 쓴다. `dangerouslySetInnerHTML` 은 쓰지 않는다.
-- 링크는 `http`·`https` 로 시작하는 것만 `<a rel="noopener noreferrer">` 로 바꾼다.
+- 링크는 `http`·`https` 로 시작하는 것만 `<a rel="noopener noreferrer">` 로 바꾼다. 문장 끝 문장부호(`.`·`)` 등)는 주소에서 뺀다.
+- 사용자 입력과 AI 결과는 모두 `components/chat/SafeText` 로 그린다. `mentions` 를 주면 `@이름` 도 강조한다 (앞이 글자인 `a@b.com` 은 멘션이 아니다).
+  지금은 채널 멤버인지 모르고 모양만 보고 강조한다. DB v1 의 `memberships` 가 생기면 멤버만 강조한다.
 
 ## 8. AI
 
@@ -319,8 +353,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │        └─ summarize/ · todos/   ③ AI 요약·할 일 (예정)
 ├─ components/
 │  ├─ workspace/                  공통 틀 — Workspace(세 칸) · Header(헤더 칸) · WorkspaceContext(화면 상태)
-│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · useMessages
-│  ├─ auth/                       ② AuthGate(입장 관문) · NicknameForm (로그인 작업에서 로그인 화면으로 바뀜)
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · useMessages
+│  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
 │  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 (예정) — DM·캘린더·채널 정보가 가져다 씀
@@ -334,7 +368,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · seed-10k (예정)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · seed-10k (예정)
 └─ .env.example
 ```
 
@@ -358,12 +392,12 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | 브랜치 | 용도 | 들어오는 곳 |
 |---|---|---|
 | `main` | 배포용. 항상 시연 가능한 상태 | `develop` 에서만 PR 로 |
-| `develop` | 팀원들이 개발한 내용을 모으는 곳 | 개인 기능 브랜치에서 PR 로 |
+| `develop` | 팀원들이 개발한 내용을 모으는 곳 | 개인 기능 브랜치에서 PR 로, 또는 직접 푸시 |
 | `develop-<이름>-<기능>` | 사람별·기능별 작업. 예: `develop-hslee-step1-chat` | `develop` 에서 새로 딴다 |
 
-- `main` 과 `develop` 에는 직접 푸시하지 않는다.
-- PR 제목에 작업 번호를 붙인다. 예: `[WU-05] 실시간 송수신`. 한 명이 보고 머지한다.
-- **매일 18:00** `develop` 을 `main` 에 머지하고, 시연 URL 을 셋이 함께 확인한다.
+- `main` 에는 직접 푸시하지 않는다. **`develop` 에는 직접 푸시해도 된다** (2026-09-29). 푸시하기 전에 `git pull` 로 남의 변경을 먼저 받는다.
+- PR 제목에 작업 번호를 붙인다. 예: `[WU-05] 실시간 송수신`.
+- `develop` 으로 가는 PR 은 둘 중 하나로 머지한다 (2026-09-29): 다른 팀원 한 명이 보고 머지하거나, **작성자가 직접 머지**한다.
 
 ### 파일을 겹치지 않게 고치는 규칙
 
@@ -376,8 +410,10 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **타입은 `lib/types/<영역>.ts`** 에 둔다.
 - **실시간 구독은 영역마다 따로 연다**: 메시지 ①, 미읽음 ②, 알림 ③. 하나의 구독을 셋이 고치지 않는다.
 - **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `?m=<메시지 id>`(① 이 이동·강조), 회의는 `/calendar?e=<회의 id>`(②).
+  `?m=` 은 새로고침 없이 `router.push` 로 붙여도 동작하고, ① 이 처리한 뒤 주소에서 `m` 만 지운다 (같은 메시지로 다시 이동할 수 있게). 없는 메시지면 가운데 칸에 안내가 뜬다.
 - **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM SDK 는 제공자가 정해지면 ③ 이 넣는다.
-- **WORK_UNITS 진행 현황 표**는 붙어 있는 줄을 각자 고치면 충돌한다. 매일 18:00 머지 때 한 사람이 몰아서 고친다.
+- **WORK_UNITS 진행 현황 표는 작업을 끝낸 사람이 바로 고친다** (2026-09-29, 규칙 원본은 저장소 최상단 `CLAUDE.md`). 개발이나 테스트를 마치면 그 작업의 줄(상태·날짜·한 줄 설명)과 완료 조건 체크박스를 **같은 커밋에** 고친다.
+  붙어 있는 줄이라 머지 충돌이 날 수 있다. 충돌이 나면 두 사람의 줄을 모두 살린다.
 
 ## 12. 알려진 메시지 유실·중복 조건
 
@@ -388,9 +424,9 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | 구독 직후 1~2초 | 그 사이에 저장된 메시지의 실시간 이벤트가 빠질 수 있다 (2026-09-28, 테이블을 만든 직후 첫 테스트에서 A 0건·B 1건만 받음. 재실행은 10건 모두 받음) | 구독되면 바로 한 번, 2초 뒤 한 번 더 `id` 로 동기화한다. 빠진 것은 여기서 채워진다 |
 | 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패". 실제로는 저장됐을 수 있다 | 저장됐으면 실시간 이벤트가 와서 실패 표시가 사라진다. "다시 보내기"를 눌러도 같은 `client_id` 라 한 번만 저장된다 (2026-09-28 테스트 통과) |
 | 전송 실패한 메시지가 있는 채로 새로고침 | 실패한 메시지가 화면에서 사라진다 (브라우저에만 있었음) | 알려진 한계 |
-| 재연결까지 500건 넘게 쌓임 | 동기화는 한 번에 500건까지만 받는다 | Step 4 페이지네이션에서 해결 |
+| 재연결까지 1000건 넘게 쌓임 | 한 번 조회로는 Supabase 상한(1000행)까지만 온다 | 마지막 `id` 이후를 1000건씩 끝까지 이어 받는다 (2026-09-29 코드 수정. 예전에는 500건에서 멈췄다). 1000건 넘는 경우는 아직 시험하지 않았다 |
 
-## 13. 현재 구조 (Step 1) 와 배포
+## 13. 현재 구조와 배포
 
 2026-09-28 에 로컬 임시 구조(Socket.IO + 메모리)로 먼저 띄웠다가, 같은 날 원격 배포를 위해 **Vercel + Supabase** 로 옮겼다.
 Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우기 때문이다. `server.mjs` 와 Socket.IO 는 지웠다.
@@ -404,25 +440,34 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 
 | 파일 | 역할 |
 |---|---|
-| `supabase/migrations/20260928090000_step1_messages.sql` | `messages` 테이블, Step 1 임시 RLS, 실시간 구독 등록 |
+| `supabase/migrations/20260928090000_step1_messages.sql` | Step 1 `messages` 테이블 (다음 파일이 이름을 바꾸고 새로 만든다) |
+| `supabase/migrations/20260929100000_db_v1.sql` | DB v1: 테이블 13개·인덱스·확장·RLS·컬럼 권한·트리거·`create_dm`·`create_event`·`room_busy`·첨부 버킷·실시간 등록 |
+| `supabase/migrations/20260929100100_step1_compat.sql` | **Step 1 임시 호환** (아래). `#일반` 채널을 만들고 Step 1 메시지 14건을 id 그대로 옮겼다 |
+| `supabase/migrations/20260929100200_mark_read.sql` | 읽음 표시 함수 `mark_read()` |
+| `supabase/migrations/20260929100300_backfill_profiles.sql` | 가입 트리거보다 먼저 가입한 계정의 profiles 채우기 |
+| `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
-| `components/auth/` | 닉네임 입장 화면 (닉네임은 브라우저 `localStorage` 에 기억) |
+| `components/auth/` | 이메일 로그인·가입 화면, 입장 관문 (②) |
 | `components/workspace/` 외 | 세 칸 배치와 자리만 있는 화면(채널 목록 `# 일반` 하나, 검색·알림은 비활성, 요약·할 일·채널 정보 패널은 "준비 중") — 9절 |
 
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
-| `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 끝나면 테스트 메시지를 지운다 |
+| `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
+| `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
 
-### Step 1 임시 권한 — Step 2 에서 반드시 바꾼다
+### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
+
+DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도록 남겨 둔 것이다 (`20260929100100_step1_compat.sql`, 2026-09-29).
 
 | 누가 | 할 수 있는 것 |
 |---|---|
-| 익명(anon) | 모든 메시지 읽기, `client_id`·`author`·`body` 세 컬럼만 넣어 쓰기 |
-| 익명(anon) | `id`·`created_at` 지정, 수정, 삭제는 **불가** (컬럼 권한으로 막음, 테스트 통과) |
+| 익명(anon) | **`#일반` 채널 메시지만** 읽기, `client_id`·`author`·`body` 세 컬럼만 넣어 쓰기 (`channel_id` 는 기본값 `#일반`) |
+| 익명(anon) | 다른 채널 읽기·쓰기, `user_id`·`id`·`created_at` 지정, 수정, 삭제, 채널 목록 조회는 **불가** (`check:db` 로 확인) |
 
-- DB 제약: `author` 1~20자, `body` 1~2000자, 둘 다 공백만은 안 됨.
-- **누구나 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
+- 이 동안 `messages.user_id` 는 비어 있을 수 있고(익명 메시지), 익명 메시지의 작성자는 `author` 컬럼(닉네임 1~20자)에 있다. 화면은 `author` 가 있으면 그것을, 없으면 profiles 의 이름을 쓴다.
+- **누구나 `#일반` 에 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
+- **없애는 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤. 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌린다 (할 일 목록은 호환 파일 머리말). 그때 `check:step1` 도 로그인 기준으로 바꾸거나 지운다.
 
 ### 배포 방법
 
@@ -436,6 +481,7 @@ npx vercel deploy --prod
 ```
 
 DB 구조를 바꿀 때는 `supabase/migrations/` 에 새 파일을 만들고 원격에 적용한다. `.env.local` 을 불러온 셸에서 실행한다.
+적용한 뒤에는 `npm run check:db` 와 `npm run check:step1` 을 돌린다.
 
 ```bash
 npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
@@ -450,4 +496,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **한글 입력 중 Enter**: 조합 중인 Enter 를 전송으로 처리하면 두 번 보내질 수 있다. `isComposing` 이면 전송하지 않는다.
 - **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
+- **`supabase db query` 는 한 번에 SQL 문장 하나만 받는다**: 여러 문장을 넣으면 `cannot insert multiple commands into a prepared statement`. 마이그레이션을 미리 시험하려면 트랜잭션으로 묶어 되돌릴 수 있는 Postgres 클라이언트가 필요하다 (2026-09-29 에는 임시 폴더에 `pg` 를 깔아 `begin; …; rollback;` 으로 시험했다). Docker 가 없어 로컬 Supabase(`supabase start`)는 못 띄운다.
+- **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
+- **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.
