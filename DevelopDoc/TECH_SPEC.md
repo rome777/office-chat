@@ -454,7 +454,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | `SUPABASE_SERVICE_ROLE_KEY` | **서버만** | RLS 를 건너뛴다. 시드·첨부 검사 전용 |
 | `OPENAI_API_KEY` | **서버만** | AI 호출 (2026-09-29 제공자 OpenAI 로 결정). 없으면 AI 기능은 "AI 키가 설정되지 않았습니다"를 띄우고 채팅은 그대로 된다 |
 | `OPENAI_MODEL` | 서버만 | 없으면 `gpt-4o-mini` |
-| `OPENAI_PRICE_INPUT_PER_1M` · `OPENAI_PRICE_OUTPUT_PER_1M` | 서버만 | 100만 토큰당 달러. `ai_usage_logs.cost_usd` 계산에 쓴다. 없으면 비용을 0 으로 기록한다 (모델 가격을 확인해 넣는다) |
+| `OPENAI_PRICE_INPUT_PER_1M` · `OPENAI_PRICE_OUTPUT_PER_1M` | 서버만 | 100만 토큰당 달러. `ai_usage_logs.cost_usd` 계산에 쓴다. 없으면 비용을 0 으로 기록한다. `gpt-4o-mini` 표준 가격은 입력 0.15·출력 0.60 (2026-09-29, platform.openai.com/docs/pricing). 모델을 바꾸면 가격도 바꾼다 |
 | `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:users`) 비밀번호 |
 
 값은 `.env.local` 과 Vercel 환경 변수에만 둔다. 저장소에는 이름만 적은 `.env.example` 을 올린다.
