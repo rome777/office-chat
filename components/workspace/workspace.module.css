@@ -1,0 +1,92 @@
+/* 공통 틀 — 세 칸 배치와 헤더 칸. 각 영역의 모양은 자기 CSS Module 에서 정한다. */
+
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "side head  head"
+    "side main  panel";
+}
+
+.side {
+  grid-area: side;
+  min-height: 0;
+}
+
+.header {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.headerLeft,
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.headerRight {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.main {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main > * {
+  flex: 1;
+}
+
+.panelSlot {
+  grid-area: panel;
+  min-height: 0;
+  display: flex;
+}
+
+.panelSlot > * {
+  width: 340px;
+}
+
+.panelSlot:empty {
+  display: none;
+}
+
+/* 좁은 화면: 왼쪽 칸은 숨기고, 오른쪽 패널은 화면 전체를 덮는다 */
+@media (max-width: 767px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "main";
+  }
+
+  .side {
+    display: none;
+  }
+
+  .panelSlot {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  .panelSlot > * {
+    width: 100%;
+  }
+}

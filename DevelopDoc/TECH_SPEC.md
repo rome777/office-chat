@@ -300,29 +300,45 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 ## 9. 폴더 구조
 
+폴더마다 주인이 있다 (①②③ 은 [WORK_UNITS.md](WORK_UNITS.md) "역할 분담"). 파일을 겹치지 않게 고치는 규칙은 11절.
+`(예정)` 은 그 기능을 만들 때 주인이 새로 만드는 곳이다.
+
 ```
 /
 ├─ README.md
-├─ DevelopDoc/
-│  ├─ PRD.md
-│  ├─ TECH_SPEC.md
-│  ├─ WORK_UNITS.md
-│  └─ FINAL_CHECKLIST.md
+├─ DevelopDoc/                    PRD · TECH_SPEC · WORK_UNITS · FINAL_CHECKLIST
 ├─ app/
-│  ├─ login/
-│  ├─ c/[channelId]/          채팅 화면
-│  ├─ calendar/               캘린더·회의 예약
+│  ├─ page.tsx                    공통 틀 — 입장 관문(②) → 화면 상태 → 세 칸 배치
+│  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만
+│  ├─ login/                      ② 로그인 (예정)
+│  ├─ calendar/                   ② 캘린더·회의 예약 (예정)
 │  └─ api/
-│     ├─ ai/{summarize,todos,tone}/
-│     └─ attachments/
-├─ components/chat/
-├─ lib/supabase/{client,server}.ts
+│     ├─ attachments/             ① 첨부 (예정)
+│     └─ ai/
+│        ├─ tone/                 ① 말투 변환 (예정)
+│        └─ summarize/ · todos/   ③ AI 요약·할 일 (예정)
+├─ components/
+│  ├─ workspace/                  공통 틀 — Workspace(세 칸) · Header(헤더 칸) · WorkspaceContext(화면 상태)
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · useMessages
+│  ├─ auth/                       ② AuthGate(입장 관문) · NicknameForm (로그인 작업에서 로그인 화면으로 바뀜)
+│  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
+│  ├─ search/                     ② SearchBox
+│  ├─ people/                     ② 사람 찾기 (예정) — DM·캘린더·채널 정보가 가져다 씀
+│  ├─ calendar/                   ② 캘린더 화면 부품 (예정)
+│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
+│  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
+├─ lib/
+│  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
+│  ├─ ai/                         ③ AI 공통 — LLM 호출·요청 상한·비용 기록 (예정)
+│  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/seed-10k.ts
+├─ scripts/                       step1-check.mjs · seed-10k (예정)
 └─ .env.example
 ```
+
+오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다.
 
 ## 10. 환경 변수
 
@@ -348,6 +364,20 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - `main` 과 `develop` 에는 직접 푸시하지 않는다.
 - PR 제목에 작업 번호를 붙인다. 예: `[WU-05] 실시간 송수신`. 한 명이 보고 머지한다.
 - **매일 18:00** `develop` 을 `main` 에 머지하고, 시연 URL 을 셋이 함께 확인한다.
+
+### 파일을 겹치지 않게 고치는 규칙
+
+2026-09-29 틀 나누기에서 정했다. 셋이 한 파일을 고치면 머지 때마다 충돌이 나서 이렇게 나눴다.
+
+- **남의 폴더 파일은 가져다 쓰기만 한다** (주인은 9절). 고칠 것이 있으면 주인에게 요청한다.
+- **공통 틀은 고치지 않는다**: `components/workspace/`, `app/page.tsx`, `app/layout.tsx`, `app/globals.css`. 꼭 필요하면 팀에 알리고 한 사람이 고친다.
+- **헤더에 무엇을 넣을 때는 자기 컴포넌트 안에 넣는다**: 연결 상태 ①, 채널 이름·검색·내 이름 ②, 패널 버튼·알림 ③ 은 이미 헤더 칸에 들어 있다.
+- **스타일은 컴포넌트 옆 `*.module.css`** 에 쓴다. `globals.css` 에 덧붙이지 않는다.
+- **타입은 `lib/types/<영역>.ts`** 에 둔다.
+- **실시간 구독은 영역마다 따로 연다**: 메시지 ①, 미읽음 ②, 알림 ③. 하나의 구독을 셋이 고치지 않는다.
+- **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `?m=<메시지 id>`(① 이 이동·강조), 회의는 `/calendar?e=<회의 id>`(②).
+- **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM SDK 는 제공자가 정해지면 ③ 이 넣는다.
+- **WORK_UNITS 진행 현황 표**는 붙어 있는 줄을 각자 고치면 충돌한다. 매일 18:00 머지 때 한 사람이 몰아서 고친다.
 
 ## 12. 알려진 메시지 유실·중복 조건
 
@@ -376,8 +406,12 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 |---|---|
 | `supabase/migrations/20260928090000_step1_messages.sql` | `messages` 테이블, Step 1 임시 RLS, 실시간 구독 등록 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
-| `components/ChatRoom.tsx` | 채팅 화면. 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
-| `components/NicknameForm.tsx` | 닉네임 입장 화면 (닉네임은 브라우저 `localStorage` 에 기억) |
+| `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
+| `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
+| `components/auth/` | 닉네임 입장 화면 (닉네임은 브라우저 `localStorage` 에 기억) |
+| `components/workspace/` 외 | 세 칸 배치와 자리만 있는 화면(채널 목록 `# 일반` 하나, 검색·알림은 비활성, 요약·할 일·채널 정보 패널은 "준비 중") — 9절 |
+
+2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 끝나면 테스트 메시지를 지운다 |
 
 ### Step 1 임시 권한 — Step 2 에서 반드시 바꾼다
@@ -410,3 +444,4 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **한글 입력 중 Enter**: 조합 중인 Enter 를 전송으로 처리하면 두 번 보내질 수 있다. `isComposing` 이면 전송하지 않는다.
 - **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
+- **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.

@@ -1,42 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import ChatRoom from "@/components/ChatRoom";
-import NicknameForm from "@/components/NicknameForm";
+// 공통 틀 — 입장 관문(②)을 지나면 화면 상태와 세 칸 배치를 연다. 이 파일은 고치지 않는다.
 
-const NICKNAME_KEY = "office-chat:nickname";
+import AuthGate from "@/components/auth/AuthGate";
+import Workspace from "@/components/workspace/Workspace";
+import { WorkspaceProvider } from "@/components/workspace/WorkspaceContext";
 
 export default function Home() {
-  const [nickname, setNickname] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    try {
-      setNickname(localStorage.getItem(NICKNAME_KEY));
-    } catch {
-      // 저장소를 못 쓰는 환경이면 매번 입력받는다
-    }
-    setReady(true);
-  }, []);
-
-  function enter(name: string) {
-    try {
-      localStorage.setItem(NICKNAME_KEY, name);
-    } catch {}
-    setNickname(name);
-  }
-
-  function leave() {
-    try {
-      localStorage.removeItem(NICKNAME_KEY);
-    } catch {}
-    setNickname(null);
-  }
-
-  if (!ready) return null;
-  return nickname ? (
-    <ChatRoom nickname={nickname} onLeave={leave} />
-  ) : (
-    <NicknameForm onSubmit={enter} />
+  return (
+    <AuthGate>
+      {(me, signOut) => (
+        <WorkspaceProvider me={me} signOut={signOut}>
+          <Workspace />
+        </WorkspaceProvider>
+      )}
+    </AuthGate>
   );
 }
