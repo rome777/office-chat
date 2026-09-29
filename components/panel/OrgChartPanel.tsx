@@ -90,7 +90,7 @@ export default function OrgChartPanel() {
           </>
         )}
       </p>
-      <UnitBody org={org} unit={scope} depth={0} me={me} opening={opening} onFocus={focus} onDm={openDm} />
+      <UnitBody org={org} unit={scope} scope={scope} depth={0} me={me} opening={opening} onFocus={focus} onDm={openDm} />
     </div>
   );
 }
@@ -98,6 +98,8 @@ export default function OrgChartPanel() {
 type BodyProps = {
   org: OrgData;
   unit: OrgUnit;
+  /** 지금 보고 있는 범위의 맨 위 조직 */
+  scope: OrgUnit;
   depth: number;
   me: string | null;
   opening: string | null;
@@ -105,7 +107,7 @@ type BodyProps = {
   onDm: (p: OrgMember) => void;
 };
 
-function UnitBody({ org, unit, depth, me, opening, onFocus, onDm }: BodyProps) {
+function UnitBody({ org, unit, scope, depth, me, opening, onFocus, onDm }: BodyProps) {
   const people = org.members.get(unit.id) ?? [];
   const subs = org.children.get(unit.id) ?? [];
   return (
@@ -126,7 +128,7 @@ function UnitBody({ org, unit, depth, me, opening, onFocus, onDm }: BodyProps) {
       )}
       {subs.map((c) => (
         // 회사 전체를 볼 때는 사업부까지만 펼친다 (한 화면에 너무 길어진다)
-        <details key={c.id} className={s.unit} open={depth === 0 || unit.kind !== "company"}>
+        <details key={c.id} className={s.unit} open={depth === 0 || scope.kind !== "company"}>
           <summary>
             <span className={s.unitName}>{c.name}</span>
             <span className={s.unitMeta}>
@@ -142,7 +144,7 @@ function UnitBody({ org, unit, depth, me, opening, onFocus, onDm }: BodyProps) {
               보기
             </button>
           </summary>
-          <UnitBody org={org} unit={c} depth={depth + 1} me={me} opening={opening} onFocus={onFocus} onDm={onDm} />
+          <UnitBody org={org} unit={c} scope={scope} depth={depth + 1} me={me} opening={opening} onFocus={onFocus} onDm={onDm} />
         </details>
       ))}
       {people.length === 0 && subs.length === 0 && <p className="muted">소속된 사람이 없습니다.</p>}

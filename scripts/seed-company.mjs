@@ -369,8 +369,23 @@ async function seedChats(ids, units, projects) {
  *  다음 평일 오후 2시(한국 시간), 회의실 2. 그 시간에 회의실이 이미 차 있으면 회의실 없이 만든다 */
 async function seedEvent(ids) {
   const id = eventId(1);
-  if (must(await admin.from("events").select("id").eq("id", id)).length > 0) return false;
+  const exists = must(await admin.from("events").select("id").eq("id", id)).length > 0;
+  if (!exists) await insertEvent(id, ids);
+  // 회의가 있어도 참석자는 채운다 (참석자를 넣다가 멈춘 적이 있다). 이미 있는 참석자·응답은 그대로 둔다.
+  // 여러 행을 한 번에 넣을 때 어떤 행에 없는 컬럼은 기본값이 아니라 null 이 들어가므로 모든 행에 response 를 적는다
+  must(
+    await admin.from("event_attendees").upsert(
+      [
+        { event_id: id, user_id: ids.get("dhkim"), response: "accepted", responded_at: new Date().toISOString() },
+        ...["sylee", "jamoon", "jmryu"].map((h) => ({ event_id: id, user_id: ids.get(h), response: "pending", responded_at: null })),
+      ],
+      { onConflict: "event_id,user_id", ignoreDuplicates: true },
+    ),
+  );
+  return !exists;
+}
 
+async function insertEvent(id, ids) {
   const kst = new Date(Date.now() + 9 * 3600_000);
   do kst.setUTCDate(kst.getUTCDate() + 1);
   while (kst.getUTCDay() === 0 || kst.getUTCDay() === 6);
@@ -391,13 +406,6 @@ async function seedEvent(ids) {
   let { error } = await admin.from("events").insert(event);
   if (error?.code === "23P01") ({ error } = await admin.from("events").insert({ ...event, room_id: null }));
   if (error) throw error;
-  must(
-    await admin.from("event_attendees").insert([
-      { event_id: id, user_id: ids.get("dhkim"), response: "accepted", responded_at: new Date().toISOString() },
-      ...["sylee", "jamoon", "jmryu"].map((h) => ({ event_id: id, user_id: ids.get(h) })),
-    ]),
-  );
-  return true;
 }
 
 await seedRooms();
