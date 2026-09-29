@@ -621,7 +621,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
 | `scripts/notifications-check.mjs` | 알림 트리거·실시간·권한 검사 (`npm run check:notify`, 16개) |
-| `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 15개). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
+| `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 21개 — 불참 알림 6개 포함). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명·프로젝트 채널 2개·샘플 대화·샘플 회의·회의실. 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 여러 번 돌려도 된다. 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다) |
