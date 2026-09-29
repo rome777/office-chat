@@ -102,6 +102,41 @@ try {
   const pVisibleToC = await C.sb.from("channels").select("id").eq("id", P.data.id);
   check("비공개 채널은 멤버가 아니면 안 보인다", pVisibleToC.data?.length === 0);
 
+  // ── 초대 권한 (20260929150000_invite_rights.sql) ──
+  const invite = (u, channel, userId) => u.sb.from("memberships").insert({ channel_id: channel, user_id: userId }).select();
+  const setRight = (u, channel, userId, value) =>
+    u.sb.from("memberships").update({ can_invite: value }).eq("channel_id", channel).eq("user_id", userId).select("user_id");
+  const rightOf = async (channel, userId) =>
+    (await admin.from("memberships").select("can_invite").eq("channel_id", channel).eq("user_id", userId).single()).data?.can_invite;
+  check("채널을 만든 사람은 초대 권한을 갖는다", (await rightOf(P.data.id, A.id)) === true);
+  const aAddsB = await invite(A, P.data.id, B.id);
+  check("만든 사람은 비공개 채널에 남을 넣는다", aAddsB.data?.length === 1, `(${aAddsB.error?.code ?? "ok"})`);
+  check("초대받은 사람은 초대 권한이 없다", (await rightOf(P.data.id, B.id)) === false);
+  const bAddsC = await invite(B, P.data.id, C.id);
+  check("초대 권한이 없는 멤버는 남을 못 넣는다", !!bAddsC.error, `(${bAddsC.error?.code})`);
+  const bSelf = await setRight(B, P.data.id, B.id, true);
+  check("초대 권한은 스스로 못 가진다 (0건)", (bSelf.data ?? []).length === 0 && (await rightOf(P.data.id, B.id)) === false, `(${bSelf.error?.code ?? `${bSelf.data?.length}건`})`);
+  const withRight = await A.sb.from("memberships").insert({ channel_id: P.data.id, user_id: C.id, can_invite: true }).select();
+  check("넣으면서 초대 권한을 같이 줄 수는 없다", !!withRight.error, `(${withRight.error?.code})`);
+  const aGrantsB = await setRight(A, P.data.id, B.id, true);
+  check("권한 있는 사람은 다른 멤버에게 초대 권한을 준다", aGrantsB.data?.length === 1 && (await rightOf(P.data.id, B.id)) === true, `(${aGrantsB.error?.code ?? "ok"})`);
+  const bAddsC2 = await invite(B, P.data.id, C.id);
+  check("권한을 받은 멤버는 남을 넣는다", bAddsC2.data?.length === 1, `(${bAddsC2.error?.code ?? "ok"})`);
+  const cGrantsC = await setRight(C, P.data.id, C.id, true);
+  check("권한 없는 C 는 스스로 권한을 못 준다 (0건)", (cGrantsC.data ?? []).length === 0 && (await rightOf(P.data.id, C.id)) === false);
+  const bRevokesA = await setRight(B, P.data.id, A.id, false);
+  check("관리자가 아니면 초대 권한을 못 뺀다", (!!bRevokesA.error || (bRevokesA.data ?? []).length === 0) && (await rightOf(P.data.id, A.id)) === true, `(${bRevokesA.error?.code ?? `${bRevokesA.data?.length}건`})`);
+  const bKicksC = await B.sb.from("memberships").delete().eq("channel_id", P.data.id).eq("user_id", C.id).select();
+  check("초대 권한이 있어도 내보내기는 못 한다 (0건)", (bKicksC.data ?? []).length === 0, `(${bKicksC.error?.code ?? `${bKicksC.data?.length}건`})`);
+  const mRevokesB = await setRight(M, P.data.id, B.id, false);
+  check("관리자는 초대 권한을 뺀다", mRevokesB.data?.length === 1 && (await rightOf(P.data.id, B.id)) === false, `(${mRevokesB.error?.code ?? "ok"})`);
+  const { data: rightLogs } = await admin.from("admin_logs").select("actor_id, action, target").in("actor_id", [A.id, M.id]);
+  check(
+    "초대·권한 주기·빼기가 admin_logs 에 남는다",
+    ["add_member", "grant_invite"].every((a) => rightLogs?.some((l) => l.actor_id === A.id && l.action === a && l.target.channel_id === P.data.id)) &&
+      rightLogs?.some((l) => l.actor_id === M.id && l.action === "revoke_invite" && l.target.user_id === B.id),
+  );
+
   // ── 실시간 (구독을 먼저 연다) ──
   const rtB = await listen(B.sb, "B");
   const rtC = await listen(C.sb, "C");
@@ -164,6 +199,9 @@ try {
   check("A→B DM 을 C 가 조회하면 0건", cDm.data?.length === 0 && cDmCh.data?.length === 0);
   const mDm = await M.sb.from("messages").select("id").eq("channel_id", dm1.data);
   check("관리자도 남의 DM 은 못 본다", mDm.data?.length === 0);
+  const dmRight = await A.sb.from("memberships").update({ can_invite: true }).eq("channel_id", dm1.data).eq("user_id", A.id).select("user_id");
+  const dmAdd = await A.sb.from("memberships").insert({ channel_id: dm1.data, user_id: C.id }).select();
+  check("DM 에는 초대 권한도 초대도 없다", (dmRight.data ?? []).length === 0 && !!dmAdd.error, `(${dmAdd.error?.code})`);
 
   // ── 관리자·멤버 제거 ──
   const bKicksA = await B.sb.from("memberships").delete().eq("channel_id", X.data.id).eq("user_id", A.id).select();

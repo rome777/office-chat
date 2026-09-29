@@ -4,11 +4,13 @@
 // 알림은 DB 트리거가 만든다 (supabase/migrations/20260929130000_message_notifications.sql). 여기서는 받아서 보여 주기만 한다.
 //
 // 새 알림이 오면:
-//   그 대화를 보고 있고 탭이 보인다  → 띄우지 않고 바로 읽음
-//   탭이 보인다                      → 토스트
-//   탭이 안 보이고 브라우저 알림 권한  → 브라우저 알림 (tag = 알림 id 라 탭이 여러 개여도 하나)
-//   탭이 안 보이고 권한이 없다        → 탭 제목의 (N) 만
+//   그 메시지를 보고 있다 (탭이 보이고 창에 포커스,
+//     최상위 메시지면 그 채널 · 답글이면 그 스레드가 열려 있다) → 띄우지 않고 바로 읽음
+//   탭을 보고 있다                                → 토스트
+//   안 보고 있고 브라우저 알림 권한                → 브라우저 알림 (tag = 알림 id 라 탭이 여러 개여도 하나)
+//   안 보고 있고 권한이 없다                      → 탭이 보이면 토스트, 아니면 탭 제목의 (N) 만
 // 안 읽은 수는 언제나 알림 버튼 배지와 탭 제목에 보인다.
+// 나중에라도 알림의 메시지가 화면에 보이면 읽음이 된다 (아래 "화면에 보이면 읽음").
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
@@ -28,11 +30,20 @@ export const TYPE_LABEL: Record<NotificationType, string> = {
   event_reminder: "10분 후 회의",
 };
 
-/** 화면에 그릴 알림 한 건 */
-export type NotificationView = AppNotification & { title: string; preview: string };
+/** 화면에 그릴 알림 한 건. parentId 는 답글이면 부모 메시지 id */
+export type NotificationView = AppNotification & { title: string; preview: string; parentId: number | null };
 
 /** 띄울 것: 알림 한 건, 또는 끊긴 동안 쌓인 여러 건을 묶은 것 */
 export type Arrival = { kind: "one"; item: NotificationView } | { kind: "many"; count: number };
+
+/**
+ * 사용자가 지금 이 탭을 보고 있는가.
+ * 다른 프로그램으로 Alt+Tab 하거나 다른 브라우저 창을 앞에 두면 visibilityState 는 그대로 "visible" 이다
+ * → 포커스까지 봐야 한다. visibilityState 만 봤을 때는 브라우저 알림 대신 안 보이는 토스트가 떴다 (2026-09-29)
+ */
+export function isLooking(): boolean {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
 
 /** 알림을 누르면 갈 주소. 메시지 알림은 ① 이 ?m= 로 이동·강조하고, 답글이면 스레드를 연다 */
 export function notificationHref(n: AppNotification): string {
@@ -51,8 +62,10 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
 
   const [messages, channels, events] = await Promise.all([
     messageIds.length
-      ? supabase.from("messages").select("id, body, user_id, author").in("id", messageIds)
-      : Promise.resolve({ data: [] as { id: number; body: string; user_id: string | null; author: string | null }[] }),
+      ? supabase.from("messages").select("id, body, user_id, author, parent_id").in("id", messageIds)
+      : Promise.resolve({
+          data: [] as { id: number; body: string; user_id: string | null; author: string | null; parent_id: number | null }[],
+        }),
     channelIds.length
       ? supabase.from("channels").select("id, name, type").in("id", channelIds)
       : Promise.resolve({ data: [] as { id: string; name: string | null; type: string }[] }),
@@ -79,25 +92,28 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
       // 회의에서 빠졌거나 지워진 회의면 RLS 가 주지 않는다
       const room = (ev?.rooms as { name?: string } | null | undefined)?.name;
       const preview = ev ? [when, room].filter(Boolean).join(" · ") : "볼 수 없는 회의입니다";
-      return { ...n, title: ev?.title ?? "회의", preview };
+      return { ...n, title: ev?.title ?? "회의", preview, parentId: null };
     }
     const m = n.message_id ? msgById.get(n.message_id) : undefined;
     const ch = n.channel_id ? chById.get(n.channel_id) : undefined;
     const author = m ? (m.author ?? (m.user_id ? nameById.get(m.user_id) : undefined) ?? "알 수 없음") : "알 수 없음";
     const where = ch?.type === "dm" ? "" : ch?.name ? ` · #${ch.name}` : "";
     const body = m ? m.body.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS) || "(첨부)" : "볼 수 없는 메시지입니다";
-    return { ...n, title: `${author}${where}`, preview: body };
+    return { ...n, title: `${author}${where}`, preview: body, parentId: m?.parent_id ?? null };
   });
 }
 
 export function useNotifications({
   selfId,
   currentChannelId,
+  openThreadId,
   onArrive,
 }: {
   selfId: string | null;
-  /** 지금 보고 있는 대화. 그 대화의 알림은 띄우지 않고 바로 읽음 처리한다 */
+  /** 지금 보고 있는 대화. 그 대화의 최상위 메시지 알림은 띄우지 않고 바로 읽음 처리한다 */
   currentChannelId: string;
+  /** 열려 있는 스레드의 부모 메시지 id. 그 스레드의 답글 알림은 띄우지 않고 바로 읽음 처리한다 */
+  openThreadId: number | null;
   /** 토스트·브라우저 알림을 띄울 때 부른다 (띄우기 규칙은 여기서 정한다) */
   onArrive: (arrival: Arrival) => void;
 }) {
@@ -106,6 +122,8 @@ export function useNotifications({
   const lastIdRef = useRef(0);
   const channelRef = useRef(currentChannelId);
   channelRef.current = currentChannelId;
+  const threadRef = useRef(openThreadId);
+  threadRef.current = openThreadId;
   const arriveRef = useRef(onArrive);
   arriveRef.current = onArrive;
 
@@ -158,8 +176,11 @@ export function useNotifications({
         const known = new Set(prev.map((n) => n.id));
         return [...views.filter((v) => !known.has(v.id)), ...prev].sort((a, b) => b.id - a.id).slice(0, LIST_SIZE);
       });
-      const visible = document.visibilityState === "visible";
-      const watching = views.filter((v) => visible && v.channel_id === channelRef.current && v.read_at === null);
+      // 답글은 채널만 같아서는 안 보인다 (채널 본문에는 답글이 없다) → 그 스레드가 열려 있어야 보고 있는 것이다
+      const looking = isLooking();
+      const inView = (v: NotificationView) =>
+        v.parentId === null ? v.channel_id === channelRef.current : v.parentId === threadRef.current;
+      const watching = views.filter((v) => looking && v.message_id !== null && inView(v) && v.read_at === null);
       if (watching.length) markRead(watching.map((v) => v.id));
       const rest = views.filter((v) => !watching.includes(v) && v.read_at === null);
       if (rest.length === 0) return void refreshUnread();
@@ -229,6 +250,66 @@ export function useNotifications({
       void supabase.removeChannel(channel);
     };
   }, [selfId, receive, refreshUnread]);
+
+  // 안 읽은 알림의 메시지가 화면에 보이면 읽음 (채널 본문이든 스레드 패널이든, 나중에 열어서 봐도).
+  // 메시지는 ① 의 MessageItem 이 [data-message-id] 로 그린다 — 그 속성이 ① 과 ③ 사이의 약속이다.
+  // 조금이라도 보이면 본 것으로 친다 (① 의 읽음 위치와 같은 기준). 탭을 안 보고 있으면 다시 볼 때 친다
+  useEffect(() => {
+    const byMessage = new Map<number, number[]>();
+    for (const n of items) {
+      if (n.read_at || n.message_id === null) continue;
+      byMessage.set(n.message_id, [...(byMessage.get(n.message_id) ?? []), n.id]);
+    }
+    if (byMessage.size === 0) return;
+
+    const onScreen = new Set<number>();
+    const done = new Set<number>();
+    const flush = () => {
+      if (!isLooking()) return;
+      const ids = [...onScreen].flatMap((m) => byMessage.get(m) ?? []).filter((id) => !done.has(id));
+      if (ids.length === 0) return;
+      ids.forEach((id) => done.add(id));
+      markRead(ids);
+    };
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const id = Number((e.target as HTMLElement).dataset.messageId);
+        if (e.isIntersecting) onScreen.add(id);
+        else onScreen.delete(id);
+      }
+      flush();
+    });
+    // 메시지는 나중에 그려진다 (채널을 바꾸거나 스레드를 열거나 이전 메시지를 불러올 때) → 바뀔 때마다 다시 찾는다
+    const watched = new WeakSet<Element>();
+    const scan = () => {
+      for (const id of byMessage.keys()) {
+        document.querySelectorAll(`[data-message-id="${id}"]`).forEach((el) => {
+          if (watched.has(el)) return;
+          watched.add(el);
+          io.observe(el);
+        });
+      }
+    };
+    let frame = 0;
+    const mo = new MutationObserver(() => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        scan();
+      });
+    });
+    scan();
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("focus", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      cancelAnimationFrame(frame);
+      mo.disconnect();
+      io.disconnect();
+      window.removeEventListener("focus", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, [items, markRead]);
 
   return { items, unread, markRead, markAllRead };
 }

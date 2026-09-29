@@ -143,9 +143,26 @@ function summarize(c: Row, joined: boolean, count: number | undefined): ChannelS
 
 const byName = (a: Row, b: Row) => (a.name ?? "").localeCompare(b.name ?? "", "ko");
 
+/** 부서 채널의 순서: 상급 조직일수록 위 (회사 = #일반 → 사업부 → 본부 → 팀), 부서 채널이 아니면 그 뒤 */
+const ORG_LEVEL: Record<string, number> = { company: 0, division: 1, hq: 2, team: 3 };
+type OrgRank = { level: number; order: number };
+
+/** 부서 채널이면 조직 단계·순서 (org_units, 2026-09-29). 조회에 실패하면 부서 채널이 없는 것처럼 이름순으로 둔다 */
+async function orgRanks(channelIds: string[]): Promise<Map<string, OrgRank>> {
+  if (channelIds.length === 0) return new Map();
+  const { data, error } = await getSupabase()
+    .from("org_units")
+    .select("channel_id, kind, sort_order")
+    .in("channel_id", channelIds);
+  if (error) return new Map();
+  return new Map(
+    (data ?? []).map((u) => [u.channel_id as string, { level: ORG_LEVEL[u.kind as string] ?? 4, order: u.sort_order as number }]),
+  );
+}
+
 // ── 화면이 부르는 함수 ──────────────────────────────────────
 
-/** 내가 가입한 채널 (DM 제외). #일반을 맨 위에, 나머지는 이름순 */
+/** 내가 가입한 채널 (DM 제외). #일반을 맨 위에, 그다음 부서 채널을 상급 조직부터, 나머지는 이름순 */
 export async function listMyChannels(): Promise<ChannelSummary[]> {
   const me = await myId();
   // 내 멤버십이 있는 채널만 (inner join) — 채널 id 를 주소에 늘어놓지 않는다
@@ -156,9 +173,16 @@ export async function listMyChannels(): Promise<ChannelSummary[]> {
     .neq("type", "dm");
   if (error) throw friendly(error);
   const rows = (data ?? []) as Row[];
-  const counts = await memberCounts(rows.map((r) => r.id));
+  const ids = rows.map((r) => r.id);
+  const [counts, ranks] = await Promise.all([memberCounts(ids), orgRanks(ids)]);
+  const OTHER: OrgRank = { level: 4, order: 0 };
+  const rank = (r: Row) => (r.id === GENERAL_ID ? { level: -1, order: 0 } : (ranks.get(r.id) ?? OTHER));
   return rows
-    .sort((a, b) => (a.id === GENERAL_ID ? -1 : b.id === GENERAL_ID ? 1 : byName(a, b)))
+    .sort((a, b) => {
+      const x = rank(a);
+      const y = rank(b);
+      return x.level - y.level || x.order - y.order || byName(a, b);
+    })
     .map((r) => summarize(r, true, counts.get(r.id)));
 }
 
