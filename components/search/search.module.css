@@ -1,5 +1,9 @@
 /* ② 검색 스타일 */
 
+.wrap {
+  position: relative;
+}
+
 .box {
   width: 220px;
   max-width: 100%;
@@ -10,4 +14,133 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 10px;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(420px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meta {
+  color: var(--muted);
+}
+
+.error,
+.empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 14px;
+}
+
+.error {
+  color: var(--bad);
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.results li {
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.activeRow {
+  background: var(--mine);
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.where {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.when {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.text {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.text mark {
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* 좁은 화면: 검색창은 조금 줄이고 결과는 화면 폭에 맞춘다 */
+@media (max-width: 560px) {
+  .box {
+    width: 140px;
+  }
+
+  .panel {
+    position: fixed;
+    top: 56px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
 }

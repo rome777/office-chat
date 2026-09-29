@@ -8,7 +8,14 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:step1": "node --env-file=.env.local scripts/step1-check.mjs"
+    "check:step1": "node --env-file=.env.local scripts/step1-check.mjs",
+    "check:db": "node --env-file=.env.local scripts/db-v1-check.mjs",
+    "check:attach": "node --env-file=.env.local scripts/attachments-check.mjs",
+    "check:notify": "node --env-file=.env.local scripts/notifications-check.mjs",
+    "check:ai": "node --env-file=.env.local scripts/ai-check.mjs",
+    "check:events": "node --env-file=.env.local scripts/event-notifications-check.mjs",
+    "seed:users": "node --env-file=.env.local scripts/seed-users.mjs",
+    "seed:10k": "node --env-file=.env.local scripts/seed-10k.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
