@@ -483,6 +483,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
+| `scripts/seed-users.mjs` | 시연 계정 4명 만들기 (`npm run seed:users`). 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 이미 있으면 비밀번호·이름·역할만 맞춘다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
@@ -526,6 +527,8 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
 - **`supabase db query` 는 한 번에 SQL 문장 하나만 받는다**: 여러 문장을 넣으면 `cannot insert multiple commands into a prepared statement`. 마이그레이션을 미리 시험하려면 트랜잭션으로 묶어 되돌릴 수 있는 Postgres 클라이언트가 필요하다 (2026-09-29 에는 임시 폴더에 `pg` 를 깔아 `begin; …; rollback;` 으로 시험했다). Docker 가 없어 로컬 Supabase(`supabase start`)는 못 띄운다.
+- **가입하면 "메일을 너무 자주 보냈습니다"(rate limit)로 막힌다**: 가입 확인 메일을 Supabase 기본 메일 서버로 보내는데, 시간당 보낼 수 있는 수가 아주 적다 (2026-09-29 로컬 시험 중 발생).
+  시험 계정은 `npm run seed:users` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
