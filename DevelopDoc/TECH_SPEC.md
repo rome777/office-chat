@@ -368,8 +368,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ├─ app/
 │  ├─ page.tsx                    공통 틀 — 입장 관문(②) → 화면 상태 → 세 칸 배치
 │  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만
-│  ├─ login/                      ② 로그인 (예정)
-│  ├─ calendar/                   ② 캘린더·회의 예약 (예정)
+│  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
+│  ├─ calendar/                   ② 캘린더·회의 예약
 │  └─ api/
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
@@ -381,8 +381,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
 │  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
-│  ├─ people/                     ② 사람 찾기 (예정) — DM·캘린더·채널 정보가 가져다 씀
-│  ├─ calendar/                   ② 캘린더 화면 부품 (예정)
+│  ├─ people/                     ② 사람 찾기 PeoplePicker · directory — DM·캘린더·채널 정보가 가져다 씀 (지금은 가짜 명단)
+│  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts (지금은 가짜 데이터)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
 │  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
 ├─ lib/
