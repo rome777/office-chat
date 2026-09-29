@@ -16,6 +16,15 @@ export type ChatMessage = {
   author: string | null;
 };
 
+/** attachments 테이블 한 행 중 화면에 필요한 것. 파일은 /api/attachments/{id} 로 연다 */
+export type MessageAttachment = {
+  id: string;
+  message_id: number;
+  mime: string;
+  size: number;
+  file_name: string;
+};
+
 /** 서버 저장 전, 화면에만 있는 메시지 */
 export type PendingMessage = {
   clientId: string;
@@ -23,6 +32,8 @@ export type PendingMessage = {
   body: string;
   status: "sending" | "failed";
   error?: string;
+  /** 첨부 메시지. "다시 보내기" 때 다시 올리려고 파일을 들고 있는다 (새로고침하면 사라진다) */
+  file?: File;
 };
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected";

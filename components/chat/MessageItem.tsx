@@ -1,6 +1,8 @@
 // ① 메시지 한 건
 
-import type { ChatMessage, PendingMessage } from "@/lib/types/message";
+import { formatBytes } from "@/lib/attachments";
+import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
+import AttachmentView from "./AttachmentView";
 import SafeText from "./SafeText";
 import s from "./chat.module.css";
 
@@ -14,6 +16,7 @@ export function MessageItem({
   mine,
   myHandle,
   highlighted,
+  files,
 }: {
   message: ChatMessage;
   /** 로그인한 사람은 profiles 의 이름, Step 1 익명 메시지는 닉네임 */
@@ -23,6 +26,7 @@ export function MessageItem({
   myHandle?: string;
   /** 메시지로 이동(`?m=`)해서 잠깐 강조 중 */
   highlighted: boolean;
+  files?: MessageAttachment[];
 }) {
   return (
     <article
@@ -33,9 +37,12 @@ export function MessageItem({
         <strong>{authorName}</strong>
         <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
       </div>
-      <p className={s.body}>
-        <SafeText text={message.body} mentions={{ me: myHandle }} />
-      </p>
+      {message.body && (
+        <p className={s.body}>
+          <SafeText text={message.body} mentions={{ me: myHandle }} />
+        </p>
+      )}
+      {files && files.length > 0 && <AttachmentView files={files} />}
     </article>
   );
 }
@@ -55,11 +62,20 @@ export function PendingItem({
     <article className={`${s.msg} ${s.mine} ${s[message.status]}`}>
       <div className={s.meta}>
         <strong>{message.author}</strong>
-        <span>{message.status === "sending" ? "보내는 중…" : "전송 실패"}</span>
+        <span>
+          {message.status === "failed" ? "전송 실패" : message.file ? "올리는 중…" : "보내는 중…"}
+        </span>
       </div>
-      <p className={s.body}>
-        <SafeText text={message.body} mentions={{ me: myHandle }} />
-      </p>
+      {message.body && (
+        <p className={s.body}>
+          <SafeText text={message.body} mentions={{ me: myHandle }} />
+        </p>
+      )}
+      {message.file && (
+        <p className={`${s.fileLink} muted`}>
+          📎 {message.file.name} ({formatBytes(message.file.size)})
+        </p>
+      )}
       {message.status === "failed" && (
         <div className={s.actions}>
           <span className="error-text">{message.error}</span>

@@ -4,7 +4,7 @@
 // 맨 위에 가까이 올리면 이전 메시지를 불러오고, 위에 붙은 만큼 내려서 보던 자리를 지킨다.
 
 import { useLayoutEffect, useRef, useState } from "react";
-import type { ChatMessage, PendingMessage } from "@/lib/types/message";
+import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
 import type { Self } from "./useMessages";
 import { MessageItem, PendingItem } from "./MessageItem";
 import s from "./chat.module.css";
@@ -28,6 +28,7 @@ export default function MessageList({
   pending,
   self,
   names,
+  attachments,
   sendTick,
   hasOlder,
   loadingOlder,
@@ -42,6 +43,8 @@ export default function MessageList({
   self: Self | null;
   /** 작성자 id → 표시 이름 */
   names: Record<string, string>;
+  /** 메시지 id → 첨부 */
+  attachments: Record<number, MessageAttachment[]>;
   /** 내가 보낼 때마다 바뀐다. 바뀌면 위를 보고 있었어도 맨 아래로 내린다 */
   sendTick: number;
   hasOlder: boolean;
@@ -135,6 +138,7 @@ export default function MessageList({
             mine={!!self && m.user_id === self.id}
             myHandle={self?.handle ?? undefined}
             highlighted={m.id === highlightId}
+            files={attachments[m.id]}
           />
         ))}
         {pending.map((p) => (

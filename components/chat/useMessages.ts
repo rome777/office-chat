@@ -6,7 +6,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
-import type { ChatMessage, ConnectionState, PendingMessage } from "@/lib/types/message";
+import type {
+  ChatMessage,
+  ConnectionState,
+  MessageAttachment,
+  PendingMessage,
+} from "@/lib/types/message";
+
+/** 조회 결과. 첨부는 attachments 를 함께 받는다 (FK 로 붙여 조회) */
+type MessageRow = ChatMessage & { attachments?: MessageAttachment[] };
+
+const ATTACHMENT_COLUMNS = "id, message_id, mime, size, file_name";
 
 const SEND_TIMEOUT_MS = 5000;
 /** 처음 열 때와 위로 올릴 때 한 번에 받는 수 (TECH_SPEC 7절 페이지네이션) */
@@ -29,6 +39,7 @@ function sendErrorMessage(error: { code?: string; message?: string; name?: strin
   if (error.name === "AbortError" || error.code === "20") return "서버 응답이 없습니다";
   if (error.code === "23514") return "빈 메시지이거나 너무 깁니다";
   if (error.code === "42501") return "이 대화에 보낼 권한이 없습니다";
+  if (/exceeded|too large|payload/i.test(error.message ?? "")) return "5MB 이하만 올릴 수 있습니다";
   if (!navigator.onLine || /fetch/i.test(error.message ?? "")) return "연결이 끊겨 보내지 못했습니다";
   return error.message ?? "보내지 못했습니다";
 }
@@ -49,6 +60,8 @@ export function useMessages(channelId: string, myName: string) {
   const [self, setSelf] = useState<Self | null>(null);
   /** 작성자 id → 표시 이름. 실시간으로 온 행에는 이름이 없어서 profiles 에서 찾아 둔다 */
   const [names, setNames] = useState<Record<string, string>>({});
+  /** 메시지 id → 첨부. 메시지와 첨부는 실시간 이벤트가 따로 와서 따로 모은다 */
+  const [attachments, setAttachments] = useState<Record<number, MessageAttachment[]>>({});
 
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const channelRef = useRef(channelId);
@@ -71,9 +84,25 @@ export function useMessages(channelId: string, myName: string) {
     }
   }, []);
 
+  const addAttachments = useCallback((list: MessageAttachment[]) => {
+    if (list.length === 0) return;
+    setAttachments((prev) => {
+      const next = { ...prev };
+      for (const a of list) {
+        const current = next[a.message_id] ?? [];
+        if (!current.some((x) => x.id === a.id)) next[a.message_id] = [...current, a];
+      }
+      return next;
+    });
+  }, []);
+
   // 서버 id 를 키로 합친다. 같은 메시지가 실시간·동기화로 두 번 와도 한 번만 그린다.
   // 채널을 바꾼 뒤 늦게 도착한 옛 채널 응답은 버린다.
-  const merge = useCallback((raw: ChatMessage[]) => {
+  const merge = useCallback((rows: MessageRow[]) => {
+    const raw = rows.map(({ attachments: files, ...m }) => {
+      if (files?.length) addAttachments(files);
+      return m as ChatMessage;
+    });
     const incoming = raw.filter((m) => m.channel_id === channelRef.current && m.parent_id === null);
     if (incoming.length === 0) return;
     void resolveNames(incoming);
@@ -87,12 +116,16 @@ export function useMessages(channelId: string, myName: string) {
     });
     const saved = new Set(incoming.map((m) => m.client_id));
     setPending((prev) => prev.filter((p) => !saved.has(p.clientId)));
-  }, [resolveNames]);
+  }, [resolveNames, addAttachments]);
 
   // 이 채널의 최상위 메시지 조회
   const query = useCallback(
     (supabase: SupabaseClient) =>
-      supabase.from("messages").select("*").eq("channel_id", channelId).is("parent_id", null),
+      supabase
+        .from("messages")
+        .select(`*, attachments(${ATTACHMENT_COLUMNS})`)
+        .eq("channel_id", channelId)
+        .is("parent_id", null),
     [channelId],
   );
 
@@ -201,6 +234,7 @@ export function useMessages(channelId: string, myName: string) {
     oldestIdRef.current = 0;
     setMessages([]);
     setPending([]);
+    setAttachments({});
     setReady(false);
     setHasOlder(false);
 
@@ -215,6 +249,11 @@ export function useMessages(channelId: string, myName: string) {
         // RLS 가 구독자마다 걸러서 보낸다. 멤버가 아니면 오지 않는다
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         (payload) => merge([payload.new as ChatMessage]),
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "attachments", filter: `channel_id=eq.${channelId}` },
+        (payload) => addAttachments([payload.new as MessageAttachment]),
       )
       .on("presence", { event: "sync" }, () => {
         setOnline(Object.keys(channel.presenceState()).length);
@@ -245,7 +284,7 @@ export function useMessages(channelId: string, myName: string) {
       void supabase.removeChannel(channel);
       supabaseRef.current = null;
     };
-  }, [channelId, myName, merge, sync]);
+  }, [channelId, myName, merge, sync, addAttachments]);
 
   // 내 id·handle. 로그인 세션은 입장 관문(②)이 이미 확인했다
   useEffect(() => {
@@ -263,15 +302,15 @@ export function useMessages(channelId: string, myName: string) {
     };
   }, []);
 
-  async function send(body: string, clientId = newClientId()) {
+  async function send(body: string, clientId = newClientId(), file?: File) {
     const text = body.trim();
     const supabase = supabaseRef.current;
-    if (!text || !supabase) return;
+    if ((!text && !file) || !supabase) return;
 
     const mark = (status: PendingMessage["status"], error?: string) =>
       setPending((prev) => {
         const rest = prev.filter((p) => p.clientId !== clientId);
-        return [...rest, { clientId, author: myName, body: text, status, error }];
+        return [...rest, { clientId, author: myName, body: text, status, error, file }];
       });
 
     if (!navigator.onLine) {
@@ -279,6 +318,12 @@ export function useMessages(channelId: string, myName: string) {
       return;
     }
     mark("sending");
+
+    if (file) {
+      const failure = await sendFile(supabase, clientId, text, file);
+      if (failure) mark("failed", failure);
+      return;
+    }
 
     try {
       // 같은 client_id 가 이미 있으면 저장하지 않는다 (ON CONFLICT DO NOTHING)
@@ -301,6 +346,49 @@ export function useMessages(channelId: string, myName: string) {
     }
   }
 
+  // 첨부: 업로드 주소 받기 → Storage 로 바로 올리기 → 서버가 시그니처 검사 뒤 메시지·첨부 저장 (TECH_SPEC 7절).
+  // 실패하면 오류 문구를, 성공하면 null 을 돌려준다
+  async function sendFile(
+    supabase: SupabaseClient,
+    clientId: string,
+    text: string,
+    file: File,
+  ): Promise<string | null> {
+    try {
+      const signRes = await fetch("/api/attachments/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel_id: channelId, file_name: file.name, size: file.size, mime: file.type }),
+      });
+      const sign = await signRes.json().catch(() => ({}));
+      if (!signRes.ok) return sign.error ?? "업로드 주소를 받지 못했습니다";
+
+      const upload = await supabase.storage
+        .from("attachments")
+        .uploadToSignedUrl(sign.path, sign.token, file, { contentType: file.type });
+      if (upload.error) return sendErrorMessage(upload.error);
+
+      const confirmRes = await fetch("/api/attachments/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel_id: channelId,
+          path: sign.path,
+          file_name: file.name,
+          client_id: clientId,
+          body: text,
+        }),
+      });
+      const saved = await confirmRes.json().catch(() => ({}));
+      if (!confirmRes.ok) return saved.error ?? "파일을 저장하지 못했습니다";
+      addAttachments([saved.attachment as MessageAttachment]);
+      merge([saved.message as ChatMessage]);
+      return null;
+    } catch (e) {
+      return sendErrorMessage(e as Error);
+    }
+  }
+
   function discard(clientId: string) {
     setPending((prev) => prev.filter((p) => p.clientId !== clientId));
   }
@@ -313,6 +401,7 @@ export function useMessages(channelId: string, myName: string) {
     fatal,
     self,
     names,
+    attachments,
     ready,
     hasOlder,
     loadingOlder,

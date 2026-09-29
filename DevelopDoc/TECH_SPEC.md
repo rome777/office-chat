@@ -278,7 +278,23 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 3. `POST /api/attachments/confirm` — 서버가 파일 앞부분의 시그니처(PNG·JPEG·PDF)를 확인한다. 맞지 않으면 지우고 거부한다. 맞으면 `attachments` 행을 만든다.
 4. 다운로드는 `GET /api/attachments/{id}` — 멤버십을 확인한 뒤 60초짜리 서명 URL 로 보낸다. 버킷은 비공개라 URL 을 알아도 C 는 못 연다.
 
-경로 규칙: `{channel_id}/{uuid}-{파일이름}`
+경로 규칙: `{channel_id}/{user_id}/{uuid}-{ASCII 로 바꾼 파일이름}` (2026-09-29 구현)
+
+**구현하며 정한 것** (2026-09-29)
+
+- 경로에 올린 사람의 `user_id` 를 넣었다. 확정 API 는 **자기가 올린 경로만** 받는다 (남이 올린 파일을 자기 메시지로 확정하지 못하게).
+- 파일 이름은 원래 이름을 `attachments.file_name` 에만 두고, Storage 경로에는 영문·숫자·`_`·`-` 로 바꾼 이름을 쓴다. Supabase Storage 는 한글 등 ASCII 밖 글자가 든 경로를 거부한다고 알려져 있어서 처음부터 피했다 (직접 확인하지는 않았다).
+- 확정은 `post_attachment_message()` 함수(service role 만)가 **메시지와 첨부 행을 한 트랜잭션으로** 넣는다. 따로 넣으면 실시간으로 메시지를 먼저 받은 화면이 첨부 없는 메시지를 그린다. 첨부 전용 메시지는 본문이 빈 문자열이다.
+- `attachments` 도 실시간 구독 대상에 넣었다. 화면은 메시지와 첨부를 따로 받아 `message_id` 로 붙인다. 처음 불러올 때는 `messages` 조회에 `attachments(...)` 를 붙여 한 번에 받는다.
+- 시그니처는 파일 전체가 아니라 **앞 8바이트만** 서명 URL 에 `Range` 요청으로 읽는다.
+- 다시 보내기: 같은 `client_id` 메시지에 이미 첨부가 있으면, 새로 올린 파일은 지우고 먼저 저장한 것을 돌려준다 (첫 확정이 성공했는데 응답만 못 받은 경우).
+- 크기 상한·형식·시그니처 판별은 `lib/attachments.ts` 하나에 두고 입력창과 서버가 같이 쓴다.
+- 이미지 미리보기는 높이를 160px 로 고정했다. 이미지가 늦게 떠도 목록 높이가 바뀌지 않아 스크롤 자리가 튀지 않는다.
+
+**알려진 한계**
+
+- 올리기만 하고 확정하지 않은 파일(업로드 뒤 탭을 닫음 등)은 Storage 에 남는다. 지우는 작업은 없다.
+- 첨부 전송이 실패한 채로 새로고침하면 그 파일은 다시 골라야 한다 (파일은 브라우저 메모리에만 있다).
 
 ### 스레드 (F4-1)
 
@@ -347,7 +363,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ login/                      ② 로그인 (예정)
 │  ├─ calendar/                   ② 캘린더·회의 예약 (예정)
 │  └─ api/
-│     ├─ attachments/             ① 첨부 (예정)
+│     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
 │        ├─ tone/                 ① 말투 변환 (예정)
 │        └─ summarize/ · todos/   ③ AI 요약·할 일 (예정)
@@ -363,12 +379,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
+│  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
 │  ├─ ai/                         ③ AI 공통 — LLM 호출·요청 상한·비용 기록 (예정)
 │  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · seed-10k (예정)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · seed-10k (예정)
 └─ .env.example
 ```
 
@@ -446,6 +463,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929100200_mark_read.sql` | 읽음 표시 함수 `mark_read()` |
 | `supabase/migrations/20260929100300_backfill_profiles.sql` | 가입 트리거보다 먼저 가입한 계정의 profiles 채우기 |
 | `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
+| `supabase/migrations/20260929110000_attachment_message.sql` | 첨부 메시지 저장 함수 `post_attachment_message()`, `attachments` 실시간 등록 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -455,6 +473,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
+| `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
 

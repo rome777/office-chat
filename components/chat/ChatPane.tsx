@@ -22,6 +22,7 @@ export default function ChatPane() {
     fatal,
     self,
     names,
+    attachments,
     ready,
     hasOlder,
     loadingOlder,
@@ -57,9 +58,9 @@ export default function ChatPane() {
     return () => clearTimeout(timer);
   }, [jumpNotice]);
 
-  function sendNow(body: string, clientId?: string) {
+  function sendNow(body: string, clientId?: string, file?: File) {
     setSendTick((t) => t + 1);
-    void send(body, clientId);
+    void send(body, clientId, file);
   }
 
   if (fatal) {
@@ -81,16 +82,17 @@ export default function ChatPane() {
         pending={pending}
         self={self}
         names={names}
+        attachments={attachments}
         sendTick={sendTick}
         hasOlder={hasOlder}
         loadingOlder={loadingOlder}
         focus={focus}
         onLoadOlder={() => void loadOlder()}
         onFocusMissing={() => setJumpNotice("메시지를 찾을 수 없습니다. 지워졌거나 볼 수 없는 메시지입니다.")}
-        onRetry={(p) => sendNow(p.body, p.clientId)}
+        onRetry={(p) => sendNow(p.body, p.clientId, p.file)}
         onDiscard={discard}
       />
-      <Composer channelName={channel.name} onSend={(body) => sendNow(body)} />
+      <Composer channelName={channel.name} onSend={(body, file) => sendNow(body, undefined, file)} />
     </section>
   );
 }
