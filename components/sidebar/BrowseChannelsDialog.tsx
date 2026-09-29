@@ -28,7 +28,9 @@ export default function BrowseChannelsDialog({
     const load = () =>
       void listPublicChannels(query).then(
         (found) => {
-          if (alive) setList(found);
+          if (!alive) return;
+          setList(found);
+          setError(null);
         },
         (e: unknown) => {
           if (alive) setError(e instanceof Error ? e.message : String(e));

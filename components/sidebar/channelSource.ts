@@ -25,11 +25,14 @@ type Row = {
 
 const COLUMNS = "id, name, type, created_by, created_at";
 
+// ── 목록 갱신 알림 ──────────────────────────────────────────
+
 const listeners = new Set<() => void>();
 let live: RealtimeChannel | null = null;
+let liveSeq = 0;
 
 /** 목록이 바뀌면 알려 준다 (왼쪽 칸과 헤더의 채널 목록이 함께 갱신되도록).
- *  남이 나를 채널에 넣으면(관리자 추가) 실시간으로도 알린다. 구독은 쓰는 곳이 여럿이어도 하나만 연다 */
+ *  남이 나를 채널에 넣거나 빼면(관리자) 실시간으로도 알린다. 구독은 쓰는 곳이 여럿이어도 하나만 연다 */
 export function subscribeChannels(fn: () => void): () => void {
   listeners.add(fn);
   if (!live) void startLive();
@@ -44,26 +47,29 @@ export function subscribeChannels(fn: () => void): () => void {
 export const notifyChannelsChanged = () => listeners.forEach((fn) => fn());
 
 async function startLive() {
-  const supabase = getSupabase();
   const me = await myId().catch(() => null);
   if (!me || live || listeners.size === 0) return;
-  live = supabase
-    .channel(`memberships:${me}`)
+  live = getSupabase()
+    // 떠나는 중인 이전 구독과 이름이 겹치면 새 구독이 붙지 않으므로 매번 새 이름을 쓴다
+    .channel(`memberships:${me}:${++liveSeq}`)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "memberships", filter: `user_id=eq.${me}` },
       notifyChannelsChanged,
     )
-    .subscribe();
+    // 구독이 붙기 전(또는 끊겼다 다시 붙는 동안) 생긴 변화는 이벤트로 오지 않으므로, 붙을 때마다 다시 불러온다
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") notifyChannelsChanged();
+    });
 }
+
+// ── 이름 ────────────────────────────────────────────────────
+
+const INVISIBLE = new RegExp("[\\u200B-\\u200D\\u2060\\uFEFF]", "g");
 
 /** 저장할 이름: 한글 조합 방식 통일(NFC), 보이지 않는 글자 제거, 공백 정리 */
 export const cleanName = (raw: string) =>
-  raw
-    .normalize("NFC")
-    .replace(/[​-‍⁠﻿]/g, "")
-    .trim()
-    .replace(/\s+/g, " ");
+  raw.normalize("NFC").replace(INVISIBLE, "").trim().replace(/\s+/g, " ");
 
 /** 이름 비교용 (대소문자 무시) */
 const norm = (name: string | null) => cleanName(name ?? "").toLowerCase();
@@ -77,6 +83,8 @@ export function channelNameProblem(raw: string): string | null {
   return null;
 }
 
+// ── 공통 ────────────────────────────────────────────────────
+
 async function myId(): Promise<string> {
   // 쿠키의 세션에서 읽는다 (네트워크 없음). 권한은 어차피 DB 가 토큰으로 다시 확인한다
   const { data } = await getSupabase().auth.getSession();
@@ -87,20 +95,24 @@ async function myId(): Promise<string> {
 
 function friendly(error: { code?: string; message: string }): Error {
   if (error.code === "42501") return new Error("권한이 없습니다");
-  if (error.code === "23514") return new Error("채널 이름을 확인해 주세요 (1~40자)");
+  if (error.code === "23514") return new Error(`채널 이름을 확인해 주세요 (1~${NAME_MAX}자)`);
   return new Error(error.message);
 }
 
-/** 채널별 멤버 수. RLS 때문에 내가 멤버인 채널만 셀 수 있다 */
+/** 채널별 멤버 수. RLS 때문에 내가 멤버인 채널만 셀 수 있다.
+ *  행을 받아 세지 않고 채널마다 개수만 묻는다 (한 번에 받는 행 수 상한 1000 에 걸리지 않게) */
 async function memberCounts(channelIds: string[]): Promise<Map<string, number>> {
+  const supabase = getSupabase();
+  const results = await Promise.all(
+    channelIds.map((id) =>
+      supabase.from("memberships").select("*", { count: "exact", head: true }).eq("channel_id", id),
+    ),
+  );
   const counts = new Map<string, number>();
-  if (channelIds.length === 0) return counts;
-  const { data, error } = await getSupabase()
-    .from("memberships")
-    .select("channel_id")
-    .in("channel_id", channelIds);
-  if (error) throw friendly(error);
-  for (const m of data ?? []) counts.set(m.channel_id, (counts.get(m.channel_id) ?? 0) + 1);
+  results.forEach(({ count, error }, i) => {
+    if (error) throw friendly(error);
+    if (count !== null) counts.set(channelIds[i], count);
+  });
   return counts;
 }
 
@@ -132,12 +144,11 @@ const byName = (a: Row, b: Row) => (a.name ?? "").localeCompare(b.name ?? "", "k
 /** 내가 가입한 채널 (DM 제외). #일반을 맨 위에, 나머지는 이름순 */
 export async function listMyChannels(): Promise<ChannelSummary[]> {
   const me = await myId();
-  const ids = [...(await myChannelIds(me))];
-  if (ids.length === 0) return [];
+  // 내 멤버십이 있는 채널만 (inner join) — 채널 id 를 주소에 늘어놓지 않는다
   const { data, error } = await getSupabase()
     .from("channels")
-    .select(COLUMNS)
-    .in("id", ids)
+    .select(`${COLUMNS}, memberships!inner(user_id)`)
+    .eq("memberships.user_id", me)
     .neq("type", "dm");
   if (error) throw friendly(error);
   const rows = (data ?? []) as Row[];
@@ -147,16 +158,18 @@ export async function listMyChannels(): Promise<ChannelSummary[]> {
     .map((r) => summarize(r, true, counts.get(r.id)));
 }
 
-/** 공개 채널 (가입 안 한 것 포함). 이름 일부로 거른다 */
+/** 공개 채널 (가입 안 한 것 포함). 이름 일부로 거른다.
+ *  PostgREST 의 like 는 * 도 와일드카드로 보고 막을 방법이 없어서, 이름 거르기는 받아 온 뒤 여기서 한다 */
 export async function listPublicChannels(query = ""): Promise<ChannelSummary[]> {
   const me = await myId();
-  let request = getSupabase().from("channels").select(COLUMNS).eq("type", "public").limit(200);
-  const q = cleanName(query);
-  // ilike 의 % _ \ 는 글자 그대로 찾도록 막는다
-  if (q) request = request.ilike("name", `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
-  const { data, error } = await request;
+  const { data, error } = await getSupabase()
+    .from("channels")
+    .select(COLUMNS)
+    .eq("type", "public")
+    .limit(1000);
   if (error) throw friendly(error);
-  const rows = ((data ?? []) as Row[]).sort(byName);
+  const q = norm(query);
+  const rows = ((data ?? []) as Row[]).filter((r) => !q || norm(r.name).includes(q)).sort(byName);
   const mine = await myChannelIds(me);
   const counts = await memberCounts(rows.filter((r) => mine.has(r.id)).map((r) => r.id));
   return rows.map((r) => summarize(r, mine.has(r.id), counts.get(r.id)));
@@ -173,13 +186,14 @@ export async function createChannel(input: {
   const name = cleanName(input.name);
   const supabase = getSupabase();
 
-  const { data: same, error: findError } = await supabase
+  // 내가 볼 수 있는 채널 이름을 받아 여기서 비교한다 (like 는 * 를 와일드카드로 본다)
+  const { data: visible, error: findError } = await supabase
     .from("channels")
-    .select("id, name")
+    .select("name")
     .neq("type", "dm")
-    .ilike("name", name.replace(/[\\%_]/g, (ch) => `\\${ch}`));
+    .limit(1000);
   if (findError) throw friendly(findError);
-  if ((same ?? []).some((c) => norm(c.name) === norm(name))) {
+  if ((visible ?? []).some((c) => norm(c.name) === norm(name))) {
     throw new Error("같은 이름의 채널이 이미 있습니다");
   }
 
@@ -201,6 +215,7 @@ export async function joinChannel(channelId: string): Promise<ChannelSummary> {
     .from("memberships")
     .insert({ channel_id: channelId, user_id: me });
   if (error && error.code !== "23505") throw friendly(error); // 23505 = 이미 멤버
+  notifyChannelsChanged(); // 가입은 됐다. 아래 읽기가 실패해도 목록은 갱신한다
   const { data, error: readError } = await supabase
     .from("channels")
     .select(COLUMNS)
@@ -208,6 +223,5 @@ export async function joinChannel(channelId: string): Promise<ChannelSummary> {
     .single();
   if (readError) throw friendly(readError);
   const counts = await memberCounts([channelId]);
-  notifyChannelsChanged();
   return summarize(data as Row, true, counts.get(channelId));
 }

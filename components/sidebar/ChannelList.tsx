@@ -30,7 +30,8 @@ export default function ChannelList({
   useEffect(() => {
     if (!guardCurrent || !channels) return;
     const cur = current.current;
-    if (cur.type === "dm" || channels.some((c) => c.id === cur.id)) return;
+    // type 이 없는 채널(다른 영역이 id·이름만 넘긴 경우)은 무엇인지 모르므로 건드리지 않는다
+    if (!cur.type || cur.type === "dm" || channels.some((c) => c.id === cur.id)) return;
     const general = channels.find((c) => c.id === GENERAL_ID);
     setChannel({ id: GENERAL_ID, name: general?.name ?? "일반", type: "public" });
   }, [channels, guardCurrent, setChannel]);
