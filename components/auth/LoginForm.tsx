@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { getSupabase } from "@/lib/supabase";
+import ThemeToggle from "@/components/sidebar/ThemeToggle";
 import { safeNext } from "./safeNext";
 import s from "./auth.module.css";
 
@@ -100,7 +101,10 @@ export default function LoginForm({
           if (valid && !busy) void submit();
         }}
       >
-        <h1>오피스톡</h1>
+        <div className={s.titleRow}>
+          <h1>오피스톡</h1>
+          <ThemeToggle />
+        </div>
         <div className={s.tabs} role="tablist">
           <button
             type="button"

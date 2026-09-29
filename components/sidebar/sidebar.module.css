@@ -381,3 +381,66 @@
 .hasUnread .channelName {
   font-weight: 700;
 }
+
+/* ── 라이트·다크 스위치 (헤더·캘린더·로그인) ── */
+/* 해·달 두 칸이 늘 보인다. 켜진 칸은 <html data-theme>·컴퓨터 설정을 보고 CSS 가 정한다 → 첫 화면부터 맞아서 깜빡이지 않는다 */
+
+.themeSwitch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.themeLight,
+.themeDark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.themeLight:hover,
+.themeDark:hover {
+  color: var(--text);
+}
+
+.themeLight:focus-visible,
+.themeDark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 켜진 칸: 고른 테마 */
+:global(:root[data-theme="light"]) .themeLight,
+:global(:root[data-theme="dark"]) .themeDark {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+
+/* 켜진 칸: 고르지 않았으면 컴퓨터 설정 */
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme])) .themeLight {
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme])) .themeDark {
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  }
+}

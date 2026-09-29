@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Room } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
 import { getPeople, unknownPerson } from "@/components/people/directory";
+import ThemeToggle from "@/components/sidebar/ThemeToggle";
 import EventDetail from "./EventDetail";
 import EventForm from "./EventForm";
 import RoomBoard from "./RoomBoard";
@@ -142,6 +143,7 @@ export default function CalendarView() {
         >
           회의 만들기
         </button>
+        <ThemeToggle />
       </header>
 
       {loadError && (
