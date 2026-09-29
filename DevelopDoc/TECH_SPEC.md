@@ -294,7 +294,9 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **회의 고치기는 한 번에 저장되지 않는다**: `events` 수정 뒤 `event_attendees` 추가·삭제를 따로 부른다 (한 번에 고치는 DB 함수가 없다). 참석자 저장이 실패하면 회의 내용만 바뀐 채 남으므로 화면에 "회의는 고쳤지만 참석자를 …하지 못했습니다"를 띄운다. 자주 문제가 되면 `update_event(...)` 함수를 만든다.
 - **DB 시각 문자열은 `+00:00` 형식이다**: 화면에서 만든 `toISOString()`(`Z`)과 글자로 비교하면 같은 시각도 다르게 나온다. 시각 비교는 밀리초(`Date.getTime()`)로만 한다 (`components/calendar/time.ts` 의 `toMs`).
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
-- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. `<input type="datetime-local">` 값은 한국 시각으로 보고 변환한다.
+- **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. 회의 폼의 날짜(`<input type="date">`)와 시·분 목록 값은 한국 시각으로 보고 변환한다 (`time.ts` 의 `fromKstInput`).
+- **시각 입력은 `<input type="time">` 을 쓰지 않는다** (2026-09-29): Chrome 의 시간 선택은 12 다음에 1 로 끝없이 도는 바퀴이고 오전·오후가 헷갈린다. `TimeSelect` 가 시(00~23)·분(5분 단위) 목록 두 개로 받는다. 시작을 바꾸면 끝이 원래 간격(없거나 거꾸로면 1시간)만큼 따라가고, 23:55 를 넘지 않는다.
+- **다크 모드에서 브라우저 기본 부품(날짜 칸의 달력 아이콘 등)이 안 보인다**: 공통 `globals.css` 에 `color-scheme` 이 없어서다. 캘린더 화면(`.page`)에만 `color-scheme: light dark` 를 켰다. 다른 화면도 같은 문제가 있으면 공통 틀에 한 번 켜는 것이 낫다 (팀에 알리고).
 - **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
 
 ### 첨부 (F3-2)

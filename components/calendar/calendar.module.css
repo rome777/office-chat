@@ -1,6 +1,9 @@
 /* ② 캘린더 화면 스타일 */
 
 .page {
+  /* 날짜 칸의 달력 아이콘·목록 같은 브라우저 기본 부품이 다크 모드에서도 보이게 한다
+     (공통 globals.css 에는 color-scheme 이 없다 — 공통 틀이라 여기서만 켠다) */
+  color-scheme: light dark;
   max-width: 1200px;
   margin: 0 auto;
   padding: 16px;
@@ -346,6 +349,7 @@
 .field input,
 .field select,
 .field textarea,
+.timeSelect select,
 .roomBoardHead input,
 .dialog input {
   font: inherit;
@@ -419,4 +423,16 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+}
+
+/* 시·분 목록 두 개를 한 칸에 붙인다 */
+.timeSelect {
+  display: flex;
+  gap: 4px;
+}
+
+.timeSelect select {
+  flex: 1;
+  min-width: 68px;
+  cursor: pointer;
 }
