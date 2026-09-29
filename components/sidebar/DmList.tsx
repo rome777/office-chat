@@ -38,6 +38,13 @@ export default function DmList({
     }
   }, [dms, syncCurrent, setChannel]);
 
+  // 다른 영역이 id·이름만 넘겨 DM 으로 바꾸면(예: ① 의 메시지로 이동, 이름은 "DM") 상대 이름과 종류를 채운다
+  useEffect(() => {
+    if (!syncCurrent || !dms || channel.type) return;
+    const found = dms.find((d) => d.id === channel.id);
+    if (found) setChannel({ id: found.id, name: found.other.display_name, type: "dm" });
+  }, [channel, dms, syncCurrent, setChannel]);
+
   function go(id: string, name: string) {
     setChannel({ id, name, type: "dm" });
     setOpen(false);
