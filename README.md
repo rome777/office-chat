@@ -79,21 +79,21 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · OpenAI API
 Node.js 20 이상과, Vercel 프로젝트(`office-chat`)에 접근할 수 있는 Vercel 계정이 필요합니다.
 DB 는 원격 Supabase 를 함께 씁니다.
 
-```bash
+```powershell
 npm install
 ```
 
 DB 접속 정보를 `.env.local` 로 받아 옵니다 (처음 한 번, 저장소에는 올라가지 않음).
 
-```bash
+```powershell
 npx vercel link --project office-chat
 ```
 
-```bash
+```powershell
 npx vercel env pull .env.local
 ```
 
-```bash
+```powershell
 npm run dev
 ```
 
@@ -101,15 +101,15 @@ npm run dev
 
 원격 DB 에 자동 검사를 돌릴 수 있습니다. 검사가 만든 메시지·가상 사용자는 끝나면 지워집니다.
 
-```bash
+```powershell
 npm run check:step1
 ```
 
-```bash
+```powershell
 npm run check:db
 ```
 
-```bash
+```powershell
 npm run check:attach
 ```
 
@@ -119,19 +119,19 @@ npm run check:attach
 `a@example.com`(사용자A) · `b@example.com`(사용자B) · `admin@example.com`(관리자) · `c@example.com`(비회원C) 이 생깁니다.
 가입 확인 메일 없이 바로 로그인할 수 있고, 여러 번 돌려도 됩니다.
 
-```bash
+```powershell
 npm run seed:users
 ```
 
-```bash
+```powershell
 npm run check:notify
 ```
 
-```bash
+```powershell
 npm run check:ai
 ```
 
-```bash
+```powershell
 npm run check:events
 ```
 

@@ -102,6 +102,8 @@ erDiagram
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
+| `chore_lists` | `id`, `channel_id`, `title`, `place`, `memo`, `created_by`, `updated_by`, `created_at`, `updated_at` | 잡무 수첩의 목록 (예: 커피 — 1층 카페). 2026-09-29 추가 (`20260929160000_chore_notes.sql`, WU-28). 만든 사람이 탈퇴해도 남는다 (`on delete set null`) |
+| `chore_entries` | `id`, `list_id`, `person_name`, `detail`, `updated_by`, `created_at`, `updated_at` | 목록 아래 사람별 기록 (예: 이부장님 — 아아 얼음 많이). 사람은 **글자로** 적는다 (호칭으로 부르고, 계정 없는 사람도 있어서) |
 | `rooms` | `id`, `name`(유일), `capacity`, `location` | 회의실. 시드로 넣는다 |
 | `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at` | 회의. `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
 | `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다 |
@@ -156,6 +158,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | `rooms` | 로그인 사용자 모두 | 관리자만 |
 | `events` | 만든 사람과 참석자만 | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음 |
 | `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
+| `chore_lists` | 그 채널의 멤버 | 만들기·고치기(`title`·`place`·`memo`)는 멤버. 삭제는 만든 사람·관리자만 |
+| `chore_entries` | 목록을 볼 수 있는 사람 (= 그 채널 멤버) | 추가·고치기(`person_name`·`detail`)·삭제 모두 멤버. 다른 목록으로 옮길 수 없다 (`list_id` 수정 권한 없음) |
 
 **남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다.
 
@@ -403,6 +407,15 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
   `handles` 를 주면 **그 채널 멤버의 handle 만** 강조한다 (2026-09-29). 멤버 목록은 `useChannelMembers` 가 준다. 멤버가 아닌 `@아무개` 는 글자 그대로다.
 - `@` 자동완성: 입력창에서 커서 앞이 `@찾는말` 이면 채널 멤버(나 빼고)를 handle·이름으로 걸러 보여 준다. ↑↓ 로 고르고 Enter·Tab 으로 넣고 Esc 로 닫는다. 한글 조합 중 키는 무시한다.
 
+### 잡무 수첩 (PRD 7절 잡무 자동화 — 메뉴 주문 정리, 2026-09-29)
+
+- 헤더 "잡무" → 오른쪽 패널 `ChoresPanel`. **채널 단위**로 공유한다 — 팀 = 채널이라, 새로 온 사람은 채널에 들어오는 것만으로 쌓인 기록을 본다.
+- 목록을 열면 사람별 기록 앞에 체크가 있다 (기본 모두 체크, 오늘 안 가는 사람만 끈다). 체크한 기록을 `choreOrder.ts` 의 `orderText` 가 **같은 글자끼리** 묶는다 (앞뒤·연속 공백, 대소문자 무시). "아아"와 "아이스 아메리카노"는 다른 것으로 센다 — AI 를 쓰지 않아서 비용·지연이 없다.
+- "채널에 올리기"는 보통 메시지로 넣는다 (`client_id` 를 붙여 `messages` 에 insert, 보낸 사람은 나). 메시지 본문 상한 2000자를 넘으면 올리기를 막고 복사만 된다.
+- 이름 칸은 채널 멤버 이름을 추천(`datalist`)하지만 자유롭게 적는다. 사람별 보기는 이름 글자(공백 무시)로 묶는다 — 같은 사람을 "이부장님"·"이 부장님"으로 적으면 하나로, "이부장"으로 적으면 따로 보인다.
+- `updated_at`·`updated_by` 는 트리거가 채운다 (컬럼 권한이 없어 클라이언트는 못 보낸다). 기록을 고치면 목록의 "마지막 수정"도 바뀐다 (`chore_entries_touch_list`, security definer).
+- 실시간 구독은 하지 않는다: 패널을 열 때와 내가 고친 뒤에 다시 불러온다. 두 사람이 동시에 같은 기록을 고치면 나중 것이 남는다.
+
 ## 8. AI
 
 모든 AI 호출은 서버 API 에서만 한다.
@@ -474,7 +487,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
-│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
+│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
@@ -489,7 +502,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 └─ .env.example
 ```
 
-오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다.
+오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경).
 
 ## 10. 환경 변수
 
@@ -606,15 +619,19 @@ DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도�
 
 머지 없이 급하게 올려야 할 때만 로컬에서 직접 배포한다. 로컬 폴더를 그대로 올리므로 `git status` 가 깨끗하고 `main` 과 같은지 먼저 확인한다.
 
-```bash
+```powershell
 npx vercel deploy --prod
 ```
 
-DB 구조를 바꿀 때는 `supabase/migrations/` 에 새 파일을 만들고 원격에 적용한다. `.env.local` 을 불러온 셸에서 실행한다.
+DB 구조를 바꿀 때는 `supabase/migrations/` 에 새 파일을 만들고 원격에 적용한다. PowerShell 에서 먼저 `.env.local` 의 DB 주소를 이 창에만 읽어 두고(파일에는 남지 않고 화면에도 안 찍힌다), 그다음 적용한다.
 적용한 뒤에는 `npm run check:db` 와 `npm run check:step1` 을 돌린다.
 
-```bash
-npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
+```powershell
+$env:DBURL = ((Get-Content .env.local | Select-String '^POSTGRES_URL_NON_POOLING=').Line -replace '^POSTGRES_URL_NON_POOLING=','').Trim('"')
+```
+
+```powershell
+npx supabase db push --db-url $env:DBURL
 ```
 
 ### 알아 둘 함정
@@ -636,4 +653,5 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **실시간 구독 이름이 겹치면 화면 전체가 멈춘다**: `supabase.channel(이름)` 은 같은 이름의 채널이 이미 있으면 새로 만들지 않고 **이미 구독한 채널을 돌려준다**. 거기에 `.on()` 을 붙이면 `cannot add postgres_changes callbacks ... after subscribe()` 오류로 페이지가 죽는다 (2026-09-29, 스레드 패널과 가운데 칸이 둘 다 `members:<채널>` 을 열어서 발생).
   구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
+- **새 테이블은 `enable row level security` 를 꼭 같이 쓴다**: 정책(`create policy`)만 만들고 RLS 를 안 켜면 정책은 무시되고 컬럼 권한만 남아, 로그인한 누구나 모든 행을 읽고 고치고 지운다. 오류도 경고도 없다. 2026-09-29 잡무 수첩(`20260929160000_chore_notes.sql`)에서 빠뜨렸고, `check:chores` 의 "멤버가 아니면 …" 검사가 전부 실패해 알았다 (테이블이 비어 있고 화면도 배포 전이라 샌 데이터는 없음, `20260929160100_chore_notes_rls.sql` 로 켬). 새 테이블을 만들면 비회원 거부 검사를 먼저 돌린다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.
