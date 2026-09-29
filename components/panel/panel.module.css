@@ -47,3 +47,42 @@
   background: var(--mine);
   border-color: var(--accent);
 }
+
+/* AI 요약 */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.summary p {
+  margin: 0;
+}
+
+.summaryButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summaryRange {
+  font-size: 12px;
+}
+
+.summaryList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.5;
+}
+
+.sources {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 6px;
+  font-size: 12px;
+}

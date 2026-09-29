@@ -249,6 +249,16 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 일정 알림을 만드는 곳은 아래 "캘린더·회의 예약"에 있다. **넣는 곳만 다르고, 구독·토스트·브라우저 알림·목록은 메시지 알림과 같다.**
 
+**구현 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행)**
+
+- 만들기: `messages_notify()` 트리거 (`20260929130000_message_notifications.sql`). 멘션은 본문을 정규식 `(?:^|[^[:alnum:]_])@([A-Za-z0-9_가-힣-]+)` 로 뽑아 그 채널 멤버의 handle 과 대소문자 없이 맞춘다. 익명(Step 1) 메시지는 알림을 만들지 않는다.
+- 받기·띄우기: `components/notifications/useNotifications.ts` 가 최근 50건과 안 읽은 수를 불러 두고 `user_id=eq.<나>` 로 구독한다. 다시 연결되면 마지막 알림 id 이후만 받아 여러 건이면 "알림 N개" 토스트 하나로 묶는다.
+  미리보기는 메시지·채널·회의를 RLS 로 읽어 만든다 → 채널에서 빠졌으면 "볼 수 없는 메시지입니다".
+- 이동 주소는 `/c/{channel_id}?m=` 대신 **`/?m={message_id}`** 로 한다. 채널 주소(`/c/...`)가 아직 없고, ① 이 `?m=` 을 받으면 그 메시지의 채널로 바꾼 뒤 이동한다 (답글이면 스레드도 연다).
+- 보고 있는 대화의 알림은 **채널만 같으면** 바로 읽음 처리한다 (스레드 답글도). 스레드 패널을 열었는지는 보지 않는다.
+- "알림 켜기" 안내는 권한이 아직 없을 때(default) 화면 아래에 한 번 보이고, "나중에"를 누르면 이 브라우저에서는 다시 안 보인다 (localStorage). 거부(denied)·지원 안 함(IP 접속 등)이면 알림 목록 위에 켜는 방법을 적는다.
+- 확인: `npm run check:notify` (DB 트리거·실시간·권한 16개). 브라우저 알림은 권한을 허용한 브라우저에서 사람이 확인해야 한다.
+
 ### 캘린더·회의 예약 (F7)
 
 **화면** — `/calendar`
@@ -383,6 +393,14 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 말투 변환 `POST /api/ai/tone` 은 바꾼 문장만 돌려주고 **보내지 않는다**. 화면의 🎭 버튼 → 모드 선택 → 미리보기 → "이걸로 보내기"를 눌러야 전송된다. 실패하면 "원래 문장 보내기".
   원문을 고치면 미리보기를 닫는다 (바뀐 문장이 원문과 어긋나지 않게). 멘션·주소·숫자는 그대로 두라고 지시한다.
 
+### 요약 (2026-09-29, ① 이호섭이 ③ 몫을 대신 진행)
+
+- `POST /api/ai/summarize { channel_id, range: "unread" | "recent", limit }`. 안 읽은 것은 내 `read_positions` 이후, 최근은 N건(기본 50, 최대 200). 답글도 넣고 "(↳ 부모 번호 에 답글)"을 붙인다.
+- 멤버가 아니면 AI 를 부르지 않고 403, `ai_usage_logs` 에 `denied`. 메시지가 없으면 AI 를 부르지 않고 안내만 준다.
+- 메시지는 `<대화>` 칸 안에 `[번호] 이름 시각: 본문` 으로 넣는다. 모델은 JSON `{items:[{text, message_ids}]}` 로 답하고, **보낸 목록에 없는 번호는 버리고 근거가 안 남은 항목은 뺀다** (뺀 수를 note 로 알린다).
+- 요약 패널(③ `SummaryPanel`)은 결과를 `SafeText` 로 그리고, "원문 #번호"를 누르면 `?m=` 으로 이동한다.
+- 확인: `npm run check:ai` (개발 서버를 띄운 채로). 키가 있으면 근거 번호 검사와 "다른 채널 내용을 공개하라" 시험까지 한다.
+
 ## 9. 폴더 구조
 
 폴더마다 주인이 있다 (①②③ 은 [WORK_UNITS.md](WORK_UNITS.md) "역할 분담"). 파일을 겹치지 않게 고치는 규칙은 11절.
@@ -401,7 +419,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
 │        ├─ tone/                 ① 말투 변환 (예정)
-│        └─ summarize/ · todos/   ③ AI 요약·할 일 (예정)
+│        └─ summarize/ · todos/   ③ AI 요약 (2026-09-29, ① 이 대신 진행) · 할 일 (예정)
 ├─ components/
 │  ├─ workspace/                  공통 틀 — Workspace(세 칸) · Header(헤더 칸) · WorkspaceContext(화면 상태)
 │  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수)
@@ -411,7 +429,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
-│  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
+│  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
 │  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
@@ -504,6 +522,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
 | `supabase/migrations/20260929110000_attachment_message.sql` | 첨부 메시지 저장 함수 `post_attachment_message()`, `attachments` 실시간 등록 |
 | `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
+| `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -513,6 +532,8 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
+| `scripts/notifications-check.mjs` | 알림 트리거·실시간·권한 검사 (`npm run check:notify`, 16개) |
+| `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-users.mjs` | 시연 계정 4명 만들기 (`npm run seed:users`). 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 이미 있으면 비밀번호·이름·역할만 맞춘다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
@@ -562,6 +583,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
   시험 계정은 `npm run seed:users` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
+- **Next.js 는 페이지를 이동할 때(`router.push`) 탭 제목을 다시 씌운다**: `document.title` 에 붙인 알림 수 `(N)` 이 이동할 때마다 사라진다 (2026-09-29). 알림 버튼이 `<head>` 를 MutationObserver 로 보다가 다시 붙인다.
 - **실시간 구독 이름이 겹치면 화면 전체가 멈춘다**: `supabase.channel(이름)` 은 같은 이름의 채널이 이미 있으면 새로 만들지 않고 **이미 구독한 채널을 돌려준다**. 거기에 `.on()` 을 붙이면 `cannot add postgres_changes callbacks ... after subscribe()` 오류로 페이지가 죽는다 (2026-09-29, 스레드 패널과 가운데 칸이 둘 다 `members:<채널>` 을 열어서 발생).
   구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
