@@ -11,7 +11,8 @@ export default function Sidebar() {
     <nav className={s.sidebar} aria-label="채널">
       <p className={s.brand}>오피스톡</p>
       <p className={s.section}>채널</p>
-      <ChannelList />
+      {/* 왼쪽 칸은 좁은 화면에서도 숨겨질 뿐 늘 그려지므로, 여기서 "보던 채널에서 빠짐"을 처리한다 */}
+      <ChannelList guardCurrent />
       <p className={s.section}>일정</p>
       <ul className={s.list}>
         <li>

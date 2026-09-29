@@ -12,17 +12,21 @@ export function useMyChannels(): { channels: ChannelSummary[] | null; error: str
 
   useEffect(() => {
     let alive = true;
-    const load = () =>
+    // 늦게 끝난 옛 요청이 새 결과를 덮지 않게, 마지막에 보낸 요청의 결과만 쓴다
+    let latest = 0;
+    const load = () => {
+      const seq = ++latest;
       void listMyChannels().then(
         (list) => {
-          if (!alive) return;
+          if (!alive || seq !== latest) return;
           setChannels(list);
           setError(null);
         },
         (e: unknown) => {
-          if (alive) setError(e instanceof Error ? e.message : String(e));
+          if (alive && seq === latest) setError(e instanceof Error ? e.message : String(e));
         },
       );
+    };
     load();
     const unsubscribe = subscribeChannels(load);
     return () => {
