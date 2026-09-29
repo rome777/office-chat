@@ -205,6 +205,14 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **대화별 미읽음 수** = 내 `last_read_message_id` 보다 큰, 남이 쓴 메시지 수.
 - **메시지별 안 읽은 사람 수** = 작성자를 뺀 멤버 가운데 `last_read_message_id < 메시지 id` 인 사람 수. 멤버의 `read_positions` 를 구독해서 화면에서 계산한다 (소규모 조직 전제).
 
+**구현 (2026-09-29, ① `components/chat/useReadStatus.ts`)**
+
+- 읽음 기록: 목록 안에 실제로 보이는 메시지 가운데 **가장 아래 것**의 id 를 `mark_read()` 로 남긴다. 스크롤·새 메시지·탭이 다시 보일 때마다 400ms 뒤에 한 번 잰다.
+  **탭이 가려져 있으면(`document.visibilityState !== "visible"`) 남기지 않는다** — 보지 않은 것이므로. 이미 보낸 값보다 작으면 보내지 않는다 (DB 도 뒤로 가지 않는다).
+- 안 읽은 사람 수: 채널 멤버(`memberships`)와 읽음 위치(`read_positions`)를 불러 두고 실시간으로 받는다. 구독되면 한 번 더 불러와 그사이 바뀐 것을 맞춘다. 0 이면 숫자를 숨긴다.
+- `memberships` DELETE 는 실시간 필터를 걸 수 없어서 전부 받고 `channel_id` 로 거른다.
+- Step 1 익명 메시지(작성자 없음)는 멤버 전원이 대상이다.
+
 ### 알림 (F3-5)
 
 **만들기 (DB)** — `messages` INSERT 트리거가 받는 사람을 정해 `notifications` 를 넣는다.
@@ -278,7 +286,23 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 3. `POST /api/attachments/confirm` — 서버가 파일 앞부분의 시그니처(PNG·JPEG·PDF)를 확인한다. 맞지 않으면 지우고 거부한다. 맞으면 `attachments` 행을 만든다.
 4. 다운로드는 `GET /api/attachments/{id}` — 멤버십을 확인한 뒤 60초짜리 서명 URL 로 보낸다. 버킷은 비공개라 URL 을 알아도 C 는 못 연다.
 
-경로 규칙: `{channel_id}/{uuid}-{파일이름}`
+경로 규칙: `{channel_id}/{user_id}/{uuid}-{ASCII 로 바꾼 파일이름}` (2026-09-29 구현)
+
+**구현하며 정한 것** (2026-09-29)
+
+- 경로에 올린 사람의 `user_id` 를 넣었다. 확정 API 는 **자기가 올린 경로만** 받는다 (남이 올린 파일을 자기 메시지로 확정하지 못하게).
+- 파일 이름은 원래 이름을 `attachments.file_name` 에만 두고, Storage 경로에는 영문·숫자·`_`·`-` 로 바꾼 이름을 쓴다. Supabase Storage 는 한글 등 ASCII 밖 글자가 든 경로를 거부한다고 알려져 있어서 처음부터 피했다 (직접 확인하지는 않았다).
+- 확정은 `post_attachment_message()` 함수(service role 만)가 **메시지와 첨부 행을 한 트랜잭션으로** 넣는다. 따로 넣으면 실시간으로 메시지를 먼저 받은 화면이 첨부 없는 메시지를 그린다. 첨부 전용 메시지는 본문이 빈 문자열이다.
+- `attachments` 도 실시간 구독 대상에 넣었다. 화면은 메시지와 첨부를 따로 받아 `message_id` 로 붙인다. 처음 불러올 때는 `messages` 조회에 `attachments(...)` 를 붙여 한 번에 받는다.
+- 시그니처는 파일 전체가 아니라 **앞 8바이트만** 서명 URL 에 `Range` 요청으로 읽는다.
+- 다시 보내기: 같은 `client_id` 메시지에 이미 첨부가 있으면, 새로 올린 파일은 지우고 먼저 저장한 것을 돌려준다 (첫 확정이 성공했는데 응답만 못 받은 경우).
+- 크기 상한·형식·시그니처 판별은 `lib/attachments.ts` 하나에 두고 입력창과 서버가 같이 쓴다.
+- 이미지 미리보기는 높이를 160px 로 고정했다. 이미지가 늦게 떠도 목록 높이가 바뀌지 않아 스크롤 자리가 튀지 않는다.
+
+**알려진 한계**
+
+- 올리기만 하고 확정하지 않은 파일(업로드 뒤 탭을 닫음 등)은 Storage 에 남는다. 지우는 작업은 없다.
+- 첨부 전송이 실패한 채로 새로고침하면 그 파일은 다시 골라야 한다 (파일은 브라우저 메모리에만 있다).
 
 ### 스레드 (F4-1)
 
@@ -347,13 +371,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
 │  ├─ calendar/                   ② 캘린더·회의 예약
 │  └─ api/
-│     ├─ attachments/             ① 첨부 (예정)
+│     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
 │        ├─ tone/                 ① 말투 변환 (예정)
 │        └─ summarize/ · todos/   ③ AI 요약·할 일 (예정)
 ├─ components/
 │  ├─ workspace/                  공통 틀 — Workspace(세 칸) · Header(헤더 칸) · WorkspaceContext(화면 상태)
-│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · useMessages
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수)
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
 │  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
@@ -363,12 +387,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
+│  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
 │  ├─ ai/                         ③ AI 공통 — LLM 호출·요청 상한·비용 기록 (예정)
 │  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · seed-10k (예정)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · seed-10k (예정)
 └─ .env.example
 ```
 
@@ -446,6 +471,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929100200_mark_read.sql` | 읽음 표시 함수 `mark_read()` |
 | `supabase/migrations/20260929100300_backfill_profiles.sql` | 가입 트리거보다 먼저 가입한 계정의 profiles 채우기 |
 | `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
+| `supabase/migrations/20260929110000_attachment_message.sql` | 첨부 메시지 저장 함수 `post_attachment_message()`, `attachments` 실시간 등록 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -455,6 +481,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
+| `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
 
@@ -497,6 +524,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 - **IP 로 접속하면 `crypto.randomUUID` 가 없다**: `http://192.168.x.x` 는 보안 컨텍스트가 아니라서다. `crypto.getRandomValues` 로 직접 만든다.
 - **Next.js 16 개발 모드는 localhost 가 아닌 주소를 막는다**: IP 로 열면 빈 화면이 나온다. `next.config.mjs` 가 이 컴퓨터의 IPv4 주소를 `allowedDevOrigins` 에 자동으로 넣는다.
 - **`supabase db query` 는 한 번에 SQL 문장 하나만 받는다**: 여러 문장을 넣으면 `cannot insert multiple commands into a prepared statement`. 마이그레이션을 미리 시험하려면 트랜잭션으로 묶어 되돌릴 수 있는 Postgres 클라이언트가 필요하다 (2026-09-29 에는 임시 폴더에 `pg` 를 깔아 `begin; …; rollback;` 으로 시험했다). Docker 가 없어 로컬 Supabase(`supabase start`)는 못 띄운다.
+- **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.

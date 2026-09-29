@@ -87,6 +87,12 @@
   font-size: 12px;
 }
 
+/* 안 읽은 사람 수 (카카오톡처럼 숫자만) */
+.meta .unread {
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .body {
   margin: 2px 0 0;
   white-space: pre-wrap;
@@ -131,9 +137,15 @@
 
 .composer {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+}
+
+.composerRow {
+  display: flex;
+  gap: 8px;
 }
 
 .composer textarea {
@@ -148,7 +160,7 @@
   padding: 10px 12px;
 }
 
-.composer button {
+.composerRow button[type="submit"] {
   background: var(--accent);
   color: var(--accent-text);
   border: none;
@@ -180,4 +192,55 @@
 
 .disconnected .dot {
   background: var(--bad);
+}
+
+/* 첨부 */
+.attachButton {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 18px;
+}
+
+.fileRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.fileChip {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* 높이를 고정해 둔다. 이미지가 늦게 떠도 목록 높이가 바뀌지 않아 스크롤 자리가 튀지 않는다 */
+.thumb {
+  display: block;
+  height: 160px;
+  max-width: min(320px, 100%);
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.fileLink {
+  margin: 4px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }
