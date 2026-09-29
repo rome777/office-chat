@@ -1,38 +1,59 @@
-// ② 조직도 조회. DM·캘린더·채널 정보가 이 함수로 사람을 찾는다.
-// 지금은 가짜 명단이다. WU-02 로 `profiles` 테이블이 생기면 searchPeople 안만 Supabase 조회로 바꾼다
-// (부르는 쪽은 그대로). 실명·실제 사내 정보는 넣지 않는다.
+// ② 조직도 조회 (Supabase `profiles`). DM·캘린더·채널 정보가 이 함수로 사람을 찾는다.
+// profiles 는 로그인한 사람이면 모두 읽을 수 있다 (TECH_SPEC 5절).
 
 import type { Person } from "@/lib/types/people";
-
-/** 가짜 명단에서 "나"로 쓰는 사람. 로그인이 붙으면 로그인한 사용자의 id 로 바뀐다 */
-export const DEMO_ME_ID = "demo-b";
-
-const DEMO_PEOPLE: Person[] = [
-  { id: "demo-a", handle: "user_a", display_name: "사용자 A", department: "제품팀", title: "매니저" },
-  { id: "demo-b", handle: "user_b", display_name: "사용자 B", department: "개발팀", title: "엔지니어" },
-  { id: "demo-c", handle: "user_c", display_name: "사용자 C", department: "영업팀", title: "사원" },
-  { id: "demo-admin", handle: "admin", display_name: "관리자", department: "경영지원팀", title: "팀장" },
-  { id: "demo-d", handle: "designer_kim", display_name: "김디자인", department: "디자인팀", title: "디자이너" },
-  { id: "demo-e", handle: "dev_lee", display_name: "이개발", department: "개발팀", title: "선임" },
-  { id: "demo-f", handle: "pm_park", display_name: "박기획", department: "제품팀", title: "PM" },
-];
+import { getSupabase } from "@/lib/supabase";
 
 export const MAX_RESULTS = 20;
 
+const COLUMNS = "id, handle, display_name, department, title";
+
+// 사내 인원은 많지 않으므로 명단을 한 번 받아 두고 브라우저에서 거른다.
+// (PostgREST 의 or·ilike 는 쉼표·괄호·* 를 특수 문자로 봐서, 검색어를 안전하게 넣기 어렵다)
+const CACHE_MS = 60_000;
+let cache: { at: number; people: Promise<Person[]> } | null = null;
+
+function directory(): Promise<Person[]> {
+  if (!cache || Date.now() - cache.at > CACHE_MS) {
+    const people = (async () => {
+      const { data, error } = await getSupabase()
+        .from("profiles")
+        .select(COLUMNS)
+        .order("display_name")
+        .limit(1000);
+      if (error) throw new Error(error.message);
+      return (data ?? []) as Person[];
+    })();
+    cache = { at: Date.now(), people };
+    // 실패한 요청은 기억하지 않는다 (다음 검색 때 다시 시도)
+    people.catch(() => {
+      if (cache?.people === people) cache = null;
+    });
+  }
+  return cache.people;
+}
+
+const norm = (s: string | null | undefined) => (s ?? "").normalize("NFC").toLowerCase();
+
 /** 이름·부서·직함·핸들의 일부로 찾는다 (한글 부분 단어, 대소문자 무시) */
 export async function searchPeople(query: string): Promise<Person[]> {
-  const q = query.trim().toLowerCase();
+  const q = norm(query.trim());
   if (!q) return [];
-  return DEMO_PEOPLE.filter((p) =>
-    [p.display_name, p.department, p.title, p.handle].some((v) => v?.toLowerCase().includes(q)),
-  ).slice(0, MAX_RESULTS);
+  const people = await directory();
+  return people
+    .filter((p) => [p.display_name, p.department, p.title, p.handle].some((v) => norm(v).includes(q)))
+    .slice(0, MAX_RESULTS);
 }
 
 /** id 로 여러 사람을 한 번에 가져온다 (참석자 목록 표시용). 명단에 없는 id 도 빠뜨리지 않고
  *  "알 수 없는 사람"으로 돌려준다 — 빠뜨리면 회의를 고칠 때 그 참석자가 조용히 지워진다 */
 export async function getPeople(ids: string[]): Promise<Person[]> {
-  const byId = new Map(DEMO_PEOPLE.map((p) => [p.id, p]));
-  return [...new Set(ids)].map((id) => byId.get(id) ?? unknownPerson(id));
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const { data, error } = await getSupabase().from("profiles").select(COLUMNS).in("id", unique);
+  if (error) throw new Error(error.message);
+  const byId = new Map(((data ?? []) as Person[]).map((p) => [p.id, p]));
+  return unique.map((id) => byId.get(id) ?? unknownPerson(id));
 }
 
 export function unknownPerson(id: string): Person {

@@ -272,6 +272,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 **함정**
 
+- **회의 고치기는 한 번에 저장되지 않는다**: `events` 수정 뒤 `event_attendees` 추가·삭제를 따로 부른다 (한 번에 고치는 DB 함수가 없다). 참석자 저장이 실패하면 회의 내용만 바뀐 채 남으므로 화면에 "회의는 고쳤지만 참석자를 …하지 못했습니다"를 띄운다. 자주 문제가 되면 `update_event(...)` 함수를 만든다.
+- **DB 시각 문자열은 `+00:00` 형식이다**: 화면에서 만든 `toISOString()`(`Z`)과 글자로 비교하면 같은 시각도 다르게 나온다. 시각 비교는 밀리초(`Date.getTime()`)로만 한다 (`components/calendar/time.ts` 의 `toMs`).
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
 - **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. `<input type="datetime-local">` 값은 한국 시각으로 보고 변환한다.
 - **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
@@ -393,8 +395,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ├─ app/
 │  ├─ page.tsx                    공통 틀 — 입장 관문(②) → 화면 상태 → 세 칸 배치
 │  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만
-│  ├─ login/                      ② 로그인 (예정)
-│  ├─ calendar/                   ② 캘린더·회의 예약 (예정)
+│  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
+│  ├─ calendar/                   ② 캘린더·회의 예약
 │  └─ api/
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
@@ -406,8 +408,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
 │  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
-│  ├─ people/                     ② 사람 찾기 (예정) — DM·캘린더·채널 정보가 가져다 씀
-│  ├─ calendar/                   ② 캘린더 화면 부품 (예정)
+│  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
+│  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel
 │  └─ notifications/              ③ NotificationBell (목록·토스트·브라우저 알림 예정)
 ├─ lib/

@@ -7,6 +7,7 @@ import type { Room } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
 import PeoplePicker from "@/components/people/PeoplePicker";
 import {
+  DESCRIPTION_MAX,
   RoomConflictError,
   TITLE_MAX,
   createEvent,
@@ -48,6 +49,7 @@ export default function EventForm({
   const [roomId, setRoomId] = useState(editing?.room_id ?? "");
   const [people, setPeople] = useState<Person[]>(initialAttendees);
   const [busy, setBusy] = useState<BusySlot[]>([]);
+  const [busyError, setBusyError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +65,7 @@ export default function EventForm({
     }
     let alive = true;
     const dayStart = fromKstInput(date, "00:00");
+    setBusyError(false);
     void roomBusy(roomId, dayStart, addDays(dayStart, 1)).then((slots) => {
       if (!alive) return;
       // 고치는 중이면 이 회의가 원래 차지하던 자리는 빼고 보여 준다
@@ -77,6 +80,12 @@ export default function EventForm({
             )
           : slots,
       );
+    }, () => {
+      // 못 불러왔을 때 "예약 없음"으로 보이면 비어 있다고 오해한다. 저장 때는 DB 가 겹침을 막는다
+      if (alive) {
+        setBusy([]);
+        setBusyError(true);
+      }
     });
     return () => {
       alive = false;
@@ -96,7 +105,10 @@ export default function EventForm({
       attendee_ids: people.map((p) => p.id),
     };
     try {
-      const saved = editing ? await updateEvent(editing.id, input) : await createEvent(input);
+      // 고치기는 폼을 열 때의 참석자와 비교한다 — 그 사이 다른 탭에서 넣은 사람을 지우지 않게
+      const saved = editing
+        ? await updateEvent(editing.id, input, editing.attendees.map((a) => a.user_id))
+        : await createEvent(input);
       onSaved(saved.id);
     } catch (e) {
       setError(
@@ -178,7 +190,9 @@ export default function EventForm({
         </label>
         {roomId && (
           <p className={s.hint}>
-            {busy.length === 0
+            {busyError
+              ? "예약 현황을 불러오지 못했습니다 (저장할 때 겹치면 막힙니다)"
+              : busy.length === 0
               ? "이날 예약 없음"
               : `이날 예약된 시간: ${busy
                   .map((b) => `${formatKstTime(b.starts_at)}~${formatKstTime(b.ends_at)}`)
@@ -195,6 +209,7 @@ export default function EventForm({
           <span>설명 (선택)</span>
           <textarea
             rows={3}
+            maxLength={DESCRIPTION_MAX}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
