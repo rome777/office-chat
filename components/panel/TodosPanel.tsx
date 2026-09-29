@@ -117,7 +117,7 @@ export default function TodosPanel() {
 
   return (
     <div className={s.summary}>
-      <p className="muted">#{channel.name} 대화에서 AI 가 할 일을 제안합니다. 저장을 눌러야 목록에 남습니다.</p>
+      <p className="muted">{channel.type === "dm" ? `@${channel.name}` : `#${channel.name}`} 대화에서 AI 가 할 일을 제안합니다. 저장을 눌러야 목록에 남습니다.</p>
       <div className={s.summaryButtons}>
         <button className={s.action} onClick={() => void extract("unread")} disabled={state.status === "loading"}>
           안 읽은 것에서 뽑기
