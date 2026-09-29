@@ -143,7 +143,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 사용자를 지우면 그 사람의 profiles·멤버십·회의는 같이 지워지지만, **메시지가 남아 있으면 지워지지 않는다** (작성자 FK). 계정은 지우지 말고 비활성화한다
 - 알림을 만드는 트리거(멘션·스레드 답글·DM·일정)와 10분 전 알림 `pg_cron` 작업은 **아직 없다** — 알림 작업(③)에서 새 마이그레이션으로 추가한다
 
-### 조직도·부서 채널 (2026-09-29, `20260929160000_org_units.sql`)
+### 조직도·부서 채널 (2026-09-29, `20260929170000_org_units.sql`)
 
 v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이다 (시연 회사의 직급·부서를 보여 주고, 로그인하면 자기 부서 채널이 이미 있게).
 
@@ -587,7 +587,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
-| `supabase/migrations/20260929160000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
+| `supabase/migrations/20260929170000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -655,4 +655,4 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
   구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.
-- **`supabase db push` 는 올리지 않은 마이그레이션을 전부 올린다**: 다른 사람이 아직 작업 중인 파일이 폴더에 있으면 그것까지 원격에 들어간다. 적용 전에 `npx supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"` 으로 무엇이 올라갈지 본다. 파일 이름의 시각이 이미 적용된 것보다 앞서면 `db push` 가 거부한다 (`--include-all` 필요) (2026-09-29: 조직 마이그레이션을 `20260929145000` 으로 만들었는데, 그사이 `20260929150000_invite_rights` 가 먼저 적용돼 `20260929160000` 으로 이름을 바꿨다. 또 다른 사람의 작업 파일이 내 폴더에 없으면 `db push` 가 "원격에 있는데 로컬에 없는 마이그레이션"으로 거부한다)
+- **`supabase db push` 는 올리지 않은 마이그레이션을 전부 올린다**: 다른 사람이 아직 작업 중인 파일이 폴더에 있으면 그것까지 원격에 들어간다. 적용 전에 `npx supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"` 으로 무엇이 올라갈지 본다. 파일 이름의 시각이 이미 적용된 것보다 앞서면 `db push` 가 거부한다 (`--include-all` 필요) (2026-09-29: 조직 마이그레이션을 `20260929145000` 으로 만들었는데, 그사이 `20260929150000_invite_rights` 가 먼저 적용돼 `20260929160000` 으로 바꿨는데, 그 번호도 다른 작업(`20260929160000_chore_notes`)이 먼저 적용해 `20260929170000` 으로 다시 바꿨다. **같은 번호가 원격에 있으면 CLI 는 내 파일을 적용된 것으로 보고 건너뛴다** — 이름이 달라도 번호만 비교한다. 또 다른 사람의 작업 파일이 내 폴더에 없으면 `db push` 가 "원격에 있는데 로컬에 없는 마이그레이션"으로 거부한다)
