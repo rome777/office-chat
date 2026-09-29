@@ -35,7 +35,7 @@ Slack 의 채널·스레드 흐름에 카카오톡식 읽음 표시를 더하고
 
 ## 기술 스택
 
-Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · LLM API (제공자 미정)
+Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · OpenAI API
 
 자세한 구조는 [TECH_SPEC.md](DevelopDoc/TECH_SPEC.md) 에 있습니다.
 
@@ -48,6 +48,9 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · LLM API (제
 - 가입하면 전사 채널 `#일반` 에 자동으로 들어감. 작성자는 로그인 정보로 정해짐 (닉네임으로 신원을 판단하지 않음)
 - 채널 멤버만 대화를 읽고 쓸 수 있음. 멤버가 아니면 API 로 직접 요청해도 0건 (DB 권한 정책)
 - 카카오톡처럼 메시지 옆에 **안 읽은 사람 수**. 상대가 읽으면 새로고침 없이 줄어듦. 탭을 열어 화면에 보인 메시지까지만 읽은 것으로 침
+- **스레드**: 메시지에 답글을 달면 오른쪽 패널에 모이고, 본문에는 "답글 N개"만 보임 (새로고침 없이 늘어남)
+- `@` 를 치면 채널 멤버 자동완성. 멤버를 부른 멘션만 강조
+- **말투 변환**: 🎭 버튼으로 신하·선비·정중 말투 미리보기 → 승인해야 전송 (서버에 `OPENAI_API_KEY` 가 있어야 동작)
 - 파일 첨부: PNG·JPEG·PDF 5MB 이하. 이미지는 미리보기, PDF 는 내려받기. 확장자만 바꾼 파일은 서버가 파일 내용을 보고 거부. 대화 멤버가 아니면 파일 주소를 알아도 못 엶
 - 메시지 보내기·받기 (새로고침 없이 즉시), 작성자·시각 표시, 빈 메시지 차단
 - 대화가 DB 에 저장되어 새로고침·재접속해도 남음
@@ -99,6 +102,8 @@ npm run check:db
 ```bash
 npm run check:attach
 ```
+
+1만 건 채널로 페이지네이션·검색 속도를 재려면 `npm run seed:10k` → `npm run seed:10k -- --measure`, 다 쓰면 `npm run seed:10k -- --delete` (공유 DB 라 꼭 지웁니다).
 
 로컬에서 여러 계정으로 시험하려면 시연 계정을 만듭니다. `.env.local` 에 `SEED_PASSWORD=<8자 이상>` 을 넣고 실행하면
 `a@example.com`(사용자A) · `b@example.com`(사용자B) · `admin@example.com`(관리자) · `c@example.com`(비회원C) 이 생깁니다.

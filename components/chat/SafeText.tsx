@@ -24,8 +24,11 @@ export default function SafeText({
   mentions,
 }: {
   text: string;
-  /** 주면 `@이름` 을 강조한다. `me` 와 같으면 나를 부른 것으로 더 눈에 띄게 한다 */
-  mentions?: { me?: string };
+  /**
+   * 주면 `@handle` 을 강조한다. `handles` 를 주면 그 안에 있는 것(채널 멤버)만 강조한다.
+   * `me` 와 같으면 나를 부른 것으로 더 눈에 띄게 한다. 대소문자는 가리지 않는다
+   */
+  mentions?: { me?: string; handles?: ReadonlySet<string> };
 }) {
   const out: ReactNode[] = [];
   let last = 0;
@@ -46,11 +49,11 @@ export default function SafeText({
       );
       last = start + trimmed.length;
     } else if (mention && mentions) {
-      // 채널 멤버인지는 아직 모른다. 멤버 목록이 생기면(DB v1) 멤버만 강조한다
-      const name = mention.slice(1);
+      const name = mention.slice(1).toLowerCase();
+      if (mentions.handles && !mentions.handles.has(name)) continue; // 멤버가 아니면 글자 그대로
       out.push(text.slice(last, start));
       out.push(
-        <span key={start} className={`${s.mention} ${name === mentions.me ? s.mentionMe : ""}`}>
+        <span key={start} className={`${s.mention} ${name === mentions.me?.toLowerCase() ? s.mentionMe : ""}`}>
           {whole}
         </span>,
       );

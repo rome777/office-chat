@@ -35,7 +35,7 @@ export function newClientId(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
+export function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
   if (error.name === "AbortError" || error.code === "20") return "서버 응답이 없습니다";
   if (error.code === "23514") return "빈 메시지이거나 너무 깁니다";
   if (error.code === "42501") return "이 대화에 보낼 권한이 없습니다";
@@ -44,20 +44,16 @@ function sendErrorMessage(error: { code?: string; message?: string; name?: strin
   return error.message ?? "보내지 못했습니다";
 }
 
-/** 나 (로그인한 사람). mine 판단과 나를 부른 멘션 강조에 쓴다 */
-export type Self = { id: string; handle: string | null };
-
 export function useMessages(channelId: string, myName: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [conn, setConn] = useState<ConnectionState>("connecting");
   const [online, setOnline] = useState(0);
   const [fatal, setFatal] = useState<string | null>(null);
-  /** 처음 불러오기가 끝났다. 메시지로 이동은 이것을 기다린다 */
-  const [ready, setReady] = useState(false);
+  /** 처음 불러오기가 끝난 채널 id. 메시지로 이동은 이것이 이동할 채널과 같아질 때까지 기다린다 */
+  const [readyFor, setReadyFor] = useState<string | null>(null);
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [self, setSelf] = useState<Self | null>(null);
   /** 작성자 id → 표시 이름. 실시간으로 온 행에는 이름이 없어서 profiles 에서 찾아 둔다 */
   const [names, setNames] = useState<Record<string, string>>({});
   /** 메시지 id → 첨부. 메시지와 첨부는 실시간 이벤트가 따로 와서 따로 모은다 */
@@ -140,7 +136,7 @@ export function useMessages(channelId: string, myName: string) {
       if (error || !data) return;
       merge(data as ChatMessage[]);
       setHasOlder(data.length === PAGE_SIZE);
-      setReady(true);
+      setReadyFor(channelRef.current);
       return;
     }
     // 끊긴 동안 쌓인 것은 끝까지 이어 받는다. 한 번에 다 받으면 조회 상한에 걸려 뒤쪽이 빠진다
@@ -235,10 +231,11 @@ export function useMessages(channelId: string, myName: string) {
     setMessages([]);
     setPending([]);
     setAttachments({});
-    setReady(false);
+    setReadyFor(null);
     setHasOlder(false);
 
     let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+    // 접속자 수(presence)는 모든 사람이 같은 이름으로 들어가야 세어진다. 그래서 이 구독만 이름에 꼬리를 붙이지 않는다
     const channel: RealtimeChannel = supabase.channel(`room:${channelId}`, {
       config: { presence: { key: newClientId() } },
     });
@@ -248,6 +245,12 @@ export function useMessages(channelId: string, myName: string) {
         "postgres_changes",
         // RLS 가 구독자마다 걸러서 보낸다. 멤버가 아니면 오지 않는다
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
+        (payload) => merge([payload.new as ChatMessage]),
+      )
+      // 답글 수(reply_count)가 오르거나 본문을 고치면 부모 행이 바뀐다
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         (payload) => merge([payload.new as ChatMessage]),
       )
       .on(
@@ -286,21 +289,6 @@ export function useMessages(channelId: string, myName: string) {
     };
   }, [channelId, myName, merge, sync, addAttachments]);
 
-  // 내 id·handle. 로그인 세션은 입장 관문(②)이 이미 확인했다
-  useEffect(() => {
-    let alive = true;
-    const supabase = getSupabase();
-    void supabase.auth.getSession().then(async ({ data }) => {
-      const id = data.session?.user.id;
-      if (!id || !alive) return;
-      setSelf({ id, handle: null });
-      const { data: profile } = await supabase.from("profiles").select("handle").eq("id", id).maybeSingle();
-      if (alive) setSelf({ id, handle: profile?.handle ?? null });
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   async function send(body: string, clientId = newClientId(), file?: File) {
     const text = body.trim();
@@ -399,10 +387,9 @@ export function useMessages(channelId: string, myName: string) {
     conn,
     online,
     fatal,
-    self,
     names,
     attachments,
-    ready,
+    readyFor,
     hasOlder,
     loadingOlder,
     send,

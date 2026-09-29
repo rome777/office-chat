@@ -14,6 +14,9 @@ export type ChatMessage = {
   deleted_at: string | null;
   /** Step 1 임시 호환의 닉네임. 로그인한 사람의 메시지는 null (이름은 profiles 에서 찾는다) */
   author: string | null;
+  /** 스레드 답글 수. 답글이 달리면 DB 트리거가 올린다 (최상위 메시지만) */
+  reply_count: number;
+  last_reply_at: string | null;
 };
 
 /** attachments 테이블 한 행 중 화면에 필요한 것. 파일은 /api/attachments/{id} 로 연다 */

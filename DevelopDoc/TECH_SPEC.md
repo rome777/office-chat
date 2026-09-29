@@ -32,7 +32,7 @@
 | DB | Supabase Postgres | 관계형 데이터, RLS, 전문 검색 확장 |
 | 실시간 | Supabase Realtime (Postgres Changes) | DB 변경을 구독 → 원칙 1 이 자동으로 지켜진다 |
 | 파일 | Supabase Storage (비공개 버킷) | 서명 URL 로 권한 있는 사람만 다운로드 |
-| AI | LLM API (제공자 미정), 서버에서만 호출 | 키가 브라우저에 노출되지 않는다 |
+| AI | **OpenAI** (2026-09-29 결정, 기본 모델 `gpt-4o-mini`, `OPENAI_MODEL` 로 바꿈), 서버에서만 호출 | 키가 브라우저에 노출되지 않는다 |
 | 배포 | Vercel | PR 마다 미리보기 URL |
 
 **버린 대안**: Socket.IO 직접 구현은 가장 많이 배우지만, 인증·저장·권한까지 3일 안에 직접 만들기 어렵다.
@@ -309,6 +309,16 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 답글은 `parent_id` 를 가진 메시지다. 채널 본문에는 `parent_id is null` 인 것만 보이고, 답글 수를 붙인다.
 - 스레드를 열면 오른쪽 패널에 답글을 보여 준다. 실시간으로 온 답글은 `parent_id` 를 보고 패널로 보낸다.
 
+**구현 (2026-09-29, ① `ThreadPanel`·`useThread`)**
+
+- 답글 수는 `messages.reply_count`·`last_reply_at` 에 둔다. 답글이 달리면 트리거가 부모 행을 올린다 (`20260929120000_thread_reply_count.sql`).
+  부모 행이 바뀌므로 채널 본문은 messages **UPDATE** 이벤트로 "답글 N개"를 새로고침 없이 갱신한다. 답글을 따로 세지 않는다.
+- 스레드 패널은 `parent_id=eq.<부모 id>` 로 따로 구독한다. 채널 본문(useMessages)은 답글을 받아도 버린다.
+- 답글에는 첨부가 없다 (답글 입력창은 첨부 버튼을 숨긴다). 말투 변환·`@` 자동완성은 된다.
+- `?m=<답글 id>` 로 오면 부모 메시지로 이동·강조하고 스레드 패널을 열어 그 답글을 강조한다. 패널 상태(공통 틀)는 고치지 않고 `components/chat/threadFocus.ts` 로 답글 id 를 넘긴다.
+- `?m=` 이 다른 채널의 메시지면 그 채널로 바꾼 뒤 이동한다 (`setChannel`). 알림·검색이 채널을 몰라도 된다.
+- 답글 알림(부모 작성자·참여자)은 알림 트리거가 만든다 (③).
+
 ### 페이지네이션 (F4-4)
 
 - 키셋 방식: `where channel_id = ? and id < 커서 order by id desc limit 50`
@@ -316,13 +326,20 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 화면의 목록은 항상 "가장 오래 받은 것 ~ 최신"이 **빈틈없이 이어지게** 둔다. 그래서 받은 범위보다 오래된 메시지로 이동(`?m=`)하면 그 메시지까지 사이를 1000건씩 모두 받아 채우고, 위로 10건을 더 받는다.
   - 알려진 한계: 1만 건 채널에서 맨 처음 메시지로 이동하면 1만 건을 다 받아 그린다. 이동은 알림·검색에서 최근 메시지로 가는 일이 대부분이라 이대로 둔다 (2026-09-29).
 - 이전 메시지를 위에 붙일 때 보던 자리를 지키는 것은 `MessageList` 가 **원래 첫 메시지의 위치 차**로 직접 맞춘다 (브라우저의 `overflow-anchor` 는 끈다). 전체 높이 차로 재면 그사이 창 폭이 바뀌어 줄바꿈이 달라졌을 때 틀어진다.
-- 1만 건 시드는 `scripts/seed-10k` 로 만들고, 조회 시간을 재서 [WORK_UNITS.md](WORK_UNITS.md) 에 기록한다.
+- 1만 건 시드는 `npm run seed:10k` 로 만든다 (전용 공개 채널 `1만건-측정`·측정봇 계정, `--measure` 로 측정, `--delete` 로 삭제). 잰 값은 [WORK_UNITS.md](WORK_UNITS.md) "실측 기록" (2026-09-29: 첫 조회 44ms, 이전 페이지 34ms).
+  공유 DB 에 1만 건이 남으니 다 쓰면 지운다. 화면에서 보려면 그 채널 멤버로 넣고 그 채널 메시지로 `?m=` 이동하면 채널이 바뀐다 (채널 목록(②)이 생기기 전).
 
 ### 검색 (F4-2)
 
 - `messages.body` 에 `pg_trgm` 인덱스를 두고 부분 일치로 찾는다. 한국어는 Postgres 기본 전문 검색이 약해서 쓰지 않는다.
 - 사용자 토큰으로 조회하므로 RLS 가 **내가 멤버인 채널만** 남긴다.
 - 결과를 누르면 해당 메시지로 이동한다.
+
+**1만 건 측정에서 알게 된 것** (2026-09-29, 검색 작업(②) 전에 읽을 것)
+
+- 한글도 trigram 이 만들어진다 (`show_trgm('회의록')` 이 값 4개). 그런데 1만 건에서는 DB 가 trigram 인덱스 대신 채널 인덱스나 전체 스캔을 골랐다.
+- 시간 대부분은 **messages 읽기 정책의 `is_member(channel_id)` 가 행마다 한 번씩 불리는 것**이다. 전체 검색은 1만 행을 훑으며 함수를 1만 번 불러 DB 실행 193ms (채널 안 검색 96ms). 첫 조회는 50행만 보니 1ms.
+- 고치는 방법(아직 안 함): 정책을 `channel_id in (select public.my_channel_ids())` 처럼 **내 채널 목록을 한 번만 구하는** 꼴로 바꾼다 (security definer 함수가 `setof uuid` 를 돌려주면 쿼리당 한 번만 돈다). 모든 테이블 정책에 걸리는 변경이라 `check:db` 로 다시 확인해야 한다.
 
 ### 관리자 (F4-3)
 
@@ -334,7 +351,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - 메시지는 React 기본 텍스트 출력만 쓴다. `dangerouslySetInnerHTML` 은 쓰지 않는다.
 - 링크는 `http`·`https` 로 시작하는 것만 `<a rel="noopener noreferrer">` 로 바꾼다. 문장 끝 문장부호(`.`·`)` 등)는 주소에서 뺀다.
 - 사용자 입력과 AI 결과는 모두 `components/chat/SafeText` 로 그린다. `mentions` 를 주면 `@이름` 도 강조한다 (앞이 글자인 `a@b.com` 은 멘션이 아니다).
-  지금은 채널 멤버인지 모르고 모양만 보고 강조한다. DB v1 의 `memberships` 가 생기면 멤버만 강조한다.
+  `handles` 를 주면 **그 채널 멤버의 handle 만** 강조한다 (2026-09-29). 멤버 목록은 `useChannelMembers` 가 준다. 멤버가 아닌 `@아무개` 는 글자 그대로다.
+- `@` 자동완성: 입력창에서 커서 앞이 `@찾는말` 이면 채널 멤버(나 빼고)를 handle·이름으로 걸러 보여 준다. ↑↓ 로 고르고 Enter·Tab 으로 넣고 Esc 로 닫는다. 한글 조합 중 키는 무시한다.
 
 ## 8. AI
 
@@ -355,6 +373,13 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 5. **승인 후 실행** — 할 일 저장과 말투 변환 전송은 사용자가 버튼을 눌러야 한다.
 6. **실패해도 채팅은 산다** — 제한 시간 20초. 넘으면 "AI 응답이 늦습니다" 를 보여 주고, 채팅 기능과는 분리한다.
 7. **상한과 기록** — 사용자당 분당 5회, 하루 100회 (초안). 모든 호출을 `ai_usage_logs` 에 남긴다.
+
+### 공통 모듈과 말투 변환 (2026-09-29)
+
+- `lib/ai/openai.ts` 의 `complete({ system, user, maxTokens, json })` 하나로 부른다. 20초가 넘으면 "AI 응답이 늦습니다". 키가 없거나 틀리거나 제공자 한도에 걸리면 화면에 그대로 보여 줄 문구로 `AiError` 를 던진다.
+- `lib/ai/usage.ts`: `overLimit()` 가 본인 `ai_usage_logs` 를 세어 분당 5회·하루 100회를 검사한다 (실제로 AI 를 부른 `ok`·`error`·`timeout` 만 센다). `logUsage()` 가 모든 요청을 남긴다 — 상한에 걸리면 `rate_limited`, 키가 없으면 `denied`.
+- 말투 변환 `POST /api/ai/tone` 은 바꾼 문장만 돌려주고 **보내지 않는다**. 화면의 🎭 버튼 → 모드 선택 → 미리보기 → "이걸로 보내기"를 눌러야 전송된다. 실패하면 "원래 문장 보내기".
+  원문을 고치면 미리보기를 닫는다 (바뀐 문장이 원문과 어긋나지 않게). 멘션·주소·숫자는 그대로 두라고 지시한다.
 
 ## 9. 폴더 구조
 
@@ -388,7 +413,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
 │  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
-│  ├─ ai/                         ③ AI 공통 — LLM 호출·요청 상한·비용 기록 (예정)
+│  ├─ ai/                         AI 공통 — openai.ts(호출·시간 초과·비용) · usage.ts(요청 상한·ai_usage_logs 기록). ① 이 말투 변환 때 만들었고 요약·할 일(③)도 쓴다
+│  ├─ tone.ts                     ① 말투 변환 모드 (신하·선비·정중) — 입력창과 서버가 같이 씀
 │  └─ types/                      message.ts ① · channel.ts ② · calendar.ts ② · notification.ts ③
 ├─ supabase/
 │  ├─ migrations/
@@ -406,7 +432,10 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | `NEXT_PUBLIC_SUPABASE_URL` | 브라우저·서버 | 프로젝트 URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 브라우저·서버 | 공개 키 (RLS 적용) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **서버만** | RLS 를 건너뛴다. 시드·첨부 검사 전용 |
-| `LLM_API_KEY` | **서버만** | AI 호출 |
+| `OPENAI_API_KEY` | **서버만** | AI 호출 (2026-09-29 제공자 OpenAI 로 결정). 없으면 AI 기능은 "AI 키가 설정되지 않았습니다"를 띄우고 채팅은 그대로 된다 |
+| `OPENAI_MODEL` | 서버만 | 없으면 `gpt-4o-mini` |
+| `OPENAI_PRICE_INPUT_PER_1M` · `OPENAI_PRICE_OUTPUT_PER_1M` | 서버만 | 100만 토큰당 달러. `ai_usage_logs.cost_usd` 계산에 쓴다. 없으면 비용을 0 으로 기록한다 (모델 가격을 확인해 넣는다) |
+| `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:users`) 비밀번호 |
 
 값은 `.env.local` 과 Vercel 환경 변수에만 둔다. 저장소에는 이름만 적은 `.env.example` 을 올린다.
 
@@ -436,7 +465,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **실시간 구독은 영역마다 따로 연다**: 메시지 ①, 미읽음 ②, 알림 ③. 하나의 구독을 셋이 고치지 않는다.
 - **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `?m=<메시지 id>`(① 이 이동·강조), 회의는 `/calendar?e=<회의 id>`(②).
   `?m=` 은 새로고침 없이 `router.push` 로 붙여도 동작하고, ① 이 처리한 뒤 주소에서 `m` 만 지운다 (같은 메시지로 다시 이동할 수 있게). 없는 메시지면 가운데 칸에 안내가 뜬다.
-- **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM SDK 는 제공자가 정해지면 ③ 이 넣는다.
+- **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM 은 SDK 를 넣지 않고 REST API 를 `fetch` 로 부른다 (`lib/ai/openai.ts`, 2026-09-29).
 - **WORK_UNITS 진행 현황 표는 작업을 끝낸 사람이 바로 고친다** (2026-09-29, 규칙 원본은 저장소 최상단 `CLAUDE.md`). 개발이나 테스트를 마치면 그 작업의 줄(상태·날짜·한 줄 설명)과 완료 조건 체크박스를 **같은 커밋에** 고친다.
   붙어 있는 줄이라 머지 충돌이 날 수 있다. 충돌이 나면 두 사람의 줄을 모두 살린다.
 
@@ -472,6 +501,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929100300_backfill_profiles.sql` | 가입 트리거보다 먼저 가입한 계정의 profiles 채우기 |
 | `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
 | `supabase/migrations/20260929110000_attachment_message.sql` | 첨부 메시지 저장 함수 `post_attachment_message()`, `attachments` 실시간 등록 |
+| `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -481,6 +511,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
+| `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-users.mjs` | 시연 계정 4명 만들기 (`npm run seed:users`). 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 이미 있으면 비밀번호·이름·역할만 맞춘다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
@@ -529,5 +560,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
   시험 계정은 `npm run seed:users` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
+- **실시간 구독 이름이 겹치면 화면 전체가 멈춘다**: `supabase.channel(이름)` 은 같은 이름의 채널이 이미 있으면 새로 만들지 않고 **이미 구독한 채널을 돌려준다**. 거기에 `.on()` 을 붙이면 `cannot add postgres_changes callbacks ... after subscribe()` 오류로 페이지가 죽는다 (2026-09-29, 스레드 패널과 가운데 칸이 둘 다 `members:<채널>` 을 열어서 발생).
+  구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.

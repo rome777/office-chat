@@ -11,7 +11,8 @@
     "check:step1": "node --env-file=.env.local scripts/step1-check.mjs",
     "check:db": "node --env-file=.env.local scripts/db-v1-check.mjs",
     "check:attach": "node --env-file=.env.local scripts/attachments-check.mjs",
-    "seed:users": "node --env-file=.env.local scripts/seed-users.mjs"
+    "seed:users": "node --env-file=.env.local scripts/seed-users.mjs",
+    "seed:10k": "node --env-file=.env.local scripts/seed-10k.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
