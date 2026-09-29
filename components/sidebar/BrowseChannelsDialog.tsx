@@ -84,30 +84,37 @@ export default function BrowseChannelsDialog({
               </button>
             </li>
           )}
-          {list?.map((c) => (
-            <li key={c.id}>
+          {list?.map((c) => {
+            const info = (
               <div className={s.browseInfo}>
                 <span className={s.channelName}># {c.name}</span>
                 <span className={s.muted}>
                   {c.member_count === null ? "공개 채널" : `멤버 ${c.member_count}명`}
                 </span>
               </div>
-              {c.joined ? (
-                <button type="button" className={s.secondary} onClick={() => onOpen(c)}>
-                  들어가기
+            );
+            // 참여 중인 채널은 줄 전체가 그 채널로 가는 버튼이다. 오른쪽에는 할 일(참여)만 버튼으로 둔다
+            return c.joined ? (
+              <li key={c.id} className={s.joined}>
+                <button type="button" className={s.browseRow} onClick={() => onOpen(c)}>
+                  {info}
+                  <span className={s.joinedMark}>✓ 참여 중</span>
                 </button>
-              ) : (
+              </li>
+            ) : (
+              <li key={c.id}>
+                {info}
                 <button
                   type="button"
                   className={s.primary}
                   disabled={joining !== null}
                   onClick={() => void join(c)}
                 >
-                  {joining === c.id ? "참여 중…" : "참여"}
+                  {joining === c.id ? "참여하는 중…" : "참여"}
                 </button>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
 
         {error && (
