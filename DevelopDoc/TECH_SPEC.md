@@ -402,6 +402,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - 결과를 누르면 `/?m=<메시지 id>` 로 보낸다 (① 이 채널을 바꾸고 강조, 답글이면 스레드). ① 은 채널을 id·이름만으로 바꾸므로, ② 의 채널·DM 목록이 종류(비공개·DM)와 상대 이름을 채운다.
 - 검색창을 다시 누르면 같은 검색어라도 새로 찾는다 (그 사이 새 메시지·가입한 채널).
 - 걸린 시간을 결과 위에 보여 준다 (예: `4건 · 0.04초`).
+- 멘션은 본문에 `@아이디` 로 저장된다 (아래 "멘션"). 결과는 `@이름` 으로 바꿔 보여 주고, 검색어가 들어 있는지도 **이름으로 바꾼 글**로 거른다 (숨은 아이디로는 걸리지 않게). 이름이 검색어를 담은 사람(최대 5명)의 `@아이디` 도 함께 찾는다 → "김송이"로 `@김송이` 를 부른 메시지가 찾아진다 (2026-09-29).
 
 **1만 건 측정에서 알게 된 것** (2026-09-29, 검색 작업(②) 전에 읽을 것)
 
@@ -431,7 +432,13 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - 링크는 `http`·`https` 로 시작하는 것만 `<a rel="noopener noreferrer">` 로 바꾼다. 문장 끝 문장부호(`.`·`)` 등)는 주소에서 뺀다.
 - 사용자 입력과 AI 결과는 모두 `components/chat/SafeText` 로 그린다. `mentions` 를 주면 `@이름` 도 강조한다 (앞이 글자인 `a@b.com` 은 멘션이 아니다).
   `handles` 를 주면 **그 채널 멤버의 handle 만** 강조한다 (2026-09-29). 멤버 목록은 `useChannelMembers` 가 준다. 멤버가 아닌 `@아무개` 는 글자 그대로다.
-- `@` 자동완성: 입력창에서 커서 앞이 `@찾는말` 이면 채널 멤버(나 빼고)를 handle·이름으로 걸러 보여 준다. ↑↓ 로 고르고 Enter·Tab 으로 넣고 Esc 로 닫는다. 한글 조합 중 키는 무시한다.
+- `@` 자동완성: 입력창에서 커서 앞이 `@찾는말` 이면 채널 멤버(나 빼고)를 이름·부서·직급으로 걸러 보여 준다. ↑↓ 로 고르고 Enter·Tab 으로 넣고 Esc 로 닫는다. 한글 조합 중 키는 무시한다.
+- **멘션: 저장은 아이디, 보이는 것은 이름 (2026-09-29, `lib/mentions.ts`)**. 아이디(handle)는 겹치지 않고 띄어쓰기가 없어 DB 트리거가 누구를 불렀는지 정확히 안다. 이름은 동명이인·띄어쓰기가 있어 저장에 쓰지 않는다.
+  - 이름표(`mentionLabels`): handle → 이름. 회사에 같은 이름이 둘 이상이면 `이름(부서)`. 회사 명부(`components/people/directory` 의 `useMentionLabels`·`getMentionLabels`)로 만들어 화면 전체가 하나를 나눠 쓴다 (1분 캐시). 채널을 나간 사람도 이름으로 보인다.
+  - 입력: 자동완성으로 고르면 `@이름 ` 을 넣고, 보낼 때 `storeMentions` 가 `@아이디`(소문자)로 바꿔 저장한다. 이름이 한 사람만 가리킬 때만 바꾼다 (동명이인을 부서 없이 쓰면 글자 그대로 → 알림 없음). 이름 바로 뒤에 글자가 붙으면(`@정대현님`) 바꾸지 않는다. 긴 이름부터 맞춘다.
+  - 표시: `SafeText` 의 `mentions.names` 로 `@이름`. 멤버가 아니면 강조 없이 이름만. 알림 미리보기(토스트·브라우저 알림)·검색 결과·AI 요약·할 일은 `showMentions` 로 바꾼 글을 쓴다. 할 일의 기한 근거(`due_quote`)도 바꾼 본문과 맞춘다.
+  - 아이디는 화면 어디에도 보이지 않는다: 자동완성·채널 정보 멤버 목록·조직도에서 `@handle` 을 뺐다.
+  - **알아 둘 것**: 지금은 본인이 API 로 `display_name`·`handle`·`department`·`title` 을 고칠 수 있다 (`db_v1.sql` 컬럼 권한, `check:db` "본인 이름은 고칠 수 있다"). 사내 메신저면 잠가야 한다 — WORK_UNITS WU-31 "팀 상의".
 
 ### 잡무 수첩 (PRD 7절 잡무 자동화 — 메뉴 주문 정리, 2026-09-29)
 
@@ -611,6 +618,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929150000_invite_rights.sql` | 채널 초대 권한 `memberships.can_invite`, `has_invite_right()`, 넣기·권한 주기 정책, 권한 변경 기록 트리거 (2026-09-29 원격 적용) |
 | `supabase/migrations/20260929190000_event_decline_notifications.sql` | 회의 불참 알림: `notifications.actor_id`, 종류 `event_decline`, `event_attendees` 응답 트리거 (7절 "일정 알림 만들기") |
 | `supabase/migrations/20260929170000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
+| `lib/mentions.ts` | 멘션 규칙: 저장은 `@아이디`, 보이는 것은 `@이름` (이름표·표시·저장 변환). 채팅·알림·검색·AI 가 같이 쓴다 (7절 "멘션") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
@@ -621,7 +629,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
 | `scripts/db-v1-check.mjs` | DB v1 권한·제약 검사 (`npm run check:db`). 가상 사용자 4명을 만들어 확인하고, 끝나면 만든 것을 모두 지운다 |
 | `scripts/notifications-check.mjs` | 알림 트리거·실시간·권한 검사 (`npm run check:notify`, 16개) |
-| `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 15개). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
+| `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 21개 — 불참 알림 6개 포함). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명·프로젝트 채널 2개·샘플 대화·샘플 회의·회의실. 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD`. 여러 번 돌려도 된다. 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다) |
