@@ -1,11 +1,13 @@
-// 시연 회사 만들기 (시드 데이터). 가상 회사 "오피스톡 주식회사" 의 조직(회사 → 사업부 → 본부 → 팀)과 직원 37명,
-// 부서 채널, 프로젝트 채널 2개, 샘플 대화, 샘플 회의를 만든다.
+// 회사 시드 데이터. 가상 회사 "한결테크 주식회사" 의 조직(회사 → 사업부 → 본부 → 팀)과 직원 37명,
+// 부서 채널, 프로젝트 채널 2개, 샘플 대화, 샘플 회의를 만든다. 운영 DB 에도 이것을 넣는다 (2026-09-29).
 // 실행: .env.local 에 SEED_PASSWORD=<비밀번호 8자 이상> 을 넣고 npm run seed:company
 //
-// 여러 번 돌려도 된다: 이미 있는 것은 이름·소속·직급만 맞추고, 대화·회의는 다시 넣지 않는다.
-// 모든 시연 계정이 SEED_PASSWORD 하나를 쓴다. 비밀번호는 저장소·문서에 쓰지 않는다.
+// 여러 번 돌려도 된다: 이 스크립트가 만든 계정(가입 정보 seed = "company")은 이름·소속·직급만 맞추고,
+// 대화·회의는 다시 넣지 않는다. 비밀번호는 새로 만들 때만 정하고 다시 바꾸지 않는다.
+// 이 스크립트가 만들지 않은 계정은 메일 주소가 겹쳐도 건드리지 않는다 (기존 계정은 그대로 둔다).
+// 새 계정은 모두 SEED_PASSWORD 하나를 쓴다. 비밀번호는 저장소·문서에 쓰지 않는다.
 //
-// 부서 채널은 DB 가 만든다 (supabase/migrations/20260929145000_org_units.sql):
+// 부서 채널은 DB 가 만든다 (supabase/migrations/20260929160000_org_units.sql):
 //   조직을 넣으면 같은 이름의 비공개 채널이 생기고, 사람의 소속(profiles.org_unit_id)을 정하면
 //   그 조직과 모든 상위 조직의 채널에 자동으로 들어간다. 회사 채널은 #일반 이다.
 //
@@ -20,9 +22,11 @@ if (!url || !serviceKey) {
   process.exit(1);
 }
 if (!password || password.length < 8) {
-  console.error(".env.local 에 SEED_PASSWORD (8자 이상) 를 넣어 주세요. 모든 시연 계정이 이 비밀번호를 씁니다.");
+  console.error(".env.local 에 SEED_PASSWORD (8자 이상) 를 넣어 주세요. 새로 만드는 계정이 모두 이 비밀번호를 씁니다.");
   process.exit(1);
 }
+/** 이 스크립트가 만든 계정 표시 (auth 가입 정보) */
+const SEED_MARK = "company";
 
 const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -37,7 +41,7 @@ const eventId = (n) => `0e000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 // ── 조직 ────────────────────────────────────────────────────
 // key 는 이 파일 안에서만 쓰는 이름. 순서대로 넣으므로 상위 조직이 먼저 와야 한다
 const UNITS = [
-  { key: "company", n: 1, name: "오피스톡 주식회사", kind: "company", parent: null, channel: GENERAL },
+  { key: "company", n: 1, name: "한결테크 주식회사", kind: "company", parent: null, channel: GENERAL },
   { key: "platform", n: 10, name: "플랫폼사업부", kind: "division", parent: "company" },
   { key: "dev", n: 11, name: "개발본부", kind: "hq", parent: "platform" },
   { key: "backend", n: 12, name: "백엔드팀", kind: "team", parent: "dev" },
@@ -57,18 +61,18 @@ const UNITS = [
 ];
 
 // ── 사람 ────────────────────────────────────────────────────
-// title 은 직급. lead 가 있으면 그 조직의 장(대표·사업부장·본부장·팀장)이다.
-// 원래 있던 시연 계정 4명(사용자A·B·관리자·비회원C)은 메일 주소와 이름을 그대로 두고 소속만 정한다
-// (비회원C 는 개발 쪽 채널·프로젝트-모바일앱 의 비회원이라 권한 거부 시연에 쓴다)
+// title 은 직급. lead 가 있으면 그 조직의 장(대표·사업부장·본부장·팀장)이다. 메일은 <handle>@example.com.
+// 원래 있던 시연 계정(사용자A·B·관리자·비회원C)은 넣지 않는다 — 기존 계정은 소속 없이 그대로 둔다.
+// 권한 시연: 정하늘(영업1팀)은 개발 쪽 부서 채널·프로젝트-모바일앱 의 비회원이다. 관리자 권한은 아무에게도 주지 않는다
 const PEOPLE = [
   { handle: "dhjung", name: "정대현", unit: "company", title: "대표이사", lead: true },
 
   { handle: "swhan", name: "한승우", unit: "platform", title: "전무", lead: true },
   { handle: "sjoh", name: "오세진", unit: "dev", title: "상무", lead: true },
   { handle: "jhyoon", name: "윤재혁", unit: "backend", title: "부장", lead: true },
-  { handle: "userA", name: "사용자A", email: "a@example.com", unit: "backend", title: "과장" },
+  { handle: "dhkim", name: "김도현", unit: "backend", title: "과장" },
   { handle: "dyim", name: "임도윤", unit: "backend", title: "대리" },
-  { handle: "userB", name: "사용자B", email: "b@example.com", unit: "backend", title: "사원" },
+  { handle: "sylee", name: "이서연", unit: "backend", title: "사원" },
   { handle: "mhseo", name: "서민호", unit: "frontend", title: "차장", lead: true },
   { handle: "hekang", name: "강하은", unit: "frontend", title: "대리" },
   { handle: "ysjo", name: "조윤서", unit: "frontend", title: "사원" },
@@ -85,7 +89,7 @@ const PEOPLE = [
   { handle: "jmpark", name: "박정민", unit: "domestic", title: "상무", lead: true },
   { handle: "sclee", name: "이상철", unit: "sales1", title: "부장", lead: true },
   { handle: "ynchoi", name: "최유나", unit: "sales1", title: "대리" },
-  { handle: "userC", name: "비회원C", email: "c@example.com", unit: "sales1", title: "사원" },
+  { handle: "hnjung", name: "정하늘", unit: "sales1", title: "사원" },
   { handle: "msjang", name: "장민석", unit: "sales2", title: "차장", lead: true },
   { handle: "desong", name: "송다은", unit: "sales2", title: "과장" },
   { handle: "wjjeon", name: "전우진", unit: "sales2", title: "사원" },
@@ -95,7 +99,7 @@ const PEOPLE = [
   { handle: "gyyu", name: "유가영", unit: "marketing", title: "사원" },
 
   { handle: "yhno", name: "노영훈", unit: "support", title: "상무", lead: true },
-  { handle: "admin", name: "관리자", email: "admin@example.com", unit: "hr", title: "부장", lead: true, role: "admin" },
+  { handle: "jhpark", name: "박지훈", unit: "hr", title: "부장", lead: true },
   { handle: "jwha", name: "하지원", unit: "hr", title: "대리" },
   { handle: "mjgu", name: "구민재", unit: "hr", title: "사원" },
   { handle: "hwcha", name: "차현우", unit: "finance", title: "차장", lead: true },
@@ -109,15 +113,15 @@ const PROJECTS = [
     n: 1,
     name: "프로젝트-모바일앱",
     type: "private",
-    owner: "userA",
-    members: ["userB", "hekang", "jamoon", "jmryu"],
+    owner: "dhkim",
+    members: ["sylee", "hekang", "jamoon", "jmryu"],
   },
   {
     n: 2,
     name: "프로젝트-고객포털",
     type: "public",
     owner: "msjang",
-    members: ["desong", "jhyoon", "yjshin", "userC", "userA"],
+    members: ["desong", "jhyoon", "yjshin", "hnjung", "dhkim"],
   },
 ];
 
@@ -129,7 +133,7 @@ const CHATS = [
     channel: "company",
     lines: [
       ["dhjung", "전사 공지입니다. 10월 1일은 창립 기념일이라 오후 3시 이후 자유 퇴근입니다."],
-      ["admin", "연말정산 사전 서류는 10월 15일까지 인사팀으로 제출해 주세요."],
+      ["jhpark", "연말정산 사전 서류는 10월 15일까지 인사팀으로 제출해 주세요."],
       ["yhno", "사무실 공기청정기 필터 교체가 이번 주에 있습니다. 불편하시면 경영지원본부로 알려 주세요."],
     ],
   },
@@ -154,9 +158,9 @@ const CHATS = [
     channel: "backend",
     lines: [
       ["jhyoon", "이번 주 스프린트 정리합니다. 로그인 API 는 끝났고 검색 API 가 남았어요."],
-      ["userA", "검색 API 는 제가 맡겠습니다. 목요일까지 PR 올릴게요."],
-      ["jhyoon", "@userB 첨부 업로드 테스트 케이스 좀 추가해 주세요. 급하진 않아요."],
-      ["userB", "네, 확인했습니다!"],
+      ["dhkim", "검색 API 는 제가 맡겠습니다. 목요일까지 PR 올릴게요."],
+      ["jhyoon", "@sylee 첨부 업로드 테스트 케이스 좀 추가해 주세요. 급하진 않아요."],
+      ["sylee", "네, 확인했습니다!"],
       ["dyim", "DB 인덱스 점검은 금요일까지 제가 끝내겠습니다."],
     ],
   },
@@ -173,14 +177,14 @@ const CHATS = [
     lines: [
       ["sclee", "이번 달 신규 계약 목표 5건 중 3건 완료했습니다. 수고 많으셨습니다."],
       ["ynchoi", "고객사 제안서 수정본은 수요일까지 보내겠습니다."],
-      ["sclee", "@userC 다음 고객 미팅 자료 정리 부탁해요."],
-      ["userC", "네, 정리해서 공유드리겠습니다."],
+      ["sclee", "@hnjung 다음 고객 미팅 자료 정리 부탁해요."],
+      ["hnjung", "네, 정리해서 공유드리겠습니다."],
     ],
   },
   {
     channel: "hr",
     lines: [
-      ["admin", "신규 입사자 온보딩 자료 업데이트가 필요합니다. @jwha 이번 주 금요일까지 가능할까요?"],
+      ["jhpark", "신규 입사자 온보딩 자료 업데이트가 필요합니다. @jwha 이번 주 금요일까지 가능할까요?"],
       ["jwha", "네, 금요일까지 하겠습니다."],
       ["mjgu", "교육 일정표는 제가 같이 정리할게요."],
     ],
@@ -188,10 +192,10 @@ const CHATS = [
   {
     project: 1,
     lines: [
-      ["userA", "모바일앱 킥오프합니다! 이 채널에서 진행 상황을 공유해요."],
+      ["dhkim", "모바일앱 킥오프합니다! 이 채널에서 진행 상황을 공유해요."],
       ["jamoon", "요구사항 문서 초안은 10월 4일까지 드리겠습니다."],
       ["jmryu", "화면 흐름도는 초안이 나오면 바로 시작할게요."],
-      ["userA", "@userB 푸시 알림 라이브러리 조사 부탁해요. 기한은 따로 없어요."],
+      ["dhkim", "@sylee 푸시 알림 라이브러리 조사 부탁해요. 기한은 따로 없어요."],
       ["hekang", "프론트 프로젝트 세팅은 제가 해 둘게요."],
     ],
   },
@@ -273,14 +277,16 @@ async function seedPeople(units) {
   const ids = new Map();
   let created = 0;
   for (const p of PEOPLE) {
-    const email = p.email ?? `${p.handle.toLowerCase()}@example.com`;
+    const email = `${p.handle.toLowerCase()}@example.com`;
     const unitName = UNITS.find((u) => u.key === p.unit).name;
-    const meta = { handle: p.handle, display_name: p.name, department: unitName, title: p.title };
+    const meta = { handle: p.handle, display_name: p.name, department: unitName, title: p.title, seed: SEED_MARK };
     const found = byEmail.get(email);
     let id;
     if (found) {
-      must(await admin.auth.admin.updateUserById(found.id, { password, email_confirm: true, user_metadata: meta }));
-      id = found.id;
+      if (found.user_metadata?.seed !== SEED_MARK) {
+        throw new Error(`${email} 은 이 스크립트가 만든 계정이 아닙니다. 건드리지 않으려고 멈춥니다 — handle 을 바꿔 주세요`);
+      }
+      id = found.id; // 비밀번호·로그인 정보는 그대로 둔다
     } else {
       const data = must(await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: meta }));
       id = data.user.id;
@@ -295,7 +301,6 @@ async function seedPeople(units) {
           display_name: p.name,
           department: unitName,
           title: p.title,
-          role: p.role ?? "member",
           org_unit_id: units.get(p.unit).id,
         })
         .eq("id", id),
@@ -360,7 +365,7 @@ async function seedChats(ids, units, projects) {
   return inserted;
 }
 
-/** 샘플 회의: 사용자A 가 만들고 사용자B·문지아·류지민이 참석한다. 비회원C 는 참석하지 않는다 (캘린더 권한 시연용).
+/** 샘플 회의: 김도현이 만들고 이서연·문지아·류지민이 참석한다. 정하늘은 참석하지 않는다 (캘린더 권한 시연용).
  *  다음 평일 오후 2시(한국 시간), 회의실 2. 그 시간에 회의실이 이미 차 있으면 회의실 없이 만든다 */
 async function seedEvent(ids) {
   const id = eventId(1);
@@ -381,15 +386,15 @@ async function seedEvent(ids) {
     starts_at,
     ends_at,
     room_id: room.id,
-    created_by: ids.get("userA"),
+    created_by: ids.get("dhkim"),
   };
   let { error } = await admin.from("events").insert(event);
   if (error?.code === "23P01") ({ error } = await admin.from("events").insert({ ...event, room_id: null }));
   if (error) throw error;
   must(
     await admin.from("event_attendees").insert([
-      { event_id: id, user_id: ids.get("userA"), response: "accepted", responded_at: new Date().toISOString() },
-      ...["userB", "jamoon", "jmryu"].map((h) => ({ event_id: id, user_id: ids.get(h) })),
+      { event_id: id, user_id: ids.get("dhkim"), response: "accepted", responded_at: new Date().toISOString() },
+      ...["sylee", "jamoon", "jmryu"].map((h) => ({ event_id: id, user_id: ids.get(h) })),
     ]),
   );
   return true;
@@ -405,5 +410,5 @@ const event = await seedEvent(ids);
 console.log(`조직 ${UNITS.length}개 (부서 채널 ${UNITS.length - 1}개 + #일반)`);
 console.log(`직원 ${PEOPLE.length}명 (새로 만든 계정 ${created}명)`);
 console.log(`프로젝트 채널 ${PROJECTS.length}개, 샘플 메시지 ${messages}건 새로 넣음, 샘플 회의 ${event ? "새로 만듦" : "이미 있음"}`);
-console.log("\n로그인: <handle>@example.com (사용자A·B·관리자·비회원C 는 a·b·admin·c@example.com) + .env.local 의 SEED_PASSWORD");
-console.log("예) 사원 사용자B(b@example.com) → #일반·플랫폼사업부·개발본부·백엔드팀·프로젝트-모바일앱");
+console.log("\n로그인: <handle>@example.com + .env.local 의 SEED_PASSWORD (명단은 이 파일의 PEOPLE)");
+console.log("예) 백엔드팀 사원 이서연(sylee@example.com) → #일반·플랫폼사업부·개발본부·백엔드팀·프로젝트-모바일앱");
