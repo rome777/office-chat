@@ -33,6 +33,19 @@
   border-radius: 6px;
 }
 
+.link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.link:hover {
+  background: var(--mine);
+}
+
+.list + .section {
+  margin-top: 16px;
+}
+
 .active {
   background: var(--mine);
   font-weight: 600;

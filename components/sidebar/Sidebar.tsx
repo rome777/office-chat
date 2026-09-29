@@ -2,6 +2,7 @@
 
 // ② 왼쪽 칸. 채널 목록·미읽음 배지·채널 만들기·DM 목록이 여기에 붙는다.
 
+import Link from "next/link";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import s from "./sidebar.module.css";
 
@@ -16,6 +17,14 @@ export default function Sidebar() {
           <span className={`${s.item} ${s.active}`} aria-current="page">
             # {channel.name}
           </span>
+        </li>
+      </ul>
+      <p className={s.section}>일정</p>
+      <ul className={s.list}>
+        <li>
+          <Link href="/calendar" className={`${s.item} ${s.link}`}>
+            캘린더
+          </Link>
         </li>
       </ul>
     </nav>
