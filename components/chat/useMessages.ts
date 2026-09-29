@@ -1,31 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+// ① 메시지 구독·동기화·전송. 실시간 구독은 영역마다 따로 연다 (미읽음은 ②, 알림은 ③).
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
-import type { ChatMessage, ConnectionState, PendingMessage } from "@/lib/types";
+import type { ChatMessage, ConnectionState, PendingMessage } from "@/lib/types/message";
 
 const SEND_TIMEOUT_MS = 5000;
 const INITIAL_HISTORY = 50;
 
-const CONNECTION_LABEL: Record<ConnectionState, string> = {
-  connecting: "연결 중",
-  connected: "연결됨",
-  reconnecting: "재연결 중",
-  disconnected: "끊김",
-};
-
 // crypto.randomUUID 는 localhost·https 에서만 된다. 같은 네트워크의 IP(http)로 접속해도 되도록 직접 만든다.
-function newClientId(): string {
+export function newClientId(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
   b[6] = (b[6] & 0x0f) | 0x40;
   b[8] = (b[8] & 0x3f) | 0x80;
   const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
 function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
@@ -35,20 +26,15 @@ function sendErrorMessage(error: { code?: string; message?: string; name?: strin
   return error.message ?? "보내지 못했습니다";
 }
 
-export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLeave: () => void }) {
+export function useMessages(nickname: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [conn, setConn] = useState<ConnectionState>("connecting");
-  const [fatal, setFatal] = useState<string | null>(null);
   const [online, setOnline] = useState(0);
-  const [draft, setDraft] = useState("");
-  const [hasUnseen, setHasUnseen] = useState(false);
+  const [fatal, setFatal] = useState<string | null>(null);
 
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const lastIdRef = useRef(0);
-  const listRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
-  const forceScrollRef = useRef(false);
 
   // 서버 id 를 키로 합친다. 같은 메시지가 실시간·동기화로 두 번 와도 한 번만 그린다.
   const merge = useCallback((incoming: ChatMessage[]) => {
@@ -132,7 +118,6 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
     const text = body.trim();
     const supabase = supabaseRef.current;
     if (!text || !supabase) return;
-    forceScrollRef.current = true;
 
     const mark = (status: PendingMessage["status"], error?: string) =>
       setPending((prev) => {
@@ -167,138 +152,9 @@ export default function ChatRoom({ nickname, onLeave }: { nickname: string; onLe
     }
   }
 
-  function submit() {
-    if (!draft.trim()) return;
-    void send(draft);
-    setDraft("");
-  }
-
   function discard(clientId: string) {
     setPending((prev) => prev.filter((p) => p.clientId !== clientId));
   }
 
-  function onScroll() {
-    const el = listRef.current;
-    if (!el) return;
-    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (stickToBottomRef.current) setHasUnseen(false);
-  }
-
-  function scrollToBottom() {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    setHasUnseen(false);
-  }
-
-  useLayoutEffect(() => {
-    if (stickToBottomRef.current || forceScrollRef.current) {
-      scrollToBottom();
-      forceScrollRef.current = false;
-    } else {
-      setHasUnseen(true);
-    }
-  }, [messages, pending]);
-
-  if (fatal) {
-    return (
-      <main className="entry">
-        <div className="entry-card">
-          <h1>설정이 필요합니다</h1>
-          <p className="error-text">{fatal}</p>
-        </div>
-      </main>
-    );
-  }
-
-  const canSend = draft.trim().length > 0;
-
-  return (
-    <div className="chat">
-      <header className="chat-header">
-        <div>
-          <h1># 일반</h1>
-          {conn === "connected" && <span className="muted">접속 {online}명</span>}
-        </div>
-        <div className="header-right">
-          <span className={`conn conn-${conn}`}>
-            <span className="dot" />
-            {CONNECTION_LABEL[conn]}
-          </span>
-          <span className="me">{nickname}</span>
-          <button className="link" onClick={onLeave}>
-            나가기
-          </button>
-        </div>
-      </header>
-
-      <p className="notice">테스트 버전입니다. 로그인 없이 누구나 읽고 쓸 수 있으니 중요한 내용은 쓰지 마세요.</p>
-
-      <div className="messages" ref={listRef} onScroll={onScroll}>
-        {messages.length === 0 && pending.length === 0 && (
-          <p className="empty muted">아직 메시지가 없습니다. 첫 메시지를 보내 보세요.</p>
-        )}
-        {messages.map((m) => (
-          <article key={m.id} className={`msg ${m.author === nickname ? "mine" : ""}`}>
-            <div className="msg-meta">
-              <strong>{m.author}</strong>
-              <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>
-            </div>
-            <p className="msg-body">{m.body}</p>
-          </article>
-        ))}
-        {pending.map((p) => (
-          <article key={p.clientId} className={`msg mine ${p.status}`}>
-            <div className="msg-meta">
-              <strong>{p.author}</strong>
-              <span>{p.status === "sending" ? "보내는 중…" : "전송 실패"}</span>
-            </div>
-            <p className="msg-body">{p.body}</p>
-            {p.status === "failed" && (
-              <div className="msg-actions">
-                <span className="error-text">{p.error}</span>
-                <button className="link" onClick={() => void send(p.body, p.clientId)}>
-                  다시 보내기
-                </button>
-                <button className="link" onClick={() => discard(p.clientId)}>
-                  삭제
-                </button>
-              </div>
-            )}
-          </article>
-        ))}
-      </div>
-
-      {hasUnseen && (
-        <button className="unseen" onClick={scrollToBottom}>
-          새 메시지 ↓
-        </button>
-      )}
-
-      <form
-        className="composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <textarea
-          rows={1}
-          placeholder="#일반 에 메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈)"
-          value={draft}
-          maxLength={2000}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            // 한글 조합 중 Enter 는 조합 확정이므로 전송하지 않는다 (두 번 전송 방지)
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <button type="submit" disabled={!canSend}>
-          전송
-        </button>
-      </form>
-    </div>
-  );
+  return { messages, pending, conn, online, fatal, send, discard };
 }

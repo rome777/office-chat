@@ -1,0 +1,11 @@
+/* ③ 알림 스타일 */
+
+.bell {
+  font-size: 13px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}

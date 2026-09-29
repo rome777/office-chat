@@ -1,3 +1,5 @@
+// ① 가운데(메시지 목록·입력창) 영역의 타입
+
 export type ChatMessage = {
   id: number;
   client_id: string;

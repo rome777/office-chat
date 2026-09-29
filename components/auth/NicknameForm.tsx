@@ -1,6 +1,9 @@
 "use client";
 
+// ② 입장 화면. 로그인 작업에서 로그인 화면으로 바뀐다.
+
 import { useState } from "react";
+import s from "./auth.module.css";
 
 export default function NicknameForm({ onSubmit }: { onSubmit: (nickname: string) => void }) {
   const [value, setValue] = useState("");
@@ -8,9 +11,9 @@ export default function NicknameForm({ onSubmit }: { onSubmit: (nickname: string
   const valid = name.length > 0 && name.length <= 20;
 
   return (
-    <main className="entry">
+    <main className={s.entry}>
       <form
-        className="entry-card"
+        className={s.card}
         onSubmit={(e) => {
           e.preventDefault();
           if (valid) onSubmit(name);

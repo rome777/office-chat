@@ -1,0 +1,13 @@
+/* ② 검색 스타일 */
+
+.box {
+  width: 220px;
+  max-width: 100%;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
