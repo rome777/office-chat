@@ -27,7 +27,7 @@ export async function overLimit(supabase: SupabaseClient, userId: string): Promi
 
 export async function logUsage(
   supabase: SupabaseClient,
-  row: { feature: AiFeature; status: AiStatus; input_tokens?: number; output_tokens?: number; cost_usd?: number },
+  row: { feature: AiFeature; status: AiStatus; input_tokens?: number; output_tokens?: number },
 ) {
   // user_id 는 기본값 auth.uid() 로 들어간다 (컬럼 권한상 보낼 수 없다)
   const { error } = await supabase.from("ai_usage_logs").insert({
@@ -35,7 +35,6 @@ export async function logUsage(
     status: row.status,
     input_tokens: row.input_tokens ?? 0,
     output_tokens: row.output_tokens ?? 0,
-    cost_usd: row.cost_usd ?? 0,
   });
   if (error) console.error("ai_usage_logs 기록 실패:", error.message);
 }

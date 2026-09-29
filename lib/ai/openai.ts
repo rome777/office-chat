@@ -1,13 +1,10 @@
 // AI 공통 — OpenAI 호출 (서버 전용, TECH_SPEC 8절). 요약·할 일(③)과 말투 변환(①)이 같이 쓴다.
 // SDK 를 넣지 않고 REST API 를 fetch 로 부른다 (패키지 추가는 팀 합의가 필요해서).
 //
-// 환경 변수는 OPENAI_API_KEY 하나다 (.env.local·Vercel, 서버만). 모델과 가격은 여기 상수로 둔다.
+// 환경 변수는 OPENAI_API_KEY 하나다 (.env.local·Vercel, 서버만).
 
 export const AI_TIMEOUT_MS = 20_000; // TECH_SPEC 8절 규칙 6
 const MODEL = "gpt-4o-mini";
-// 100만 토큰당 달러, 표준 처리 가격 (2026-09-29 platform.openai.com/docs/pricing). 모델을 바꾸면 같이 바꾼다
-const PRICE_INPUT_PER_1M = 0.15;
-const PRICE_OUTPUT_PER_1M = 0.6;
 const ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
 export type AiErrorKind = "no_key" | "timeout" | "bad_key" | "provider_limit" | "failed";
@@ -22,7 +19,7 @@ export class AiError extends Error {
   }
 }
 
-export type AiResult = { text: string; inputTokens: number; outputTokens: number; costUsd: number; model: string };
+export type AiResult = { text: string; inputTokens: number; outputTokens: number };
 
 export async function complete({
   system,
@@ -72,6 +69,5 @@ export async function complete({
   const text: string = data.choices?.[0]?.message?.content ?? "";
   const inputTokens = Number(data.usage?.prompt_tokens ?? 0);
   const outputTokens = Number(data.usage?.completion_tokens ?? 0);
-  const costUsd = (inputTokens * PRICE_INPUT_PER_1M + outputTokens * PRICE_OUTPUT_PER_1M) / 1_000_000;
-  return { text: text.trim(), inputTokens, outputTokens, costUsd, model: MODEL };
+  return { text: text.trim(), inputTokens, outputTokens };
 }

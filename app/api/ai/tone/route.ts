@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
       status: "ok",
       input_tokens: result.inputTokens,
       output_tokens: result.outputTokens,
-      cost_usd: result.costUsd,
     });
     if (!result.text) return json(502, { error: "AI 가 빈 답을 줬습니다. 다시 시도해 주세요" });
     return json(200, { text: result.text.slice(0, 2000), mode });

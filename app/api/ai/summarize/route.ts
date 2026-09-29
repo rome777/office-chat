@@ -103,7 +103,6 @@ export async function POST(request: NextRequest) {
       status: "ok",
       input_tokens: result.inputTokens,
       output_tokens: result.outputTokens,
-      cost_usd: result.costUsd,
     });
 
     // 3. 근거 검사: 보낸 목록에 없는 번호는 버리고, 근거가 하나도 안 남은 항목은 버린다
