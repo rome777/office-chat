@@ -6,6 +6,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import { LockIcon } from "./ActionIcons";
 import ChannelList from "./ChannelList";
 import DmList from "./DmList";
 import s from "./sidebar.module.css";
@@ -51,10 +52,12 @@ export default function ChannelTitle() {
           }
           onClick={() => setOpen((v) => !v)}
         >
-          <span aria-hidden="true">
-            {channel.type === "dm" ? "@" : channel.type === "private" ? "🔒" : "#"}
-          </span>{" "}
-          {channel.name}
+          <span aria-hidden="true">{channel.type === "dm" ? "@" : "#"}</span> {channel.name}
+          {channel.type === "private" && (
+            <span className={s.lock}>
+              <LockIcon size={14} />
+            </span>
+          )}
           <span className={s.caret} aria-hidden="true">
             ▾
           </span>

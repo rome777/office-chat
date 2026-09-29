@@ -1,6 +1,6 @@
 "use client";
 
-// ② 회의 상세. 참석자별 응답, 초대받은 사람은 수락·거절, 만든 사람은 고치기·취소.
+// ② 회의 상세. 참석자별 응답, 초대받은 사람은 참석·불참, 만든 사람은 고치기·취소.
 
 import { useState } from "react";
 import type { AttendeeResponse, Room } from "@/lib/types/calendar";
@@ -10,8 +10,8 @@ import { formatKstRange } from "./time";
 import s from "./calendar.module.css";
 
 const RESPONSE_LABEL: Record<AttendeeResponse, string> = {
-  accepted: "수락",
-  declined: "거절",
+  accepted: "참석",
+  declined: "불참",
   pending: "응답 전",
 };
 
@@ -101,7 +101,7 @@ export default function EventDetail({
                 disabled={working || mine.response === "declined"}
                 onClick={() => void run(() => respond(event.id, "declined"))}
               >
-                거절
+                불참
               </button>
               <button
                 type="button"
@@ -109,7 +109,7 @@ export default function EventDetail({
                 disabled={working || mine.response === "accepted"}
                 onClick={() => void run(() => respond(event.id, "accepted"))}
               >
-                수락
+                참석
               </button>
             </>
           )}

@@ -28,6 +28,7 @@ export const TYPE_LABEL: Record<NotificationType, string> = {
   event_update: "회의 변경",
   event_cancel: "회의 취소",
   event_reminder: "10분 후 회의",
+  event_decline: "회의 불참",
 };
 
 /** 화면에 그릴 알림 한 건. parentId 는 답글이면 부모 메시지 id */
@@ -77,7 +78,12 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
   const chById = new Map((channels.data ?? []).map((c) => [c.id, c]));
   const evById = new Map((events.data ?? []).map((e) => [e.id, e]));
 
-  const authorIds = [...new Set((messages.data ?? []).map((m) => m.user_id).filter((v): v is string => !!v))];
+  // 메시지 작성자와, 회의 불참 알림의 불참한 사람
+  const authorIds = [
+    ...new Set(
+      [...(messages.data ?? []).map((m) => m.user_id), ...list.map((n) => n.actor_id)].filter((v): v is string => !!v),
+    ),
+  ];
   const { data: people } = authorIds.length
     ? await supabase.from("profiles").select("id, display_name").in("id", authorIds)
     : { data: [] as { id: string; display_name: string }[] };
@@ -91,7 +97,9 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
         : "";
       // 회의에서 빠졌거나 지워진 회의면 RLS 가 주지 않는다
       const room = (ev?.rooms as { name?: string } | null | undefined)?.name;
-      const preview = ev ? [when, room].filter(Boolean).join(" · ") : "볼 수 없는 회의입니다";
+      // 회의 불참은 누가 불참했는지를 앞에 붙인다 ("김OO 님 · 10. 1. 오후 02:00 · 회의실")
+      const who = n.type === "event_decline" ? `${(n.actor_id && nameById.get(n.actor_id)) || "알 수 없음"} 님` : "";
+      const preview = ev ? [who, when, room].filter(Boolean).join(" · ") : "볼 수 없는 회의입니다";
       return { ...n, title: ev?.title ?? "회의", preview, parentId: null };
     }
     const m = n.message_id ? msgById.get(n.message_id) : undefined;
@@ -119,6 +127,8 @@ export function useNotifications({
 }) {
   const [items, setItems] = useState<NotificationView[]>([]);
   const [unread, setUnread] = useState(0);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const lastIdRef = useRef(0);
   const channelRef = useRef(currentChannelId);
   channelRef.current = currentChannelId;
@@ -235,6 +245,14 @@ export function useNotifications({
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${selfId}` },
         (payload) => void receive([payload.new as AppNotification], false),
       )
+      // 지워진 알림을 목록에서 뺀다 (다시 참석해서 안 읽은 불참 알림이 지워질 때, 10분 전 알림을 다시 보낼 때).
+      // DELETE 는 필터를 걸 수 없어 모두 받는다 — 기본 키(id)만 오고, 내 목록에 있는 것만 뺀다
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications" }, (payload) => {
+        const id = (payload.old as { id?: number }).id;
+        if (id === undefined || !itemsRef.current.some((n) => n.id === id)) return;
+        setItems((prev) => prev.filter((n) => n.id !== id));
+        void refreshUnread();
+      })
       .subscribe((status) => {
         if (status !== "SUBSCRIBED") return;
         if (first) {

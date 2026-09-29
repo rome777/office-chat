@@ -9,6 +9,7 @@ import type { Person } from "@/lib/types/people";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { getPeople } from "@/components/people/directory";
 import { listMyChannels, listMyDms } from "@/components/sidebar/channelSource";
+import { LockIcon } from "@/components/sidebar/ActionIcons";
 import { formatKstDay, formatKstTime } from "@/components/calendar/time";
 import { MIN_QUERY, searchMessages, snippet, type SearchHit } from "./searchSource";
 import s from "./search.module.css";
@@ -27,7 +28,7 @@ export default function SearchBox() {
   const [active, setActive] = useState(0);
   // 검색창을 다시 누르면 같은 검색어라도 새로 찾는다 (그 사이 새 메시지·가입한 채널이 있을 수 있다)
   const [tick, setTick] = useState(0);
-  const [labels, setLabels] = useState<Map<string, string>>(new Map());
+  const [labels, setLabels] = useState<Map<string, { name: string; locked: boolean }>>(new Map());
   const [people, setPeople] = useState<Map<string, Person>>(new Map());
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -75,9 +76,9 @@ export default function SearchBox() {
     void Promise.all([listMyChannels(), listMyDms()]).then(
       ([chs, dms]) => {
         if (!alive) return;
-        const m = new Map<string, string>();
-        chs.forEach((c) => m.set(c.id, `${c.type === "private" ? "🔒" : "#"}${c.name}`));
-        dms.forEach((d) => m.set(d.id, `@${d.other.display_name}`));
+        const m = new Map<string, { name: string; locked: boolean }>();
+        chs.forEach((c) => m.set(c.id, { name: `#${c.name}`, locked: c.type === "private" }));
+        dms.forEach((d) => m.set(d.id, { name: `@${d.other.display_name}`, locked: false }));
         setLabels(m);
       },
       () => {},
@@ -199,7 +200,12 @@ export default function SearchBox() {
                   onClick={() => go(h)}
                 >
                   <div className={s.rowHead}>
-                    <span className={s.where}>{labels.get(h.channel_id) ?? "대화"}</span>
+                    <span className={s.where}>{labels.get(h.channel_id)?.name ?? "대화"}</span>
+                    {labels.get(h.channel_id)?.locked && (
+                      <span className={s.lock} title="비공개 채널">
+                        <LockIcon />
+                      </span>
+                    )}
                     {h.parent_id !== null && <span className={s.reply}>답글</span>}
                     <span className={s.who}>{who}</span>
                     <span className={s.when}>

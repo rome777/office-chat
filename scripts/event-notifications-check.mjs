@@ -1,4 +1,4 @@
-// 일정 알림 트리거·10분 전 알림 자동 확인 (일정 알림 작업, 원격 Supabase).
+// 일정 알림 트리거·10분 전 알림·불참 알림 자동 확인 (일정 알림 작업, 원격 Supabase).
 // 실행: npm run check:events   (pg_cron 이 실제로 도는지 보려고 최대 90초 기다린다)
 // 가상 사용자 A(만든 사람)·B·C(참석자)와 회의실 하나를 만들고, 끝나면 모두 지운다.
 import { randomUUID } from "node:crypto";
@@ -38,6 +38,11 @@ async function notes(eventId) {
   const { data } = await admin.from("notifications").select("user_id, type").eq("event_id", eventId).order("id");
   return data ?? [];
 }
+/** 그 회의에서 user(만든 사람)가 받은 불참 알림 */
+async function declines(eventId, user) {
+  const { data } = await admin.from("notifications").select("id, actor_id, read_at").eq("event_id", eventId).eq("user_id", user.id).eq("type", "event_decline").order("id");
+  return data ?? [];
+}
 const has = (list, user, type) => list.some((n) => n.user_id === user.id && n.type === type);
 const count = (list, user, type) => list.filter((n) => n.user_id === user.id && n.type === type).length;
 
@@ -60,6 +65,25 @@ try {
   n = await notes(ev.data);
   check("나중에 추가한 참석자도 초대 알림", !addC.error && has(n, C, "event_invite"), `(${addC.error?.message ?? "ok"})`);
   await C.sb.from("event_attendees").update({ response: "declined" }).eq("event_id", ev.data).eq("user_id", C.id);
+
+  // ── 불참 (만든 사람에게 알림, 20260929190000) ──
+  const respondC = (response) => C.sb.from("event_attendees").update({ response }).eq("event_id", ev.data).eq("user_id", C.id);
+  let dec = await declines(ev.data, A);
+  n = await notes(ev.data);
+  check("불참하면 만든 사람에게 불참 알림 (누가 불참했는지 함께)", dec.length === 1 && dec[0].actor_id === C.id, `(${dec.length}건)`);
+  check("불참 알림은 만든 사람만 받는다", !has(n, B, "event_decline") && !has(n, C, "event_decline"));
+  await respondC("accepted");
+  dec = await declines(ev.data, A);
+  check("다시 참석하면 안 읽은 불참 알림을 지운다", dec.length === 0, `(${dec.length}건)`);
+  await respondC("declined");
+  dec = await declines(ev.data, A);
+  await A.sb.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", dec[0]?.id);
+  await respondC("accepted");
+  dec = await declines(ev.data, A);
+  check("읽은 불참 알림은 다시 참석해도 남는다", dec.length === 1 && dec[0].read_at !== null, `(${dec.length}건)`);
+  await respondC("declined"); // 아래 검사는 C 가 불참한 상태를 쓴다
+  dec = await declines(ev.data, A);
+  check("다시 불참하면 새 불참 알림 (읽은 것과 따로)", dec.length === 2 && dec.filter((d) => d.read_at === null).length === 1, `(${dec.length}건)`);
 
   // ── 변경 ──
   await A.sb.from("events").update({ title: `일정 검사 ${run} (제목 바꿈)` }).eq("id", ev.data);
@@ -91,6 +115,8 @@ try {
   await A.sb.from("events").update({ canceled_at: new Date().toISOString() }).eq("id", ev.data);
   n = await notes(ev.data);
   check("취소하면 거절하지 않은 참석자에게 취소 알림", has(n, B, "event_cancel") && !has(n, C, "event_cancel") && !has(n, A, "event_cancel"));
+  await B.sb.from("event_attendees").update({ response: "declined" }).eq("event_id", ev.data).eq("user_id", B.id);
+  check("취소된 회의에서 불참해도 불참 알림이 없다", !(await declines(ev.data, A)).some((d) => d.actor_id === B.id));
   const canceled = await admin.from("events").insert({ title: `취소된 회의 ${run}`, starts_at: inMin(4), ends_at: inMin(20), created_by: A.id, canceled_at: new Date().toISOString() }).select().single();
   made.events.push(canceled.data.id);
   await admin.from("event_attendees").insert({ event_id: canceled.data.id, user_id: B.id });
