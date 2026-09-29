@@ -49,6 +49,8 @@ export default function ChatPane() {
   const [jump, setJump] = useState<Jump | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const [jumpNotice, setJumpNotice] = useState<string | null>(null);
+  // DM 은 채널 이름 대신 상대 이름을 "@이름" 으로 (채널 목록(②)이 name 에 상대 이름을 넣는다)
+  const where = channel.type === "dm" ? `@${channel.name}` : `#${channel.name}`;
 
   // 헤더의 연결 상태 표시(①)가 화면 상태에서 읽는다
   useEffect(() => {
@@ -66,9 +68,19 @@ export default function ChatPane() {
     if (!m) return setJumpNotice(MISSING);
     if (m.channel_id !== channel.id) {
       // 다른 채널의 메시지면 그 채널로 바꾼다 (채널 목록은 ② 가 그리고, 바꾸는 것은 화면 상태로 한다)
-      const { data: ch } = await supabase.from("channels").select("id, name").eq("id", m.channel_id).maybeSingle();
+      const { data: ch } = await supabase.from("channels").select("id, name, type").eq("id", m.channel_id).maybeSingle();
       if (!ch) return setJumpNotice(MISSING);
-      setChannel({ id: ch.id, name: ch.name ?? "DM" });
+      let name: string = ch.name ?? "DM";
+      if (ch.type === "dm") {
+        // DM 은 이름이 없다 → 상대 이름으로 (채널 목록(②)과 같게)
+        const { data: others } = await supabase
+          .from("memberships")
+          .select("user_id, profiles(display_name)")
+          .eq("channel_id", ch.id)
+          .neq("user_id", self?.id ?? "");
+        name = (others?.[0]?.profiles as { display_name?: string } | null)?.display_name ?? "DM";
+      }
+      setChannel({ id: ch.id, name, type: ch.type });
     }
     setJump({ id: m.id, channelId: m.channel_id, parentId: m.parent_id });
   }
@@ -134,7 +146,7 @@ export default function ChatPane() {
         onDiscard={discard}
       />
       <Composer
-        placeholder={`#${channel.name} 에 메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈, @ 로 멘션)`}
+        placeholder={`${where} 에 메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈, @ 로 멘션)`}
         members={members}
         selfId={self?.id ?? null}
         onSend={(body, file) => sendNow(body, undefined, file)}

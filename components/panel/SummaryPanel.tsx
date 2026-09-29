@@ -40,7 +40,7 @@ export default function SummaryPanel() {
 
   return (
     <div className={s.summary}>
-      <p className="muted">#{channel.name} 대화를 AI 가 요약합니다. 항목마다 근거 메시지로 갈 수 있습니다.</p>
+      <p className="muted">{channel.type === "dm" ? `@${channel.name}` : `#${channel.name}`} 대화를 AI 가 요약합니다. 항목마다 근거 메시지로 갈 수 있습니다.</p>
       <div className={s.summaryButtons}>
         <button className={s.action} onClick={() => void summarize("unread")} disabled={state.status === "loading"}>
           안 읽은 것 요약

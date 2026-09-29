@@ -122,7 +122,7 @@ export default function ChannelInfoPanel() {
     <div className={s.info}>
       <section>
         <h3 className={s.infoTitle}>
-          {type === "dm" ? "DM" : `#${channel.name}`}
+          {type === "dm" ? `@${channel.name}` : `#${channel.name}`}
           {type && <span className="muted"> · {TYPE_LABEL[type] ?? type}</span>}
         </h3>
         {message && <p className={message.kind === "error" ? "error-text" : "muted"}>{message.text}</p>}

@@ -86,17 +86,17 @@ export default function NotificationBell() {
   });
 
   // 안 읽은 알림 수는 상황과 관계없이 탭 제목에도 보인다.
-  // Next.js 는 페이지를 이동할 때(router.push) 제목을 다시 씌운다 → 제목이 바뀌면 숫자를 다시 붙인다 (2026-09-29 확인)
+  // Next.js 는 페이지를 이동할 때(router.push) 제목을 다시 씌운다 → 1초마다 확인해서 숫자가 빠졌으면 다시 붙인다.
+  // 제목이 바뀔 때마다 고치는 방식(MutationObserver)은 Next.js 와 서로 되받아 고치며 무한 반복에 빠져 페이지가 멈췄다 (2026-09-29)
   useEffect(() => {
     const apply = () => {
-      const base = document.title.replace(/^\(\d+\)\s*/, "");
+      const base = document.title.replace(/^\(\d+\)\s*/, "").trim() || "오피스톡";
       const wanted = unread > 0 ? `(${unread}) ${base}` : base;
       if (document.title !== wanted) document.title = wanted;
     };
     apply();
-    const observer = new MutationObserver(apply);
-    observer.observe(document.head, { subtree: true, childList: true, characterData: true });
-    return () => observer.disconnect();
+    const timer = setInterval(apply, 1000);
+    return () => clearInterval(timer);
   }, [unread]);
 
   // 목록 바깥을 누르거나 Esc 면 닫는다

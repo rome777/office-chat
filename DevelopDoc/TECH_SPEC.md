@@ -609,7 +609,8 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
   시험 계정은 `npm run seed:users` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
-- **Next.js 는 페이지를 이동할 때(`router.push`) 탭 제목을 다시 씌운다**: `document.title` 에 붙인 알림 수 `(N)` 이 이동할 때마다 사라진다 (2026-09-29). 알림 버튼이 `<head>` 를 MutationObserver 로 보다가 다시 붙인다.
+- **Next.js 는 페이지를 이동할 때(`router.push`) 탭 제목을 다시 씌운다**: `document.title` 에 붙인 알림 수 `(N)` 이 이동할 때마다 사라진다 (2026-09-29). 알림 버튼이 1초마다 확인해서 빠졌으면 다시 붙인다.
+  **제목이 바뀔 때마다 고치는 방식(MutationObserver)은 쓰지 않는다**: Next.js 와 서로 되받아 고치며 무한 반복에 빠져 탭 전체가 멈췄다 (2026-09-29, 다른 채널의 DM 메시지로 `?m=` 이동할 때. 새로고침도 안 받아 탭을 닫아야 했다).
 - **실시간 구독 이름이 겹치면 화면 전체가 멈춘다**: `supabase.channel(이름)` 은 같은 이름의 채널이 이미 있으면 새로 만들지 않고 **이미 구독한 채널을 돌려준다**. 거기에 `.on()` 을 붙이면 `cannot add postgres_changes callbacks ... after subscribe()` 오류로 페이지가 죽는다 (2026-09-29, 스레드 패널과 가운데 칸이 둘 다 `members:<채널>` 을 열어서 발생).
   구독 이름 끝에 매번 고유한 값을 붙인다 (`members:${channelId}:${newClientId()}`). 단, 접속자 수(presence)처럼 **모두가 같은 이름으로 들어가야 하는 구독**은 붙이지 않는다 (`room:<채널>`). 알림·미읽음 배지도 같은 규칙을 따른다.
 - **같은 폴더에서 `npm run dev` 를 두 번 띄울 수 없다**: Next.js 16 이 `Another next dev server is already running` 으로 두 번째를 끈다 (포트를 바꿔도 같다, 2026-09-29 확인). 도구 창을 여러 개 쓰면 이미 떠 있는 `localhost:3000` 을 같이 쓴다. 같은 폴더라 코드 변경은 그대로 반영된다.
