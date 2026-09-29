@@ -426,6 +426,11 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 
 ### 배포 방법
 
+**`main` 에 머지하면 자동으로 운영 배포된다** (GitHub 연동, 2026-09-29 확인). 브랜치를 푸시하면 미리보기 배포가 생긴다
+(`office-chat-git-<브랜치>-somsaps-projects.vercel.app`, 로그인해야 열림). 따로 배포 명령을 칠 필요가 없다.
+
+머지 없이 급하게 올려야 할 때만 로컬에서 직접 배포한다. 로컬 폴더를 그대로 올리므로 `git status` 가 깨끗하고 `main` 과 같은지 먼저 확인한다.
+
 ```bash
 npx vercel deploy --prod
 ```
@@ -439,6 +444,7 @@ npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"
 ### 알아 둘 함정
 
 - **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
+- **머지 직후 `vercel deploy --prod` 를 치면 중복 배포가 된다**: 이미 GitHub 연동이 배포하고 있다. 2026-09-29 에 모르고 쳐서 같은 코드의 운영 배포가 3개 생겼다 (해는 없음). 그중 첫 번째 명령은 `Not authorized` 로 실패했고, 다시 치니 성공했다 — 원인은 확인하지 못했다.
 - **Supabase 연동을 처음 설치할 때 약관 동의가 필요하다**: CLI 가 링크를 주고 멈춘다. 계정 주인이 브라우저에서 동의해야 한다.
 - **연동 설치가 `.agents/`, `skills-lock.json` 을 만든다**: 에이전트 도구 파일이라 `.gitignore` 로 뺐다.
 - **한글 입력 중 Enter**: 조합 중인 Enter 를 전송으로 처리하면 두 번 보내질 수 있다. `isComposing` 이면 전송하지 않는다.
