@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:step1": "node --env-file=.env.local scripts/step1-check.mjs"
+    "check:step1": "node --env-file=.env.local scripts/step1-check.mjs",
+    "check:db": "node --env-file=.env.local scripts/db-v1-check.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
