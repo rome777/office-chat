@@ -1,5 +1,7 @@
 // ② 왼쪽·위쪽(채널 목록·DM·사람 찾기) 영역의 타입
 
+import type { Person } from "./people";
+
 export type ChannelType = "public" | "private" | "dm";
 
 /** 화면 상태(WorkspaceContext)가 들고 다니는 "지금 보는 대화" */
@@ -21,4 +23,10 @@ export type ChannelSummary = {
   /** 가입한 채널만 알 수 있다 (memberships 는 같은 채널 멤버끼리만 조회). 모르면 null */
   member_count: number | null;
   joined: boolean;
+};
+
+/** DM 목록의 한 줄. DM 채널은 이름이 없으므로(channels.name 은 null) 상대의 이름으로 보여 준다 */
+export type DmSummary = {
+  id: string;
+  other: Person;
 };

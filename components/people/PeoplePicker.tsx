@@ -73,6 +73,8 @@ export default function PeoplePicker({
         <input
           type="search"
           role="combobox"
+          // 검색어가 있을 때 Esc 는 검색어만 지운다 — 바깥 대화상자(sidebar/Modal)가 이 표시를 보고 닫지 않는다
+          data-own-escape={query ? "" : undefined}
           aria-expanded={results.length > 0}
           aria-controls={listId}
           placeholder={placeholder}
@@ -86,6 +88,7 @@ export default function PeoplePicker({
               e.preventDefault(); // 폼 제출을 막고 첫 결과를 고른다
               if (query.trim() && results[0]) add(results[0]);
             } else if (e.key === "Escape" && query) {
+              e.preventDefault(); // 헤더의 채널 목록도 이 표시(defaultPrevented)를 보고 닫지 않는다
               e.stopPropagation(); // 대화상자까지 닫지 않고 검색어만 지운다
               setQuery("");
               setResults([]);
