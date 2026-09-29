@@ -26,9 +26,14 @@ export default function BrowseChannelsDialog({
   useEffect(() => {
     let alive = true;
     const load = () =>
-      void listPublicChannels(query).then((found) => {
-        if (alive) setList(found);
-      });
+      void listPublicChannels(query).then(
+        (found) => {
+          if (alive) setList(found);
+        },
+        (e: unknown) => {
+          if (alive) setError(e instanceof Error ? e.message : String(e));
+        },
+      );
     const timer = setTimeout(load, 150);
     const unsubscribe = subscribeChannels(load);
     return () => {
@@ -81,7 +86,9 @@ export default function BrowseChannelsDialog({
             <li key={c.id}>
               <div className={s.browseInfo}>
                 <span className={s.channelName}># {c.name}</span>
-                <span className={s.muted}>멤버 {c.member_count}명</span>
+                <span className={s.muted}>
+                  {c.member_count === null ? "공개 채널" : `멤버 ${c.member_count}명`}
+                </span>
               </div>
               {c.joined ? (
                 <button type="button" className={s.secondary} onClick={() => onOpen(c)}>

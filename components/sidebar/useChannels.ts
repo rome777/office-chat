@@ -6,15 +6,23 @@ import { useEffect, useState } from "react";
 import type { ChannelSummary } from "@/lib/types/channel";
 import { listMyChannels, subscribeChannels } from "./channelSource";
 
-export function useMyChannels(): ChannelSummary[] | null {
+export function useMyChannels(): { channels: ChannelSummary[] | null; error: string | null } {
   const [channels, setChannels] = useState<ChannelSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     const load = () =>
-      void listMyChannels().then((list) => {
-        if (alive) setChannels(list);
-      });
+      void listMyChannels().then(
+        (list) => {
+          if (!alive) return;
+          setChannels(list);
+          setError(null);
+        },
+        (e: unknown) => {
+          if (alive) setError(e instanceof Error ? e.message : String(e));
+        },
+      );
     load();
     const unsubscribe = subscribeChannels(load);
     return () => {
@@ -23,5 +31,5 @@ export function useMyChannels(): ChannelSummary[] | null {
     };
   }, []);
 
-  return channels;
+  return { channels, error };
 }

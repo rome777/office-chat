@@ -15,8 +15,10 @@ export type ChannelSummary = {
   id: string;
   name: string;
   type: ChannelType;
-  created_by: string;
+  /** 만든 사람. #일반처럼 시스템이 만든 채널은 null */
+  created_by: string | null;
   created_at: string;
-  member_count: number;
+  /** 가입한 채널만 알 수 있다 (memberships 는 같은 채널 멤버끼리만 조회). 모르면 null */
+  member_count: number | null;
   joined: boolean;
 };

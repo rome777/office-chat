@@ -7,13 +7,12 @@ import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import type { ChannelSummary } from "@/lib/types/channel";
 import BrowseChannelsDialog from "./BrowseChannelsDialog";
 import CreateChannelDialog from "./CreateChannelDialog";
-import { GENERAL_ID } from "./channelSource";
 import { useMyChannels } from "./useChannels";
 import s from "./sidebar.module.css";
 
 export default function ChannelList({ onPicked }: { onPicked?: () => void }) {
   const { channel, setChannel } = useWorkspace();
-  const channels = useMyChannels();
+  const { channels, error } = useMyChannels();
   const [dialog, setDialog] = useState<"create" | "browse" | null>(null);
 
   function open(c: ChannelSummary) {
@@ -25,7 +24,8 @@ export default function ChannelList({ onPicked }: { onPicked?: () => void }) {
   return (
     <>
       <ul className={s.list}>
-        {channels === null && <li className={s.muted}>불러오는 중…</li>}
+        {error && <li className={s.error}>채널 목록을 못 불러왔습니다: {error}</li>}
+        {channels === null && !error && <li className={s.muted}>불러오는 중…</li>}
         {channels?.map((c) => {
           const active = c.id === channel.id;
           return (
@@ -52,12 +52,6 @@ export default function ChannelList({ onPicked }: { onPicked?: () => void }) {
           채널 찾기
         </button>
       </div>
-      {channel.id !== GENERAL_ID && (
-        <p className={s.note}>
-          DB 연결 전이라 메시지는 모든 채널에서 #일반과 같이 보이고 저장됩니다.
-        </p>
-      )}
-
       {dialog === "create" && (
         <CreateChannelDialog onClose={() => setDialog(null)} onCreated={open} />
       )}
