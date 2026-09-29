@@ -8,6 +8,7 @@ import type { ChannelSummary } from "@/lib/types/channel";
 import BrowseChannelsDialog from "./BrowseChannelsDialog";
 import CreateChannelDialog from "./CreateChannelDialog";
 import { GENERAL_ID } from "./channelSource";
+import { PlusIcon, SearchIcon } from "./ActionIcons";
 import ChannelRowButton from "./ChannelRowButton";
 import { useMyChannels } from "./useChannels";
 import s from "./sidebar.module.css";
@@ -73,10 +74,12 @@ export default function ChannelList({
         })}
       </ul>
       <div className={s.channelActions}>
-        <button type="button" className={s.textButton} onClick={() => setDialog("create")}>
-          + 채널 만들기
+        <button type="button" className={`${s.textButton} ${s.iconText}`} onClick={() => setDialog("create")}>
+          <PlusIcon />
+          채널 만들기
         </button>
-        <button type="button" className={s.textButton} onClick={() => setDialog("browse")}>
+        <button type="button" className={`${s.textButton} ${s.iconText}`} onClick={() => setDialog("browse")}>
+          <SearchIcon />
           채널 찾기
         </button>
       </div>
