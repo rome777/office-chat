@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { useSelf } from "@/components/chat/useSelf";
 import SafeText from "@/components/chat/SafeText";
-import { TYPE_LABEL, notificationHref, useNotifications, type Arrival, type NotificationView } from "./useNotifications";
+import { TYPE_LABEL, isLooking, notificationHref, useNotifications, type Arrival, type NotificationView } from "./useNotifications";
 import s from "./notifications.module.css";
 
 const TOAST_MS = 6000;
@@ -30,7 +30,7 @@ function formatTime(iso: string) {
 
 export default function NotificationBell() {
   const router = useRouter();
-  const { channel } = useWorkspace();
+  const { channel, panel } = useWorkspace();
   const self = useSelf();
   const [open, setOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -58,23 +58,31 @@ export default function NotificationBell() {
 
   const onArrive = useCallback(
     (arrival: Arrival) => {
-      if (document.visibilityState === "visible") {
+      const toast = () => {
         const key = ++toastSeq.current;
         setToasts((prev) => [...prev.slice(-(MAX_TOASTS - 1)), { key, arrival }]);
         setTimeout(() => setToasts((prev) => prev.filter((t) => t.key !== key)), TOAST_MS);
-        return;
-      }
-      if (currentPermission() !== "granted") return; // 탭 제목의 (N) 으로만 알린다
-      const title = arrival.kind === "one" ? arrival.item.title : "오피스톡";
-      const body = arrival.kind === "one" ? `${TYPE_LABEL[arrival.item.type]} · ${arrival.item.preview}` : `새 알림 ${arrival.count}개`;
-      // tag 를 알림 id 로 주면 같은 사람이 탭을 여러 개 열어도 브라우저가 하나로 합친다
-      const shown = new Notification(title, { body, tag: arrival.kind === "one" ? `notification-${arrival.item.id}` : "notification-many" });
-      shown.onclick = () => {
-        window.focus();
-        if (arrival.kind === "one") go(arrival.item);
-        else setOpen(true);
-        shown.close();
       };
+      if (isLooking()) return toast();
+      if (currentPermission() === "granted") {
+        const title = arrival.kind === "one" ? arrival.item.title : "오피스톡";
+        const body = arrival.kind === "one" ? `${TYPE_LABEL[arrival.item.type]} · ${arrival.item.preview}` : `새 알림 ${arrival.count}개`;
+        try {
+          // tag 를 알림 id 로 주면 같은 사람이 탭을 여러 개 열어도 브라우저가 하나로 합친다
+          const shown = new Notification(title, { body, tag: arrival.kind === "one" ? `notification-${arrival.item.id}` : "notification-many" });
+          shown.onclick = () => {
+            window.focus();
+            if (arrival.kind === "one") go(arrival.item);
+            else setOpen(true);
+            shown.close();
+          };
+          return;
+        } catch {
+          // 모바일 Chrome 은 new Notification 을 막는다 (서비스 워커로만 된다) → 아래 토스트로
+        }
+      }
+      // 권한이 없으면: 탭이 보이면 토스트, 아니면 탭 제목의 (N) 으로만 알린다
+      if (document.visibilityState === "visible") toast();
     },
     [go],
   );
@@ -82,6 +90,7 @@ export default function NotificationBell() {
   const { items, unread, markRead, markAllRead } = useNotifications({
     selfId: self?.id ?? null,
     currentChannelId: channel.id,
+    openThreadId: panel?.kind === "thread" ? panel.messageId : null,
     onArrive,
   });
 
