@@ -6,6 +6,7 @@
 import ThreadPanel from "@/components/chat/ThreadPanel";
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import ChannelInfoPanel from "./ChannelInfoPanel";
+import ChoresPanel from "./ChoresPanel";
 import OrgChartPanel from "./OrgChartPanel";
 import SummaryPanel from "./SummaryPanel";
 import TodosPanel from "./TodosPanel";
@@ -16,6 +17,7 @@ const TITLE: Record<PanelState["kind"], string> = {
   summary: "AI 요약",
   todos: "AI 할 일",
   channelInfo: "채널 정보",
+  chores: "잡무 수첩",
   orgChart: "조직도",
 };
 
@@ -29,6 +31,8 @@ function PanelBody({ panel }: { panel: PanelState }) {
       return <TodosPanel />;
     case "channelInfo":
       return <ChannelInfoPanel />;
+    case "chores":
+      return <ChoresPanel />;
     case "orgChart":
       return <OrgChartPanel />;
   }

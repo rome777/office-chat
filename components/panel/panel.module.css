@@ -141,6 +141,24 @@
   font-weight: 700;
 }
 
+.inviteBadge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.memberActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* AI 할 일 */
 .todoList {
   margin: 0;
@@ -178,4 +196,72 @@
 .todoDone .todoCheck {
   text-decoration: line-through;
   color: var(--muted);
+}
+
+/* 잡무 수첩 */
+.choreHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.choreBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.choreMemo {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.choreDetail {
+  font-weight: 400;
+}
+
+.choreForm,
+.choreEntryForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.choreForm input,
+.choreForm textarea,
+.choreEntryForm input {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.choreForm textarea {
+  resize: vertical;
+}
+
+.choreOrder {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

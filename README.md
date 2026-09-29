@@ -50,7 +50,8 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · OpenAI API
 - 카카오톡처럼 메시지 옆에 **안 읽은 사람 수**. 상대가 읽으면 새로고침 없이 줄어듦. 탭을 열어 화면에 보인 메시지까지만 읽은 것으로 침
 - **알림**: DM·나를 부른 멘션·내 스레드의 답글이 오면 알림 목록과 배지, 화면을 보고 있으면 오른쪽 아래 토스트, 다른 탭이면 브라우저 알림 ("알림 켜기"로 허용). 탭 제목에 `(안 읽은 수)`. 누르면 그 메시지로 이동하고, 채널이나 스레드를 열어 그 메시지가 화면에 보여도 읽음이 됨
 - **AI 할 일**: 헤더의 "할 일" → 대화에서 할 일·담당자·기한을 제안 (대화에 없으면 "미정"). "저장"을 눌러야 남고, 완료 표시·삭제
-- **채널 정보**: 헤더의 "채널 정보" → 멤버 목록. 관리자는 멤버 내보내기·추가와 관리 기록을 봄
+- **채널 정보**: 헤더의 "채널 정보" → 멤버 목록. 관리자는 멤버 내보내기와 관리 기록을 봄
+- **채널 초대**: 채널을 만든 사람과 초대 권한을 받은 멤버가 "채널 정보"에서 비공개 채널에 사람을 넣고, 다른 멤버에게 초대 권한을 줌. 권한 빼기와 내보내기는 관리자만 (2026-09-29 `develop`, 운영 배포는 다음 `main` 머지 때)
 - **일정 알림**: 회의에 초대되거나, 회의가 바뀌거나 취소되거나, 시작 10분 전이면 알림. 누르면 그 회의로 이동
 - **AI 요약**: 헤더의 "요약" → 안 읽은 것 또는 최근 50건을 몇 줄로. 항목마다 "원문" 링크 (서버에 `OPENAI_API_KEY` 가 있어야 동작)
 - **스레드**: 메시지에 답글을 달면 오른쪽 패널에 모이고, 본문에는 "답글 N개"만 보임 (새로고침 없이 늘어남)
@@ -81,21 +82,21 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · OpenAI API
 Node.js 20 이상과, Vercel 프로젝트(`office-chat`)에 접근할 수 있는 Vercel 계정이 필요합니다.
 DB 는 원격 Supabase 를 함께 씁니다.
 
-```bash
+```powershell
 npm install
 ```
 
 DB 접속 정보를 `.env.local` 로 받아 옵니다 (처음 한 번, 저장소에는 올라가지 않음).
 
-```bash
+```powershell
 npx vercel link --project office-chat
 ```
 
-```bash
+```powershell
 npx vercel env pull .env.local
 ```
 
-```bash
+```powershell
 npm run dev
 ```
 
@@ -103,15 +104,15 @@ npm run dev
 
 원격 DB 에 자동 검사를 돌릴 수 있습니다. 검사가 만든 메시지·가상 사용자는 끝나면 지워집니다.
 
-```bash
+```powershell
 npm run check:step1
 ```
 
-```bash
+```powershell
 npm run check:db
 ```
 
-```bash
+```powershell
 npm run check:attach
 ```
 
@@ -123,19 +124,19 @@ npm run check:attach
 예: 백엔드팀 사원 이서연 `sylee@example.com`. 가입 확인 메일 없이 바로 로그인할 수 있고, 여러 번 돌려도 됩니다.
 **원래 있던 계정(사용자A·B·관리자·비회원C·팀원 계정)은 건드리지 않습니다** — 소속 없이 `#일반` 과 자기가 들어간 채널만 그대로입니다.
 
-```bash
+```powershell
 npm run seed:company
 ```
 
-```bash
+```powershell
 npm run check:notify
 ```
 
-```bash
+```powershell
 npm run check:ai
 ```
 
-```bash
+```powershell
 npm run check:events
 ```
 
