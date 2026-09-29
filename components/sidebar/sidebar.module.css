@@ -291,8 +291,37 @@
   border-radius: 8px;
 }
 
-.browseList li:hover {
+/* 참여 중인 채널: 줄 전체가 버튼. 누를 수 있는 줄에만 올렸을 때 배경을 바꾼다 */
+.browseList li.joined {
+  padding: 0;
+}
+
+.browseRow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.browseRow:hover {
   background: var(--bg);
+}
+
+.joinedMark {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .browseInfo {
