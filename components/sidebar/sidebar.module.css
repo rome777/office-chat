@@ -381,3 +381,27 @@
 .hasUnread .channelName {
   font-weight: 700;
 }
+
+/* ── 라이트·다크 버튼 (헤더·캘린더·로그인) ── */
+
+.themeToggle {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.themeToggle:hover {
+  background: var(--mine);
+}
+
+.themeToggle:disabled {
+  opacity: 0; /* 테마를 알기 전에는 자리만 */
+}

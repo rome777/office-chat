@@ -296,7 +296,9 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
 - **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. 회의 폼의 날짜(`<input type="date">`)와 시·분 목록 값은 한국 시각으로 보고 변환한다 (`time.ts` 의 `fromKstInput`).
 - **시각 입력은 `<input type="time">` 을 쓰지 않는다** (2026-09-29): Chrome 의 시간 선택은 12 다음에 1 로 끝없이 도는 바퀴이고 오전·오후가 헷갈린다. `TimeSelect` 가 시(00~23)·분(5분 단위) 목록 두 개로 받는다. 시작을 바꾸면 끝이 원래 간격(없거나 거꾸로면 1시간)만큼 따라가고, 23:55 를 넘지 않는다.
-- **다크 모드에서 브라우저 기본 부품(날짜 칸의 달력 아이콘 등)이 안 보인다**: 공통 `globals.css` 에 `color-scheme` 이 없어서다. 캘린더 화면(`.page`)에만 `color-scheme: light dark` 를 켰다. 다른 화면도 같은 문제가 있으면 공통 틀에 한 번 켜는 것이 낫다 (팀에 알리고).
+- **다크 모드에서 브라우저 기본 부품(스크롤바·체크박스·라디오·날짜 칸 아이콘)이 흰색으로 튄다** → 공통 `globals.css` 의 `:root` 에 `color-scheme` 을 둔다 (2026-09-29, 팀에 알리고 공통 파일을 고침). 이것이 없으면 브라우저가 자기 부품을 늘 라이트로 그린다. 화면별 CSS 에 `color-scheme` 을 따로 두지 않는다 — 사용자가 고른 테마와 어긋난다.
+- **라이트·다크 테마 (②, `components/sidebar/theme.ts`·`ThemeToggle.tsx`)**: 헤더·캘린더·로그인의 ☀️/🌙 버튼. 고르면 `localStorage` 의 `office-chat:theme` 에 기억하고 `<html data-theme="light|dark">` 를 건다. 고르지 않았으면 컴퓨터 설정(`prefers-color-scheme`)을 따른다. `globals.css` 는 `data-theme` 가 있으면 그것을, 없으면 컴퓨터 설정을 쓴다. 다른 탭에서 바꾸면(`storage` 이벤트) 따라간다.
+  - 알려진 한계: 테마는 화면이 뜬 뒤 스크립트가 걸므로, 컴퓨터 설정과 다른 테마를 고른 사람은 새로고침 순간 잠깐 컴퓨터 설정 색이 보일 수 있다. 없애려면 `app/layout.tsx`(공통)의 `<head>` 에서 미리 걸어야 한다.
 - **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
 
 ### 첨부 (F3-2)
