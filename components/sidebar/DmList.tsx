@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { GENERAL_ID } from "./channelSource";
 import NewDmDialog from "./NewDmDialog";
+import { PlusIcon } from "./ActionIcons";
 import ChannelRowButton from "./ChannelRowButton";
 import { useMyDms } from "./useChannels";
 import s from "./sidebar.module.css";
@@ -54,9 +55,9 @@ export default function DmList({
   return (
     <>
       <ul className={s.list}>
-        {error && <li className={s.error}>DM 목록을 못 불러왔습니다: {error}</li>}
-        {dms === null && !error && <li className={s.muted}>불러오는 중…</li>}
-        {dms?.length === 0 && <li className={s.muted}>아직 DM 이 없습니다</li>}
+        {error && <li className={`${s.item} ${s.error}`}>DM 목록을 못 불러왔습니다: {error}</li>}
+        {dms === null && !error && <li className={`${s.item} ${s.muted}`}>불러오는 중…</li>}
+        {dms?.length === 0 && <li className={`${s.item} ${s.muted}`}>아직 DM 이 없습니다</li>}
         {dms?.map((d) => {
           const active = d.id === channel.id;
           return (
@@ -80,8 +81,9 @@ export default function DmList({
         })}
       </ul>
       <div className={s.channelActions}>
-        <button type="button" className={s.textButton} onClick={() => setOpen(true)}>
-          + 새 메시지
+        <button type="button" className={`${s.textButton} ${s.iconText}`} onClick={() => setOpen(true)}>
+          <PlusIcon />
+          새 메시지
         </button>
       </div>
       {open && <NewDmDialog onClose={() => setOpen(false)} onStarted={go} />}
