@@ -32,8 +32,9 @@ type Workspace = {
 
 const WorkspaceContext = createContext<Workspace | null>(null);
 
-// Step 1 은 채널이 하나뿐이다. 채널 목록이 생기면 ② 가 setChannel 로 바꾼다.
-const DEFAULT_CHANNEL: Channel = { id: "general", name: "일반" };
+// 채널 목록이 생기기 전까지는 #일반 만 쓴다. 채널 목록이 생기면 ② 가 setChannel 로 바꾼다.
+// id 는 DB 의 #일반 채널 id 다 (supabase/migrations/20260929100100_step1_compat.sql 에서 고정, 모든 사람이 멤버)
+const DEFAULT_CHANNEL: Channel = { id: "00000000-0000-0000-0000-000000000001", name: "일반" };
 
 export function WorkspaceProvider({
   me,
