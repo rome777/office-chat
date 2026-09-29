@@ -1,6 +1,7 @@
 "use client";
 
 // ① 메시지 구독·동기화·전송. 실시간 구독은 영역마다 따로 연다 (미읽음은 ②, 알림은 ③).
+// 보고 있는 채널의 최상위 메시지만 다룬다. 답글(parent_id 가 있는 것)은 스레드 패널이 따로 받는다.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
@@ -8,7 +9,12 @@ import { getSupabase } from "@/lib/supabase";
 import type { ChatMessage, ConnectionState, PendingMessage } from "@/lib/types/message";
 
 const SEND_TIMEOUT_MS = 5000;
-const INITIAL_HISTORY = 50;
+/** 처음 열 때와 위로 올릴 때 한 번에 받는 수 (TECH_SPEC 7절 페이지네이션) */
+const PAGE_SIZE = 50;
+/** 목표 메시지까지 사이를 채우거나, 재연결 뒤 놓친 것을 이어 받을 때 한 번에 받는 수. Supabase 한 번 조회 상한(1000행)과 같다 */
+const RANGE_CHUNK = 1000;
+/** 이동한 메시지 위로 더 불러 두는 수 (앞 맥락) */
+const JUMP_CONTEXT = 10;
 
 // crypto.randomUUID 는 localhost·https 에서만 된다. 같은 네트워크의 IP(http)로 접속해도 되도록 직접 만든다.
 export function newClientId(): string {
@@ -22,45 +28,162 @@ export function newClientId(): string {
 function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
   if (error.name === "AbortError" || error.code === "20") return "서버 응답이 없습니다";
   if (error.code === "23514") return "빈 메시지이거나 너무 깁니다";
+  if (error.code === "42501") return "이 대화에 보낼 권한이 없습니다";
   if (!navigator.onLine || /fetch/i.test(error.message ?? "")) return "연결이 끊겨 보내지 못했습니다";
   return error.message ?? "보내지 못했습니다";
 }
 
-export function useMessages(nickname: string) {
+/** 나 (로그인한 사람). mine 판단과 나를 부른 멘션 강조에 쓴다 */
+export type Self = { id: string; handle: string | null };
+
+export function useMessages(channelId: string, myName: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [conn, setConn] = useState<ConnectionState>("connecting");
   const [online, setOnline] = useState(0);
   const [fatal, setFatal] = useState<string | null>(null);
+  /** 처음 불러오기가 끝났다. 메시지로 이동은 이것을 기다린다 */
+  const [ready, setReady] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [self, setSelf] = useState<Self | null>(null);
+  /** 작성자 id → 표시 이름. 실시간으로 온 행에는 이름이 없어서 profiles 에서 찾아 둔다 */
+  const [names, setNames] = useState<Record<string, string>>({});
 
   const supabaseRef = useRef<SupabaseClient | null>(null);
+  const channelRef = useRef(channelId);
+  const askedNamesRef = useRef(new Set<string>());
+  // 목록은 항상 "가장 오래 받은 것 ~ 최신"이 빈틈없이 이어진다. 두 끝의 id 를 기억한다.
   const lastIdRef = useRef(0);
+  const oldestIdRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+
+  const resolveNames = useCallback(async (list: ChatMessage[]) => {
+    const supabase = supabaseRef.current;
+    const ids = [...new Set(list.map((m) => m.user_id).filter((id): id is string => !!id))].filter(
+      (id) => !askedNamesRef.current.has(id),
+    );
+    if (!supabase || ids.length === 0) return;
+    ids.forEach((id) => askedNamesRef.current.add(id));
+    const { data } = await supabase.from("profiles").select("id, display_name").in("id", ids);
+    if (data?.length) {
+      setNames((prev) => ({ ...prev, ...Object.fromEntries(data.map((p) => [p.id, p.display_name])) }));
+    }
+  }, []);
 
   // 서버 id 를 키로 합친다. 같은 메시지가 실시간·동기화로 두 번 와도 한 번만 그린다.
-  const merge = useCallback((incoming: ChatMessage[]) => {
+  // 채널을 바꾼 뒤 늦게 도착한 옛 채널 응답은 버린다.
+  const merge = useCallback((raw: ChatMessage[]) => {
+    const incoming = raw.filter((m) => m.channel_id === channelRef.current && m.parent_id === null);
     if (incoming.length === 0) return;
+    void resolveNames(incoming);
     setMessages((prev) => {
       const byId = new Map(prev.map((m) => [m.id, m]));
       for (const m of incoming) byId.set(m.id, m);
       const next = [...byId.values()].sort((a, b) => a.id - b.id);
+      oldestIdRef.current = next[0].id;
       lastIdRef.current = next[next.length - 1].id;
       return next;
     });
     const saved = new Set(incoming.map((m) => m.client_id));
     setPending((prev) => prev.filter((p) => !saved.has(p.clientId)));
-  }, []);
+  }, [resolveNames]);
+
+  // 이 채널의 최상위 메시지 조회
+  const query = useCallback(
+    (supabase: SupabaseClient) =>
+      supabase.from("messages").select("*").eq("channel_id", channelId).is("parent_id", null),
+    [channelId],
+  );
 
   // 처음엔 최근 50건, 재연결 뒤엔 마지막으로 받은 id 이후만 받아 온다
   const sync = useCallback(async () => {
     const supabase = supabaseRef.current;
     if (!supabase) return;
-    const query = supabase.from("messages").select("*");
-    const { data, error } =
-      lastIdRef.current > 0
-        ? await query.gt("id", lastIdRef.current).order("id", { ascending: true }).limit(500)
-        : await query.order("id", { ascending: false }).limit(INITIAL_HISTORY);
-    if (!error && data) merge(data as ChatMessage[]);
-  }, [merge]);
+    if (lastIdRef.current === 0) {
+      const { data, error } = await query(supabase)
+        .order("id", { ascending: false })
+        .limit(PAGE_SIZE);
+      if (error || !data) return;
+      merge(data as ChatMessage[]);
+      setHasOlder(data.length === PAGE_SIZE);
+      setReady(true);
+      return;
+    }
+    // 끊긴 동안 쌓인 것은 끝까지 이어 받는다. 한 번에 다 받으면 조회 상한에 걸려 뒤쪽이 빠진다
+    let after = lastIdRef.current;
+    for (;;) {
+      const { data, error } = await query(supabase)
+        .gt("id", after)
+        .order("id", { ascending: true })
+        .limit(RANGE_CHUNK);
+      if (error || !data || data.length === 0) return;
+      merge(data as ChatMessage[]);
+      after = data[data.length - 1].id;
+      if (data.length < RANGE_CHUNK) return;
+    }
+  }, [merge, query]);
+
+  // 위로 올리면 가장 오래 받은 것보다 앞의 50건을 붙인다 (키셋: id < 커서)
+  const loadOlder = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    if (!supabase || loadingOlderRef.current || oldestIdRef.current === 0) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const { data, error } = await query(supabase)
+        .lt("id", oldestIdRef.current)
+        .order("id", { ascending: false })
+        .limit(PAGE_SIZE);
+      if (error || !data) return;
+      merge(data as ChatMessage[]);
+      setHasOlder(data.length === PAGE_SIZE);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [merge, query]);
+
+  // 메시지로 이동(`?m=`) 전에 그 메시지를 목록에 올려 둔다. 받은 범위보다 오래됐으면 사이를 모두 채운다.
+  // 있는지는 화면(MessageList)이 확인한다. 조회에 실패하면 false.
+  const reveal = useCallback(
+    async (targetId: number): Promise<boolean> => {
+      const supabase = supabaseRef.current;
+      if (!supabase) return false;
+      if (targetId > lastIdRef.current) await sync(); // 방금 온 메시지일 수 있다
+      let oldest = oldestIdRef.current;
+      if (oldest === 0 || targetId >= oldest) return true;
+
+      loadingOlderRef.current = true;
+      setLoadingOlder(true);
+      try {
+        while (oldest > targetId) {
+          const { data, error } = await query(supabase)
+            .lt("id", oldest)
+            .gte("id", targetId)
+            .order("id", { ascending: false })
+            .limit(RANGE_CHUNK);
+          if (error || !data) return false;
+          if (data.length === 0) break;
+          merge(data as ChatMessage[]);
+          oldest = data[data.length - 1].id;
+          if (data.length < RANGE_CHUNK) break;
+        }
+        const { data, error } = await query(supabase)
+          .lt("id", Math.min(oldest, targetId))
+          .order("id", { ascending: false })
+          .limit(JUMP_CONTEXT);
+        if (error || !data) return false;
+        merge(data as ChatMessage[]);
+        setHasOlder(data.length === JUMP_CONTEXT);
+        return true;
+      } finally {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      }
+    },
+    [merge, sync, query],
+  );
 
   useEffect(() => {
     let supabase: SupabaseClient;
@@ -72,15 +195,25 @@ export function useMessages(nickname: string) {
     }
     supabaseRef.current = supabase;
 
+    // 채널을 바꾸면 처음부터 다시 받는다
+    channelRef.current = channelId;
+    lastIdRef.current = 0;
+    oldestIdRef.current = 0;
+    setMessages([]);
+    setPending([]);
+    setReady(false);
+    setHasOlder(false);
+
     let resyncTimer: ReturnType<typeof setTimeout> | undefined;
-    const channel: RealtimeChannel = supabase.channel("room:general", {
+    const channel: RealtimeChannel = supabase.channel(`room:${channelId}`, {
       config: { presence: { key: newClientId() } },
     });
 
     channel
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
+        // RLS 가 구독자마다 걸러서 보낸다. 멤버가 아니면 오지 않는다
+        { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         (payload) => merge([payload.new as ChatMessage]),
       )
       .on("presence", { event: "sync" }, () => {
@@ -92,7 +225,7 @@ export function useMessages(nickname: string) {
           void sync();
           // 구독 직후 잠깐은 실시간 이벤트가 빠질 수 있다 (2026-09-28 첫 테스트에서 확인). 한 번 더 맞춘다.
           resyncTimer = setTimeout(() => void sync(), 2000);
-          void channel.track({ nickname });
+          void channel.track({ name: myName });
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConn("reconnecting"); // supabase-js 가 자동으로 다시 붙는다
         } else if (status === "CLOSED") {
@@ -112,7 +245,23 @@ export function useMessages(nickname: string) {
       void supabase.removeChannel(channel);
       supabaseRef.current = null;
     };
-  }, [nickname, merge, sync]);
+  }, [channelId, myName, merge, sync]);
+
+  // 내 id·handle. 로그인 세션은 입장 관문(②)이 이미 확인했다
+  useEffect(() => {
+    let alive = true;
+    const supabase = getSupabase();
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const id = data.session?.user.id;
+      if (!id || !alive) return;
+      setSelf({ id, handle: null });
+      const { data: profile } = await supabase.from("profiles").select("handle").eq("id", id).maybeSingle();
+      if (alive) setSelf({ id, handle: profile?.handle ?? null });
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function send(body: string, clientId = newClientId()) {
     const text = body.trim();
@@ -122,7 +271,7 @@ export function useMessages(nickname: string) {
     const mark = (status: PendingMessage["status"], error?: string) =>
       setPending((prev) => {
         const rest = prev.filter((p) => p.clientId !== clientId);
-        return [...rest, { clientId, author: nickname, body: text, status, error }];
+        return [...rest, { clientId, author: myName, body: text, status, error }];
       });
 
     if (!navigator.onLine) {
@@ -136,7 +285,7 @@ export function useMessages(nickname: string) {
       const { data, error } = await supabase
         .from("messages")
         .upsert(
-          { client_id: clientId, author: nickname, body: text },
+          { client_id: clientId, channel_id: channelId, body: text },
           { onConflict: "client_id", ignoreDuplicates: true },
         )
         .select()
@@ -156,5 +305,20 @@ export function useMessages(nickname: string) {
     setPending((prev) => prev.filter((p) => p.clientId !== clientId));
   }
 
-  return { messages, pending, conn, online, fatal, send, discard };
+  return {
+    messages,
+    pending,
+    conn,
+    online,
+    fatal,
+    self,
+    names,
+    ready,
+    hasOlder,
+    loadingOlder,
+    send,
+    discard,
+    loadOlder,
+    reveal,
+  };
 }
