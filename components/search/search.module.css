@@ -101,6 +101,14 @@
   text-overflow: ellipsis;
 }
 
+/* 비공개 채널 이름 뒤의 자물쇠 (왼쪽 채널 목록과 같은 모양) */
+.lock {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--muted);
+}
+
 .reply {
   padding: 0 4px;
   border: 1px solid var(--border);

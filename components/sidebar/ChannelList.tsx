@@ -8,7 +8,7 @@ import type { ChannelSummary } from "@/lib/types/channel";
 import BrowseChannelsDialog from "./BrowseChannelsDialog";
 import CreateChannelDialog from "./CreateChannelDialog";
 import { GENERAL_ID } from "./channelSource";
-import { PlusIcon, SearchIcon } from "./ActionIcons";
+import { LockIcon, PlusIcon, SearchIcon } from "./ActionIcons";
 import ChannelRowButton from "./ChannelRowButton";
 import { useMyChannels } from "./useChannels";
 import s from "./sidebar.module.css";
@@ -38,7 +38,7 @@ export default function ChannelList({
     setChannel({ id: GENERAL_ID, name: general?.name ?? "일반", type: "public" });
   }, [channels, guardCurrent, setChannel]);
 
-  // 다른 영역이 id·이름만 넘겨 채널을 바꾸면(예: ① 의 메시지로 이동) 종류를 채운다 — 비공개면 헤더에 🔒
+  // 다른 영역이 id·이름만 넘겨 채널을 바꾸면(예: ① 의 메시지로 이동) 종류를 채운다 — 비공개면 헤더에 자물쇠
   useEffect(() => {
     if (!guardCurrent || !channels || channel.type) return;
     const found = channels.find((c) => c.id === channel.id);
@@ -66,8 +66,13 @@ export default function ChannelList({
                 active={active}
                 onClick={() => open(c)}
               >
-                <span aria-hidden="true">{c.type === "private" ? "🔒" : "#"}</span>
+                <span aria-hidden="true">#</span>
                 <span className={s.channelName}>{c.name}</span>
+                {c.type === "private" && (
+                  <span className={s.lock}>
+                    <LockIcon />
+                  </span>
+                )}
               </ChannelRowButton>
             </li>
           );
