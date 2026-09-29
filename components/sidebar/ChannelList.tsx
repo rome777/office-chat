@@ -37,6 +37,13 @@ export default function ChannelList({
     setChannel({ id: GENERAL_ID, name: general?.name ?? "일반", type: "public" });
   }, [channels, guardCurrent, setChannel]);
 
+  // 다른 영역이 id·이름만 넘겨 채널을 바꾸면(예: ① 의 메시지로 이동) 종류를 채운다 — 비공개면 헤더에 🔒
+  useEffect(() => {
+    if (!guardCurrent || !channels || channel.type) return;
+    const found = channels.find((c) => c.id === channel.id);
+    if (found) setChannel({ id: found.id, name: found.name, type: found.type });
+  }, [channel, channels, guardCurrent, setChannel]);
+
   function open(c: ChannelSummary) {
     setChannel({ id: c.id, name: c.name, type: c.type });
     setDialog(null);
