@@ -94,7 +94,7 @@ erDiagram
 |---|---|---|
 | `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`, `role`(`admin`·`member`) | 로그인한 사람은 모두 조회 가능 (조직도 검색). `role` 은 본인이 못 바꾼다 |
 | `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at` | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값 |
-| `memberships` | `channel_id`, `user_id`, `joined_at` | 기본 키 (channel_id, user_id) |
+| `memberships` | `channel_id`, `user_id`, `joined_at`, `can_invite` | 기본 키 (channel_id, user_id). `can_invite` = 이 채널에 남을 넣고 초대 권한을 줄 수 있음 (만든 사람은 처음부터 true, 2026-09-29) |
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
@@ -147,7 +147,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 | 테이블 | 읽기 | 쓰기 |
 |---|---|---|
 | `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만 |
-| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 비공개 채널 추가와 멤버 제거는 관리자만 |
+| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 초대 권한이 있는 사람(관리자·만든 사람·권한 받은 멤버). 초대 권한 주기도 같은 사람, 빼기와 멤버 제거는 관리자만 |
 | `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에) |
 | `attachments` | 그 채널의 멤버 | 서버 API 만 |
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
@@ -165,9 +165,15 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 `user_id`·`created_by`·`role`·`id`·`created_at` 같은 컬럼을 아예 보낼 수 없다 (보내면 42501). 무엇을 줬는지는 `20260929100000_db_v1.sql` 에 테이블마다 적었다.
 
 **위 표에서 정한 것** (2026-09-29): 관리자는 비공개 채널도 본다 (멤버를 넣어야 하므로). **DM 은 관리자도 못 본다.** 공개·비공개 채널은 본인이 나갈 수 있다 (DM 은 못 나간다).
+
+**초대 권한** (2026-09-29, `20260929150000_invite_rights.sql`, WU-27): 판단은 `has_invite_right(channel_id)` (security definer) — 공개·비공개 채널이고 관리자이거나 내 `memberships.can_invite` 가 true.
+- `can_invite` 는 insert 컬럼 권한이 없어 넣을 때 늘 false 다 → **넣으면서 권한까지 줄 수 없다.** 권한은 update(`can_invite` 만 권한 있음)로 따로 준다.
+- update 정책은 `using` 과 `with check` 모두 `has_invite_right` 라 권한이 없으면 자기 행도 못 바꾼다 (0건). `with check` 에 `can_invite or is_admin()` 이 있어 **관리자가 아니면 true 로만** 바꾼다 (빼기는 관리자만, 관리자 아닌 사람이 빼면 42501).
+- 멤버 제거(delete) 정책은 그대로 관리자만이다. 권한을 주고 빼면 트리거 `memberships_log_invite_right` 가 `admin_logs` 에 `grant_invite`·`revoke_invite` 로 남긴다.
+- 이미 있던 채널은 마이그레이션이 만든 사람에게 권한을 채웠다. `created_by` 가 null 인 `#일반` 은 관리자만 넣는다.
 정책끼리 서로를 조회하는 곳(`memberships`, `events`↔`event_attendees`)은 `is_member()`·`is_event_participant()` 같은 security definer 함수로 끊었다.
 
-모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과).
+모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과). 초대 권한 항목 14개를 더해 **62개, 2026-09-29 전부 통과** (WU-27).
 
 **관리자 권한 상승 방지**: `profiles.role` 은 사용자가 수정할 수 없게 컬럼 권한이나 트리거로 막는다.
 
@@ -385,7 +391,8 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 
 - 채널 설정 화면에 멤버 목록과 "내보내기" 버튼을 둔다. 버튼은 관리자에게만 보이지만, **실제 권한은 RLS 가 검사**한다.
 - `memberships` DELETE 트리거가 `admin_logs` 에 기록한다.
-- **구현 (2026-09-29, `ChannelInfoPanel`)**: 채널 종류·멤버 목록(관리자 표시)·관리자에게만 "내보내기"와 "멤버 추가"(② 의 `PeoplePicker`)·관리자에게만 이 채널의 관리 기록(`admin_logs` 를 `target->>channel_id` 로 거름)·"이 채널에서 나가기"(DM 과 `#일반` 은 없음).
+- **구현 (2026-09-29, `ChannelInfoPanel`)**: 채널 종류·멤버 목록(관리자·초대 권한 표시)·관리자에게만 "내보내기"·관리자에게만 이 채널의 관리 기록(`admin_logs` 를 `target->>channel_id` 로 거름)·"이 채널에서 나가기"(DM 과 `#일반` 은 없음).
+  초대 권한이 있는 사람(관리자·만든 사람·권한 받은 멤버)에게 "멤버 추가"(② 의 `PeoplePicker`)와 권한 없는 멤버 옆 "초대 권한 주기", 관리자에게만 "초대 권한 빼기" (WU-27). 권한 변경은 `useChannelMembers` 가 memberships UPDATE 를 받아 바로 반영한다. 관리 기록은 멤버 목록이나 누구의 권한이 바뀌면 다시 불러온다 (전에는 멤버 수만 봐서 권한을 바꿔도 기록이 안 늘었다).
   권한이 없으면 RLS 가 0건을 지우므로(오류가 아님) 지운 행 수로 성공을 판단한다. 멤버 목록은 실시간으로 바뀐다 (`useChannelMembers`).
 
 ### 안전한 출력 (F4-6)
@@ -562,6 +569,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929120000_thread_reply_count.sql` | 스레드 답글 수 `reply_count`·`last_reply_at` 과 올리는 트리거 |
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
+| `supabase/migrations/20260929150000_invite_rights.sql` | 채널 초대 권한 `memberships.can_invite`, `has_invite_right()`, 넣기·권한 주기 정책, 권한 변경 기록 트리거 (2026-09-29 원격 적용) |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |

@@ -1,8 +1,9 @@
 "use client";
 
 // ③ 채널 정보 패널 (멤버·내보내기·관리 기록). 멤버 추가는 ② 의 사람 찾기를 가져다 쓴다.
-// 버튼은 관리자에게만 보이지만, 실제 권한은 DB 정책(RLS)이 검사한다 (TECH_SPEC 5절, npm run check:db 로 확인).
-// 남을 넣고 빼면 트리거가 admin_logs 에 남긴다.
+// 멤버 추가와 초대 권한 주기는 초대 권한이 있는 사람(만든 사람·권한을 받은 멤버·관리자)에게,
+// 내보내기·초대 권한 빼기·관리 기록은 관리자에게만 보인다. 실제 권한은 DB 정책(RLS)이 검사한다 (TECH_SPEC 5절, npm run check:db 로 확인).
+// 남을 넣고 빼거나 초대 권한을 주고 빼면 트리거가 admin_logs 에 남긴다.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
@@ -15,6 +16,12 @@ import s from "./panel.module.css";
 
 const GENERAL = "00000000-0000-0000-0000-000000000001"; // 모두가 들어가는 #일반 (나가기 없음)
 const TYPE_LABEL: Record<string, string> = { public: "공개 채널", private: "비공개 채널", dm: "DM" };
+const LOG_LABEL: Record<string, string> = {
+  add_member: "추가함",
+  remove_member: "내보냄",
+  grant_invite: "초대 권한을 줌",
+  revoke_invite: "초대 권한을 뺌",
+};
 
 type Log = { id: number; action: string; actor_id: string | null; target: { channel_id?: string; user_id?: string }; created_at: string };
 
@@ -35,7 +42,9 @@ export default function ChannelInfoPanel() {
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
   const isAdmin = !!self && roles[self.id] === "admin";
-  const manageable = isAdmin && type !== null && type !== "dm";
+  const channelKind = type !== null && type !== "dm"; // 공개·비공개 채널 (DM 은 멤버를 바꾸지 않는다)
+  const manageable = isAdmin && channelKind;
+  const canInvite = channelKind && (isAdmin || !!members.find((m) => m.id === self?.id)?.can_invite);
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
 
   // 채널 종류와 멤버·나의 역할 (관리자 표시와 버튼에 쓴다)
@@ -80,9 +89,11 @@ export default function ChannelInfoPanel() {
     }
   }, [channel.id, isAdmin]);
 
+  // 멤버가 들고 나거나 초대 권한이 바뀌면 (내가 했든 남이 했든) 기록을 다시 불러온다
+  const rightsKey = members.map((m) => `${m.id}:${m.can_invite ? 1 : 0}`).join(",");
   useEffect(() => {
     void loadLogs();
-  }, [loadLogs, members.length]);
+  }, [loadLogs, rightsKey]);
 
   async function remove(userId: string, name: string) {
     if (!window.confirm(`${name} 님을 #${channel.name} 에서 내보낼까요?`)) return;
@@ -111,6 +122,22 @@ export default function ChannelInfoPanel() {
     setAdding([]);
   }
 
+  // 초대 권한은 권한 있는 사람이 주고, 빼는 것은 관리자만. 권한이 없으면 RLS 가 0건을 고친다
+  async function setInviteRight(userId: string, name: string, value: boolean) {
+    setBusy(true);
+    const { data, error } = await getSupabase()
+      .from("memberships")
+      .update({ can_invite: value })
+      .eq("channel_id", channel.id)
+      .eq("user_id", userId)
+      .select("user_id");
+    setBusy(false);
+    if (error || !data?.length) {
+      return setMessage({ kind: "error", text: value ? "초대 권한을 주지 못했습니다" : "초대 권한을 빼지 못했습니다. 관리자만 할 수 있습니다" });
+    }
+    setMessage({ kind: "ok", text: value ? `${name} 님에게 초대 권한을 줬습니다` : `${name} 님의 초대 권한을 뺐습니다` });
+  }
+
   async function leave() {
     if (!self || !window.confirm(`#${channel.name} 에서 나갈까요?`)) return;
     const { error } = await getSupabase().from("memberships").delete().eq("channel_id", channel.id).eq("user_id", self.id);
@@ -137,21 +164,36 @@ export default function ChannelInfoPanel() {
                 <strong>{m.display_name}</strong> <span className="muted">@{m.handle}</span>
                 {m.department && <span className="muted"> · {m.department}</span>}
                 {roles[m.id] === "admin" && <span className={s.adminBadge}>관리자</span>}
+                {channelKind && m.can_invite && <span className={s.inviteBadge}>초대 권한</span>}
                 {self?.id === m.id && <span className="muted"> (나)</span>}
               </span>
-              {manageable && self?.id !== m.id && (
-                <button className="link" disabled={busy} onClick={() => void remove(m.id, m.display_name)}>
-                  내보내기
-                </button>
+              {self?.id !== m.id && (canInvite || manageable) && (
+                <span className={s.memberActions}>
+                  {canInvite && !m.can_invite && (
+                    <button className="link" disabled={busy} onClick={() => void setInviteRight(m.id, m.display_name, true)}>
+                      초대 권한 주기
+                    </button>
+                  )}
+                  {manageable && m.can_invite && (
+                    <button className="link" disabled={busy} onClick={() => void setInviteRight(m.id, m.display_name, false)}>
+                      초대 권한 빼기
+                    </button>
+                  )}
+                  {manageable && (
+                    <button className="link" disabled={busy} onClick={() => void remove(m.id, m.display_name)}>
+                      내보내기
+                    </button>
+                  )}
+                </span>
               )}
             </li>
           ))}
         </ul>
       </section>
 
-      {manageable && (
+      {canInvite && (
         <section>
-          <h4 className={s.infoHead}>멤버 추가 (관리자)</h4>
+          <h4 className={s.infoHead}>멤버 추가</h4>
           <PeoplePicker value={adding} onChange={setAdding} exclude={memberIds} />
           <button className={s.action} disabled={busy || adding.length === 0} onClick={() => void addMembers()}>
             추가하기
@@ -170,7 +212,7 @@ export default function ChannelInfoPanel() {
                 <li key={l.id}>
                   <time className="muted">{formatWhen(l.created_at)}</time>{" "}
                   {names[l.actor_id ?? ""] ?? "알 수 없음"} 님이 {names[l.target.user_id ?? ""] ?? "알 수 없음"} 님을{" "}
-                  {l.action === "remove_member" ? "내보냄" : l.action === "add_member" ? "추가함" : l.action}
+                  {LOG_LABEL[l.action] ?? l.action}
                 </li>
               ))}
             </ul>
