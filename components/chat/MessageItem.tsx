@@ -17,6 +17,7 @@ export function MessageItem({
   myHandle,
   highlighted,
   files,
+  unread,
 }: {
   message: ChatMessage;
   /** 로그인한 사람은 profiles 의 이름, Step 1 익명 메시지는 닉네임 */
@@ -27,6 +28,8 @@ export function MessageItem({
   /** 메시지로 이동(`?m=`)해서 잠깐 강조 중 */
   highlighted: boolean;
   files?: MessageAttachment[];
+  /** 작성자를 뺀 멤버 가운데 아직 안 읽은 사람 수 (0 이면 안 보인다) */
+  unread: number;
 }) {
   return (
     <article
@@ -36,6 +39,11 @@ export function MessageItem({
       <div className={s.meta}>
         <strong>{authorName}</strong>
         <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
+        {unread > 0 && (
+          <span className={s.unread} title={`안 읽은 사람 ${unread}명`} aria-label={`안 읽은 사람 ${unread}명`}>
+            {unread}
+          </span>
+        )}
       </div>
       {message.body && (
         <p className={s.body}>

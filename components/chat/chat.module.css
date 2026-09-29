@@ -87,6 +87,12 @@
   font-size: 12px;
 }
 
+/* 안 읽은 사람 수 (카카오톡처럼 숫자만) */
+.meta .unread {
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .body {
   margin: 2px 0 0;
   white-space: pre-wrap;

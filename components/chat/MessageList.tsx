@@ -3,7 +3,7 @@
 // ① 메시지 목록과 스크롤. 새 메시지가 오면 맨 아래로, 위를 보고 있으면 "새 메시지" 버튼만 띄운다.
 // 맨 위에 가까이 올리면 이전 메시지를 불러오고, 위에 붙은 만큼 내려서 보던 자리를 지킨다.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
 import type { Self } from "./useMessages";
 import { MessageItem, PendingItem } from "./MessageItem";
@@ -12,6 +12,8 @@ import s from "./chat.module.css";
 /** 맨 위에서 이만큼 안쪽으로 들어오면 이전 메시지를 불러온다 (px) */
 const LOAD_OLDER_AT = 120;
 const HIGHLIGHT_MS = 2500;
+/** 스크롤이 멈추고 이만큼 지나면 읽음을 남긴다 (스크롤 중에 계속 보내지 않게) */
+const READ_DEBOUNCE_MS = 400;
 
 /** 목록 맨 위에서 그 메시지까지의 거리 (스크롤과 무관) */
 function topOf(list: HTMLElement, messageId: number): number {
@@ -35,6 +37,8 @@ export default function MessageList({
   focus,
   onLoadOlder,
   onFocusMissing,
+  onRead,
+  unreadCount,
   onRetry,
   onDiscard,
 }: {
@@ -53,6 +57,10 @@ export default function MessageList({
   onLoadOlder: () => void;
   /** 이동하려던 메시지가 목록에 없을 때 (지워졌거나 볼 수 없는 메시지) */
   onFocusMissing: () => void;
+  /** 화면에 실제로 보인 마지막 메시지 id. 탭이 보일 때만 부른다 (PRD "읽음"의 뜻) */
+  onRead: (messageId: number) => void;
+  /** 메시지 옆에 띄울 안 읽은 사람 수 */
+  unreadCount: (messageId: number, authorId: string | null) => number;
   onRetry: (p: PendingMessage) => void;
   onDiscard: (clientId: string) => void;
 }) {
@@ -64,7 +72,42 @@ export default function MessageList({
   // 지난 그림의 첫 메시지와 그 위치, 마지막 메시지. 위에 붙었는지, 아래에 붙었는지를 가린다
   const prevRef = useRef({ firstId: 0, firstTop: 0, lastKey: "" });
 
+  // 읽음: 목록 안에 실제로 보이는 메시지 가운데 가장 아래 것까지 읽은 것으로 본다.
+  // 탭이 가려져 있으면 보이지 않은 것이므로 남기지 않는다. 다시 보이면 그때 남긴다
+  const readTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onReadRef = useRef(onRead);
+  onReadRef.current = onRead;
+
+  function scheduleRead() {
+    clearTimeout(readTimerRef.current);
+    readTimerRef.current = setTimeout(() => {
+      const el = listRef.current;
+      if (!el || document.visibilityState !== "visible") return;
+      const box = el.getBoundingClientRect();
+      const items = el.querySelectorAll<HTMLElement>("[data-message-id]");
+      for (let i = items.length - 1; i >= 0; i--) {
+        const r = items[i].getBoundingClientRect();
+        if (r.top < box.bottom && r.bottom > box.top) {
+          onReadRef.current(Number(items[i].dataset.messageId));
+          return;
+        }
+      }
+    }, READ_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    const again = () => scheduleRead();
+    document.addEventListener("visibilitychange", again);
+    window.addEventListener("focus", again);
+    return () => {
+      clearTimeout(readTimerRef.current);
+      document.removeEventListener("visibilitychange", again);
+      window.removeEventListener("focus", again);
+    };
+  }, []);
+
   function onScroll() {
+    scheduleRead();
     const el = listRef.current;
     if (!el) return;
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -99,6 +142,7 @@ export default function MessageList({
       setHasUnseen(true);
     }
     prevRef.current = { firstId, firstTop: topOf(el, firstId), lastKey };
+    scheduleRead();
   }, [messages, pending, sendTick]);
 
   // 메시지로 이동: 가운데로 스크롤하고 잠깐 강조한다
@@ -139,6 +183,7 @@ export default function MessageList({
             myHandle={self?.handle ?? undefined}
             highlighted={m.id === highlightId}
             files={attachments[m.id]}
+            unread={unreadCount(m.id, m.user_id)}
           />
         ))}
         {pending.map((p) => (

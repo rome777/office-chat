@@ -5,6 +5,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { useMessages } from "./useMessages";
+import { useReadStatus } from "./useReadStatus";
 import MessageList, { type Focus } from "./MessageList";
 import Composer from "./Composer";
 import JumpToMessage from "./JumpToMessage";
@@ -31,6 +32,7 @@ export default function ChatPane() {
     loadOlder,
     reveal,
   } = useMessages(channel.id, me.name);
+  const { markRead, unreadCount } = useReadStatus(channel.id, self?.id ?? null);
   const [sendTick, setSendTick] = useState(0);
   // 주소로 받은 이동 요청. 처음 불러오기가 끝난 뒤에 처리한다
   const [jumpTarget, setJumpTarget] = useState<number | null>(null);
@@ -88,6 +90,8 @@ export default function ChatPane() {
         loadingOlder={loadingOlder}
         focus={focus}
         onLoadOlder={() => void loadOlder()}
+        onRead={markRead}
+        unreadCount={unreadCount}
         onFocusMissing={() => setJumpNotice("메시지를 찾을 수 없습니다. 지워졌거나 볼 수 없는 메시지입니다.")}
         onRetry={(p) => sendNow(p.body, p.clientId, p.file)}
         onDiscard={discard}
