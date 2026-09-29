@@ -1,16 +1,16 @@
 "use client";
 
 // ① 메시지 옆 "안 읽은 사람 수"와 내 읽음 기록 (TECH_SPEC 7절 "읽음·미읽음").
-// 채널 멤버와 멤버별 읽음 위치(read_positions)를 받아 두고 실시간으로 갱신한다.
+// 멤버별 읽음 위치(read_positions)를 받아 두고 실시간으로 갱신한다. 멤버 목록은 useChannelMembers 가 준다.
 // 채널 목록의 미읽음 배지(②)는 같은 read_positions 를 따로 구독한다 (구독은 영역마다 따로 연다).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
+import { newClientId } from "./useMessages";
 
 type ReadRow = { user_id: string; last_read_message_id: number };
 
-export function useReadStatus(channelId: string, selfId: string | null) {
-  const [members, setMembers] = useState<string[]>([]);
+export function useReadStatus(channelId: string, selfId: string | null, memberIds: string[]) {
   /** 멤버 id → 마지막으로 읽은 메시지 id */
   const [positions, setPositions] = useState<Record<string, number>>({});
   // 서버에 이미 보낸 내 읽음 위치. 이보다 작은 값은 다시 보내지 않는다 (DB 도 뒤로 가지 않는다)
@@ -28,22 +28,21 @@ export function useReadStatus(channelId: string, selfId: string | null) {
   useEffect(() => {
     const supabase = getSupabase();
     let alive = true;
-    setMembers([]);
     setPositions({});
     reportedRef.current = 0;
 
     async function load() {
-      const [m, r] = await Promise.all([
-        supabase.from("memberships").select("user_id").eq("channel_id", channelId),
-        supabase.from("read_positions").select("user_id, last_read_message_id").eq("channel_id", channelId),
-      ]);
-      if (!alive) return;
-      if (m.data) setMembers(m.data.map((x) => x.user_id));
-      if (r.data) raise(r.data as ReadRow[]);
+      const { data } = await supabase
+        .from("read_positions")
+        .select("user_id, last_read_message_id")
+        .eq("channel_id", channelId);
+      if (alive && data) raise(data as ReadRow[]);
     }
 
+    // 구독 이름에 매번 고유한 꼬리를 붙인다. supabase.channel() 은 같은 이름이 있으면 이미 구독한 채널을 돌려주고,
+    // 거기에 .on() 을 붙이면 "cannot add postgres_changes callbacks after subscribe()" 로 화면 전체가 멈춘다 (2026-09-29)
     const channel = supabase
-      .channel(`reads:${channelId}`)
+      .channel(`reads:${channelId}:${newClientId()}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "read_positions", filter: `channel_id=eq.${channelId}` },
@@ -52,21 +51,6 @@ export function useReadStatus(channelId: string, selfId: string | null) {
           if (row.user_id) raise([row as ReadRow]);
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "memberships", filter: `channel_id=eq.${channelId}` },
-        (payload) => {
-          const id = (payload.new as { user_id: string }).user_id;
-          setMembers((prev) => (prev.includes(id) ? prev : [...prev, id]));
-        },
-      )
-      // DELETE 는 필터를 걸 수 없어서 전부 받고 거른다 (기본 키만 온다)
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "memberships" }, (payload) => {
-        const old = payload.old as { channel_id?: string; user_id?: string };
-        if (old.channel_id === channelId && old.user_id) {
-          setMembers((prev) => prev.filter((id) => id !== old.user_id));
-        }
-      })
       .subscribe((status) => {
         // 구독 전·끊긴 동안 바뀐 것은 다시 불러와 맞춘다
         if (status === "SUBSCRIBED") void load();
@@ -104,8 +88,8 @@ export function useReadStatus(channelId: string, selfId: string | null) {
   /** 작성자를 뺀 멤버 가운데 아직 이 메시지까지 읽지 않은 사람 수 */
   const unreadCount = useCallback(
     (messageId: number, authorId: string | null) =>
-      members.filter((id) => id !== authorId && (positions[id] ?? 0) < messageId).length,
-    [members, positions],
+      memberIds.filter((id) => id !== authorId && (positions[id] ?? 0) < messageId).length,
+    [memberIds, positions],
   );
 
   return { markRead, unreadCount };

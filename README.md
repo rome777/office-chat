@@ -35,7 +35,7 @@ Slack 의 채널·스레드 흐름에 카카오톡식 읽음 표시를 더하고
 
 ## 기술 스택
 
-Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · LLM API (제공자 미정)
+Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · OpenAI API
 
 자세한 구조는 [TECH_SPEC.md](DevelopDoc/TECH_SPEC.md) 에 있습니다.
 
@@ -48,6 +48,11 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · LLM API (제
 - 가입하면 전사 채널 `#일반` 에 자동으로 들어감. 작성자는 로그인 정보로 정해짐 (닉네임으로 신원을 판단하지 않음)
 - 채널 멤버만 대화를 읽고 쓸 수 있음. 멤버가 아니면 API 로 직접 요청해도 0건 (DB 권한 정책)
 - 카카오톡처럼 메시지 옆에 **안 읽은 사람 수**. 상대가 읽으면 새로고침 없이 줄어듦. 탭을 열어 화면에 보인 메시지까지만 읽은 것으로 침
+- **알림**: DM·나를 부른 멘션·내 스레드의 답글이 오면 알림 목록과 배지, 화면을 보고 있으면 오른쪽 아래 토스트, 다른 탭이면 브라우저 알림 ("알림 켜기"로 허용). 탭 제목에 `(안 읽은 수)`. 누르면 그 메시지로 이동
+- **AI 요약**: 헤더의 "요약" → 안 읽은 것 또는 최근 50건을 몇 줄로. 항목마다 "원문" 링크 (서버에 `OPENAI_API_KEY` 가 있어야 동작)
+- **스레드**: 메시지에 답글을 달면 오른쪽 패널에 모이고, 본문에는 "답글 N개"만 보임 (새로고침 없이 늘어남)
+- `@` 를 치면 채널 멤버 자동완성. 멤버를 부른 멘션만 강조
+- **말투 변환**: 🎭 버튼으로 신하·선비·정중 말투 미리보기 → 승인해야 전송 (서버에 `OPENAI_API_KEY` 가 있어야 동작)
 - 파일 첨부: PNG·JPEG·PDF 5MB 이하. 이미지는 미리보기, PDF 는 내려받기. 확장자만 바꾼 파일은 서버가 파일 내용을 보고 거부. 대화 멤버가 아니면 파일 주소를 알아도 못 엶
 - 메시지 보내기·받기 (새로고침 없이 즉시), 작성자·시각 표시, 빈 메시지 차단
 - 대화가 DB 에 저장되어 새로고침·재접속해도 남음
@@ -61,7 +66,7 @@ Next.js · Supabase(Auth, Postgres, Realtime, Storage) · Vercel · LLM API (제
 - 1:1 DM — "새 메시지"에서 이름·부서로 사람을 찾아 대화 시작 (같은 사람과는 늘 같은 방). 누가 나에게 DM 을 보내면 목록에 바로 뜸
 - `/calendar` 주간 캘린더 — 회의 만들기·고치기·취소, 참석자 초대(이름·부서로 찾기), 수락·거절, 회의실 3개 예약 현황(남의 회의는 시간대만). 같은 회의실을 겹치게 잡으면 DB 가 막음 (동시에 눌러도 하나만)
 
-**아직 안 되는 것**: 알림(일정 알림 포함), 검색, 미읽음 배지 등. DB 는 이 기능들을 위한 구조와 권한이 모두 준비돼 있습니다.
+**아직 안 되는 것**: 검색, 미읽음 배지, AI 할 일 뽑기, 채널 정보(관리자), 일정 알림. DB 는 이 기능들을 위한 구조와 권한이 모두 준비돼 있습니다.
 배포 URL 은 **로그인 없이 누구나 `#일반` 에 읽고 쓸 수 있으니** 중요한 내용은 쓰지 마세요.
 
 ## 로컬 실행
@@ -103,6 +108,8 @@ npm run check:db
 npm run check:attach
 ```
 
+1만 건 채널로 페이지네이션·검색 속도를 재려면 `npm run seed:10k` → `npm run seed:10k -- --measure`, 다 쓰면 `npm run seed:10k -- --delete` (공유 DB 라 꼭 지웁니다).
+
 로컬에서 여러 계정으로 시험하려면 시연 계정을 만듭니다. `.env.local` 에 `SEED_PASSWORD=<8자 이상>` 을 넣고 실행하면
 `a@example.com`(사용자A) · `b@example.com`(사용자B) · `admin@example.com`(관리자) · `c@example.com`(비회원C) 이 생깁니다.
 가입 확인 메일 없이 바로 로그인할 수 있고, 여러 번 돌려도 됩니다.
@@ -111,7 +118,15 @@ npm run check:attach
 npm run seed:users
 ```
 
-`check:step1` 은 Step 1 실시간 채팅(익명 `#일반`), `check:db` 는 DB 권한(비회원 거부, DM, 관리자, 회의실 이중 예약 등 48개), `check:attach` 는 파일 첨부(형식·크기·권한 20개, `npm run dev` 를 띄운 채로)를 확인합니다.
+```bash
+npm run check:notify
+```
+
+```bash
+npm run check:ai
+```
+
+`check:step1` 은 Step 1 실시간 채팅(익명 `#일반`), `check:db` 는 DB 권한(비회원 거부, DM, 관리자, 회의실 이중 예약 등 48개), `check:attach` 는 파일 첨부(형식·크기·권한 20개, `npm run dev` 를 띄운 채로), `check:notify` 는 알림(16개), `check:ai` 는 AI 요약·말투 변환 규칙(`npm run dev` 를 띄운 채로)을 확인합니다.
 
 ## 개발 문서
 

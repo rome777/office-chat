@@ -5,7 +5,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
-import type { Self } from "./useMessages";
+import type { Self } from "./useSelf";
 import { MessageItem, PendingItem } from "./MessageItem";
 import s from "./chat.module.css";
 
@@ -39,6 +39,8 @@ export default function MessageList({
   onFocusMissing,
   onRead,
   unreadCount,
+  handles,
+  onOpenThread,
   onRetry,
   onDiscard,
 }: {
@@ -61,6 +63,9 @@ export default function MessageList({
   onRead: (messageId: number) => void;
   /** 메시지 옆에 띄울 안 읽은 사람 수 */
   unreadCount: (messageId: number, authorId: string | null) => number;
+  /** 채널 멤버 handle (소문자) */
+  handles: ReadonlySet<string>;
+  onOpenThread: (messageId: number) => void;
   onRetry: (p: PendingMessage) => void;
   onDiscard: (clientId: string) => void;
 }) {
@@ -184,6 +189,8 @@ export default function MessageList({
             highlighted={m.id === highlightId}
             files={attachments[m.id]}
             unread={unreadCount(m.id, m.user_id)}
+            handles={handles}
+            onOpenThread={() => onOpenThread(m.id)}
           />
         ))}
         {pending.map((p) => (

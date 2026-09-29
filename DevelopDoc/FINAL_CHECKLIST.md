@@ -98,7 +98,7 @@
 ## 8. 보안·운영
 
 - [ ] 저장소에 실제 키가 없다 (`.env.example` 에 이름만)
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` 와 `LLM_API_KEY` 가 브라우저 코드에 없다 (배포된 JS 에서 검색해 확인)
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` 와 `OPENAI_API_KEY` 가 브라우저 코드에 없다 (배포된 JS 에서 검색해 확인)
 - [ ] 모든 테이블에 RLS 가 켜져 있다
 - [ ] 첨부 버킷이 비공개다
 - [ ] 실명·실제 사내 정보가 시드 데이터에 없다
