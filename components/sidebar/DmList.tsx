@@ -2,8 +2,9 @@
 
 // ② 다이렉트 메시지 목록 + "새 메시지". 왼쪽 칸과 헤더의 채널 전환(좁은 화면)이 함께 쓴다.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import { GENERAL_ID } from "./channelSource";
 import NewDmDialog from "./NewDmDialog";
 import { useMyDms } from "./useChannels";
 import s from "./sidebar.module.css";
@@ -13,18 +14,28 @@ export default function DmList({
   syncCurrent = false,
 }: {
   onPicked?: () => void;
-  /** 보고 있는 DM 상대의 이름이 바뀌면 헤더 이름도 맞춘다. 한 곳(왼쪽 칸)에서만 켠다 */
+  /** 보고 있는 DM 상대의 이름이 바뀌면 헤더 이름도 맞추고, 그 DM 이 사라지면 #일반으로 돌아간다.
+   *  한 곳(왼쪽 칸)에서만 켠다 */
   syncCurrent?: boolean;
 }) {
   const { channel, setChannel } = useWorkspace();
   const { dms, error } = useMyDms();
   const [open, setOpen] = useState(false);
+  const current = useRef(channel);
+  current.current = channel;
 
+  // 목록을 새로 받았을 때만 확인한다 (DM 을 열 때마다 확인하면, 방금 연 DM 이
+  // 목록에 들어오기 전에 #일반으로 튕길 수 있다)
   useEffect(() => {
-    if (!syncCurrent || !dms || channel.type !== "dm") return;
-    const now = dms.find((d) => d.id === channel.id)?.other.display_name;
-    if (now && now !== channel.name) setChannel({ ...channel, name: now });
-  }, [dms, channel, syncCurrent, setChannel]);
+    if (!syncCurrent || !dms) return;
+    const cur = current.current;
+    if (cur.type !== "dm") return;
+    const found = dms.find((d) => d.id === cur.id);
+    if (!found) setChannel({ id: GENERAL_ID, name: "일반", type: "public" });
+    else if (found.other.display_name !== cur.name) {
+      setChannel({ ...cur, name: found.other.display_name });
+    }
+  }, [dms, syncCurrent, setChannel]);
 
   function go(id: string, name: string) {
     setChannel({ id, name, type: "dm" });

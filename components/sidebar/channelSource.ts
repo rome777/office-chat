@@ -270,6 +270,8 @@ export async function startDm(otherUserId: string): Promise<string> {
     if (error.code === "22023") throw new Error("DM 상대가 올바르지 않습니다");
     throw friendly(error);
   }
+  // DM 을 만들기 전에 시작된 목록 요청을 같이 쓰면 새 DM 이 빠진 목록을 받는다 → 새로 받게 한다
+  dmsInFlight = null;
   notifyChannelsChanged();
   return data as string;
 }
