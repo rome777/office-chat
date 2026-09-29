@@ -54,8 +54,8 @@ export default function ChannelList({
   return (
     <>
       <ul className={s.list}>
-        {error && <li className={s.error}>채널 목록을 못 불러왔습니다: {error}</li>}
-        {channels === null && !error && <li className={s.muted}>불러오는 중…</li>}
+        {error && <li className={`${s.item} ${s.error}`}>채널 목록을 못 불러왔습니다: {error}</li>}
+        {channels === null && !error && <li className={`${s.item} ${s.muted}`}>불러오는 중…</li>}
         {channels?.map((c) => {
           const active = c.id === channel.id;
           return (
