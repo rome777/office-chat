@@ -102,7 +102,7 @@ erDiagram
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`), `channel_id`, `message_id`, `event_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 유일 (user_id, event_id, type) where type in (`event_invite`, `event_reminder`) → 초대·10분 전 알림은 한 번만. 본문은 저장하지 않는다 |
+| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`·`event_decline`), `channel_id`, `message_id`, `event_id`, `actor_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). `actor_id` 는 알림을 일으킨 사람 — 지금은 회의 불참(`event_decline`)의 불참한 사람만 채운다 (2026-09-29 추가). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 유일 (user_id, event_id, type) where type in (`event_invite`, `event_reminder`) → 초대·10분 전 알림은 한 번만. 본문은 저장하지 않는다 |
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
@@ -270,7 +270,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | 안 보고 있고 브라우저 알림 권한이 있다 | `new Notification(제목, { body, tag: 알림 id })` |
 | 안 보고 있고 권한이 없다 | 탭이 보이면 토스트, 아니면 탭 제목의 `(N)` 만 |
 
-- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자. 일정 알림은 `{회의 제목}`, 본문은 "초대됨·시간 변경·취소됨·10분 후 시작"과 시각·회의실.
+- 제목은 `{작성자} · #{채널}`(DM 은 작성자만), 본문은 메시지 앞 80자. 일정 알림은 `{회의 제목}`, 본문은 "초대됨·시간 변경·취소됨·10분 후 시작"과 시각·회의실. 회의 불참은 본문 앞에 `{불참한 사람} 님`.
 - 안 읽은 알림 수는 상황과 관계없이 알림 버튼 배지와 탭 제목에 보인다.
 - 나중에 채널이나 스레드를 열어 **알림의 메시지가 화면에 보이면** 그 알림은 저절로 읽음이 된다. 알림 목록에서 누르지 않아도 된다.
 - 알림(토스트·브라우저 알림·목록)을 누르면 `/c/{channel_id}?m={message_id}` 로 이동해 그 메시지를 강조한다. 답글이면 스레드 패널을 연다. 이전 페이지에 있으면 그 주변을 불러온다. 일정 알림은 `/calendar?e={event_id}` 로 간다. 브라우저 알림은 `window.focus()` 뒤에 이동한다.
@@ -305,7 +305,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - 주간 보기: 내가 만들었거나 초대받은 회의(`event_attendees` 에 내가 있는 것). 취소된 회의는 줄을 그어 보인다.
 - 회의 만들기: 제목, 날짜·시작·끝, 회의실, 참석자. 회의실을 고르면 `room_busy` 로 그날 예약된 시간대를 회색으로 보여 준다. 참석자는 DM 의 사람 검색(WU-08)을 다시 쓴다.
-- 회의 상세: 참석자별 응답, 수락·거절 버튼. 만든 사람에게는 수정·취소 버튼.
+- 회의 상세: 참석자별 응답, 참석·불참 버튼 (DB 값은 `accepted`·`declined`, 화면 말만 2026-09-29 "수락·거절"에서 바꿈). 만든 사람에게는 수정·취소 버튼.
 - 저장은 `events` 한 행과 `event_attendees` 여러 행을 **한 번에** 넣어야 한다 → `create_event(...)` 함수 하나로 묶는다. 회의실이 겹치면 제약 오류를 "이미 예약된 시간입니다"로 바꿔 보여 준다.
 
 **일정 알림 만들기 (DB)**
@@ -316,6 +316,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `event_update` | `events` UPDATE 트리거 — 제목·시각·회의실이 바뀔 때 | 거절하지 않은 참석자 (고친 사람 제외) |
 | `event_cancel` | `events` UPDATE 트리거 — `canceled_at` 이 채워질 때 | 거절하지 않은 참석자 (취소한 사람 제외) |
 | `event_reminder` | `pg_cron` 1분마다: 10분 안에 시작하고 취소되지 않은 회의 | 거절하지 않은 참석자 (만든 사람 포함) |
+| `event_decline` | `event_attendees` UPDATE 트리거 — 응답이 `declined` 로 바뀔 때 (취소된 회의 제외, `20260929190000`) | 회의를 만든 사람. `actor_id` = 불참한 사람. 다시 참석하면 만든 사람이 **아직 안 읽은** 그 사람의 불참 알림을 지운다 (읽은 것은 남긴다). 화면은 알림 DELETE 를 받아 목록에서 뺀다 |
 
 - 10분 전 알림은 유일 제약 덕분에 1분마다 돌아도 한 번만 들어간다.
 - 시작 시각이 바뀌면 그 회의의 `event_reminder` 를 지워서 새 시각에 다시 보낸다.
@@ -608,6 +609,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
 | `supabase/migrations/20260929150000_invite_rights.sql` | 채널 초대 권한 `memberships.can_invite`, `has_invite_right()`, 넣기·권한 주기 정책, 권한 변경 기록 트리거 (2026-09-29 원격 적용) |
+| `supabase/migrations/20260929190000_event_decline_notifications.sql` | 회의 불참 알림: `notifications.actor_id`, 종류 `event_decline`, `event_attendees` 응답 트리거 (7절 "일정 알림 만들기") |
 | `supabase/migrations/20260929170000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
