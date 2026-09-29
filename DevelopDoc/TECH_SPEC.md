@@ -253,7 +253,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 | 순서 | `type` | 받는 사람 |
 |---|---|---|
-| 1 | `mention` | 본문의 `@handle` 가운데 **그 채널 멤버인 사람** |
+| 1 | `mention` | 본문의 `@handle` 가운데 **그 채널 멤버인 사람**. `@all-members-in-channel`(화면 `@모두`)이면 그 채널 멤버 전체, `@org-<부서 id>`(화면 `@부서명`)이면 그 부서와 **모든 하위 부서** 소속 가운데 그 채널 멤버 (2026-09-30, `20260930090000`). 누구나 쓸 수 있다 |
 | 2 | `thread_reply` | `parent_id` 가 있으면: 부모 메시지 작성자 + 그 스레드에 이미 답한 사람 (채널 멤버만) |
 | 3 | `dm` | DM 채널이면 상대방 |
 
@@ -438,6 +438,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
   - 입력: 자동완성으로 고르면 `@이름 ` 을 넣고, 보낼 때 `storeMentions` 가 `@아이디`(소문자)로 바꿔 저장한다. 이름이 한 사람만 가리킬 때만 바꾼다 (동명이인을 부서 없이 쓰면 글자 그대로 → 알림 없음). 이름 바로 뒤에 글자가 붙으면(`@정대현님`) 바꾸지 않는다. 긴 이름부터 맞춘다.
   - 표시: `SafeText` 의 `mentions.names` 로 `@이름`. 멤버가 아니면 강조 없이 이름만. 알림 미리보기(토스트·브라우저 알림)·검색 결과·AI 요약·할 일은 `showMentions` 로 바꾼 글을 쓴다. 할 일의 기한 근거(`due_quote`)도 바꾼 본문과 맞춘다.
   - 아이디는 화면 어디에도 보이지 않는다: 자동완성·채널 정보 멤버 목록·조직도에서 `@handle` 을 뺐다.
+  - **모두·부서 멘션 (2026-09-30)**: 저장 글자는 `@all-members-in-channel`(22자)·`@org-<부서 id>`(40자) — handle 은 20자까지라 사람과 겹치지 않는다. 이름표는 `groupLabels`(모두 → "모두", 부서 → 부서명)로 사람 이름표와 합친다. 자동완성 맨 위에 `모두 · 이 채널 전체 · N명`, 그 채널 멤버가 소속된 부서와 상위 부서가 `부서 · N명`(하위 부서 인원 포함)으로 나온다 (`MentionPicker` 의 `channelGroups`, 멤버에 `org_unit_id` 추가). `@모두`·`@내 부서(상위 포함)` 는 나를 부른 것으로 강조한다 (`useMyMentionTokens`). AI 요약·할 일도 부서 목록을 읽어 이름으로 바꾼다.
   - **알아 둘 것**: 지금은 본인이 API 로 `display_name`·`handle`·`department`·`title` 을 고칠 수 있다 (`db_v1.sql` 컬럼 권한, `check:db` "본인 이름은 고칠 수 있다"). 사내 메신저면 잠가야 한다 — WORK_UNITS WU-31 "팀 상의".
 
 ### 잡무 수첩 (PRD 7절 잡무 자동화 — 메뉴 주문 정리, 2026-09-29)
@@ -616,6 +617,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929130000_message_notifications.sql` | 메시지 알림(멘션·스레드 답글·DM)을 만드는 트리거 |
 | `supabase/migrations/20260929140000_event_notifications.sql` | 일정 알림(초대·변경·취소) 트리거, 10분 전 알림 함수와 `pg_cron` 작업 |
 | `supabase/migrations/20260929150000_invite_rights.sql` | 채널 초대 권한 `memberships.can_invite`, `has_invite_right()`, 넣기·권한 주기 정책, 권한 변경 기록 트리거 (2026-09-29 원격 적용) |
+| `supabase/migrations/20260930090000_group_mentions.sql` | 모두·부서 멘션: `messages_notify()` 를 바꿔 `@all-members-in-channel`·`@org-<id>`(하위 부서 포함, 그 채널 멤버만)도 mention 알림 (7절 "알림") |
 | `supabase/migrations/20260929190000_event_decline_notifications.sql` | 회의 불참 알림: `notifications.actor_id`, 종류 `event_decline`, `event_attendees` 응답 트리거 (7절 "일정 알림 만들기") |
 | `supabase/migrations/20260929170000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
 | `lib/mentions.ts` | 멘션 규칙: 저장은 `@아이디`, 보이는 것은 `@이름` (이름표·표시·저장 변환). 채팅·알림·검색·AI 가 같이 쓴다 (7절 "멘션") |

@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AiError, complete } from "@/lib/ai/openai";
 import { logUsage, overLimit } from "@/lib/ai/usage";
 import { getServerSupabase } from "@/lib/supabase-server";
-import { mentionLabels, showMentions } from "@/lib/mentions";
+import { groupLabels, mentionLabels, showMentions, type MentionUnit } from "@/lib/mentions";
 
 const MAX_MESSAGES = 200;
 const DEFAULT_RECENT = 50;
@@ -109,8 +109,11 @@ export async function POST(request: NextRequest) {
     .eq("channel_id", channelId);
   const members = (memberRows ?? []).map((r) => r.profiles as unknown as Member).filter(Boolean);
   const nameOf = new Map(members.map((m) => [m.id, m.display_name]));
-  const { data: everyone } = await supabase.from("profiles").select("handle, display_name, department").limit(1000);
-  const labels = mentionLabels(everyone ?? []);
+  const [{ data: everyone }, { data: units }] = await Promise.all([
+    supabase.from("profiles").select("handle, display_name, department").limit(1000),
+    supabase.from("org_units").select("id, name, parent_id"),
+  ]);
+  const labels = new Map([...mentionLabels(everyone ?? []), ...groupLabels((units ?? []) as MentionUnit[])]); // @모두·@부서도 이름으로
   const shown = (body: string) => showMentions(body, labels);
   const lines = messages.map((m) => {
     const who = m.author ?? (m.user_id ? nameOf.get(m.user_id) : undefined) ?? "알 수 없음";

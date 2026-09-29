@@ -2,9 +2,9 @@
 // 멘션을 "@이름" 으로 보여 줄 이름표(getMentionLabels·useMentionLabels)도 여기서 만든다 (① 채팅·③ 알림·② 검색이 같이 쓴다).
 // profiles 는 로그인한 사람이면 모두 읽을 수 있다 (TECH_SPEC 5절).
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { Person } from "@/lib/types/people";
-import { mentionLabels } from "@/lib/mentions";
+import { ALL_TOKEN, groupLabels, mentionLabels, orgToken, unitChain, type MentionUnit } from "@/lib/mentions";
 import { getSupabase } from "@/lib/supabase";
 
 export const MAX_RESULTS = 20;
@@ -59,40 +59,86 @@ export async function getPeople(ids: string[]): Promise<Person[]> {
   return unique.map((id) => byId.get(id) ?? unknownPerson(id));
 }
 
-/** 멘션 표시용 handle(소문자) → 이름 (회사 전체, lib/mentions). 채널을 나간 사람을 부른 멘션도 이름으로 보인다 */
+// 부서 목록 (모두·부서 멘션). 조직은 로그인한 사람이면 모두 읽는다
+let unitCache: { at: number; units: Promise<MentionUnit[]> } | null = null;
+function orgUnits(): Promise<MentionUnit[]> {
+  if (!unitCache || Date.now() - unitCache.at > CACHE_MS) {
+    const units = (async () => {
+      const { data, error } = await getSupabase().from("org_units").select("id, name, parent_id").order("sort_order");
+      if (error) throw new Error(error.message);
+      return (data ?? []) as MentionUnit[];
+    })();
+    unitCache = { at: Date.now(), units };
+    units.catch(() => {
+      if (unitCache?.units === units) unitCache = null;
+    });
+  }
+  return unitCache.units;
+}
+
+type MentionData = { labels: ReadonlyMap<string, string>; units: readonly MentionUnit[]; unitOf: ReadonlyMap<string, string | null> };
+
+async function mentionData(): Promise<MentionData> {
+  const [people, units, unitRows] = await Promise.all([
+    directory(),
+    orgUnits().catch(() => [] as MentionUnit[]), // 조직을 못 받아도 사람 멘션은 이름으로 보인다
+    getSupabase().from("profiles").select("handle, org_unit_id").limit(1000),
+  ]);
+  const unitOf = new Map((unitRows.data ?? []).map((r) => [String(r.handle).toLowerCase(), r.org_unit_id as string | null]));
+  return { labels: new Map([...mentionLabels(people), ...groupLabels(units)]), units, unitOf };
+}
+
+/** 멘션 표시용 글자 → 이름 (lib/mentions): 사람 handle(소문자) → 이름, 모두 → "모두", 부서 → 부서명. 회사 전체라 채널을 나간 사람도 이름으로 보인다 */
 export async function getMentionLabels(): Promise<Map<string, string>> {
-  return mentionLabels(await directory());
+  return new Map((await mentionData()).labels);
 }
 
 // 화면 전체가 이름표 하나를 나눠 쓴다 (메시지마다 따로 받지 않는다). 명단 캐시와 같은 주기로 새로 받는다
-const EMPTY: ReadonlyMap<string, string> = new Map();
-let labelsNow: ReadonlyMap<string, string> = EMPTY;
-let labelsAt = 0;
-const labelListeners = new Set<() => void>();
+const EMPTY_DATA: MentionData = { labels: new Map(), units: [], unitOf: new Map() };
+let dataNow: MentionData = EMPTY_DATA;
+let dataAt = 0;
+const dataListeners = new Set<() => void>();
 
-function refreshLabels() {
-  if (Date.now() - labelsAt < CACHE_MS) return;
-  labelsAt = Date.now();
-  getMentionLabels().then(
-    (m) => {
-      labelsNow = m;
-      labelListeners.forEach((fn) => fn());
+function refreshData() {
+  if (Date.now() - dataAt < CACHE_MS) return;
+  dataAt = Date.now();
+  mentionData().then(
+    (d) => {
+      dataNow = d;
+      dataListeners.forEach((fn) => fn());
     },
     () => {
-      labelsAt = 0; // 실패하면 다음에 다시
+      dataAt = 0; // 실패하면 다음에 다시
     },
   );
 }
 
-function subscribeLabels(fn: () => void) {
-  labelListeners.add(fn);
-  refreshLabels();
-  return () => void labelListeners.delete(fn);
+function subscribeData(fn: () => void) {
+  dataListeners.add(fn);
+  refreshData();
+  return () => void dataListeners.delete(fn);
 }
+
+const useMentionData = () => useSyncExternalStore(subscribeData, () => dataNow, () => EMPTY_DATA);
 
 /** getMentionLabels 의 React 판. 명단을 받기 전에는 빈 Map (그동안은 저장된 글자 그대로 보인다) */
 export function useMentionLabels(): ReadonlyMap<string, string> {
-  return useSyncExternalStore(subscribeLabels, () => labelsNow, () => EMPTY);
+  return useMentionData().labels;
+}
+
+/** 부서 목록 (@ 자동완성에서 부서를 보일 때) */
+export function useOrgUnits(): readonly MentionUnit[] {
+  return useMentionData().units;
+}
+
+/** 나를 부른 것으로 볼 멘션 글자: 내 handle, 모두, 내 부서와 모든 상위 부서 (부서 멘션은 하위 부서까지 부른다) */
+export function useMyMentionTokens(myHandle: string | undefined): ReadonlySet<string> {
+  const { units, unitOf } = useMentionData();
+  return useMemo(() => {
+    if (!myHandle) return new Set<string>();
+    const me = myHandle.toLowerCase();
+    return new Set([me, ALL_TOKEN, ...unitChain(unitOf.get(me) ?? null, units).map(orgToken)]);
+  }, [myHandle, units, unitOf]);
 }
 
 export function unknownPerson(id: string): Person {

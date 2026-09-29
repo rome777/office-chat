@@ -1,6 +1,6 @@
 // 메시지 알림 트리거·권한 자동 확인 (알림 작업, 원격 Supabase).
 // 실행: npm run check:notify
-// 가상 사용자 A·B·C·D 를 만들고(비밀번호 없이 일회용 로그인 토큰), 끝나면 사용자·채널을 모두 지운다.
+// 모두·부서 멘션은 임시 부서(본부→팀)를 만들어 확인한다. 가상 사용자 A·B·C·D 를 만들고(비밀번호 없이 일회용 로그인 토큰), 끝나면 사용자·채널을 모두 지운다.
 // A·B·D 는 채널 X 멤버, C 는 아니다. A·B 는 DM 도 한다.
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -20,7 +20,7 @@ const admin = createClient(url, serviceKey, noSession);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const check = (name, ok, extra = "") => results.push(`${ok ? "PASS" : "FAIL"}  ${name} ${extra}`);
-const made = { users: [], channels: [], realtime: [] };
+const made = { users: [], channels: [], realtime: [], units: [] };
 const GENERAL = "00000000-0000-0000-0000-000000000001";
 
 async function makeUser(tag) {
@@ -136,11 +136,46 @@ try {
   check("본인만 읽음 표시한다", mark.data?.length === bNotes.data.length && aMark.data?.length === 0, `(본인 ${mark.data?.length}, 남 ${aMark.data?.length})`);
   const bTypeChange = await B.sb.from("notifications").update({ type: "mention" }).eq("user_id", B.id).select("id");
   check("알림 종류는 못 바꾼다 (read_at 만)", !!bTypeChange.error, `(${bTypeChange.error?.code})`);
+
+  // ── 모두·부서 멘션 (20260930090000) — 임시 부서: 본부 P → 팀 T. B·C 는 T, D 는 P 소속. C 는 채널 X 멤버가 아니다 ──
+  const { data: company } = await admin.from("org_units").select("id").eq("kind", "company").single();
+  const P = await admin.from("org_units").insert({ name: `알림검사본부-${run}`, kind: "hq", parent_id: company.id }).select("id, channel_id").single();
+  if (P.error) throw P.error;
+  made.units.unshift(P.data.id);
+  made.channels.push(P.data.channel_id);
+  const T = await admin.from("org_units").insert({ name: `알림검사팀-${run}`, kind: "team", parent_id: P.data.id }).select("id, channel_id").single();
+  if (T.error) throw T.error;
+  made.units.unshift(T.data.id); // 지울 때 팀부터
+  made.channels.push(T.data.channel_id);
+  for (const [u, unit] of [[B, T], [C, T], [D, P]]) {
+    const { error } = await admin.from("profiles").update({ org_unit_id: unit.data.id }).eq("id", u.id);
+    if (error) throw error;
+  }
+  const g1 = await send(A, X.data.id, "@all-members-in-channel 모두 보세요");
+  n = await notesFor(g1.id);
+  check("@모두 는 이 채널 멤버 전체(보낸 사람·채널 밖 사람 빼고)에게 mention", n[B.id] === "mention" && n[D.id] === "mention" && !n[A.id] && !n[C.id], `(${JSON.stringify(n)})`);
+  const g2 = await send(A, X.data.id, `@org-${P.data.id} 본부 공지`);
+  n = await notesFor(g2.id);
+  check("@부서 는 그 부서와 하위 부서 소속 가운데 이 채널 멤버에게만", n[B.id] === "mention" && n[D.id] === "mention" && !n[C.id] && Object.keys(n).length === 2, `(${JSON.stringify(n)})`);
+  const g3 = await send(A, X.data.id, `@org-${T.data.id} 팀만`);
+  n = await notesFor(g3.id);
+  check("하위 부서를 부르면 상위 부서 사람은 받지 않는다", n[B.id] === "mention" && Object.keys(n).length === 1, `(${JSON.stringify(n)})`);
+  const g4 = await send(A, X.data.id, `@all-members-in-channel @org-${P.data.id} @${B.handle} 겹침`);
+  const { count: dup } = await admin.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", B.id).eq("message_id", g4.id);
+  check("사람·모두·부서로 여러 번 불려도 알림은 하나", dup === 1, `(${dup}건)`);
+  const g5 = await send(A, X.data.id, `메일 x@org-${P.data.id} 모양`);
+  check("앞이 글자인 @org- 는 멘션이 아니다", Object.keys(await notesFor(g5.id)).length === 0);
 } catch (e) {
   results.push(`FAIL  검사 오류: ${e.message ?? e}`);
 } finally {
   for (const { sb, channel } of made.realtime) await sb.removeChannel(channel);
   const errors = [];
+  for (const id of made.units) {
+    // 부서 채널은 부서가 가리키므로(restrict) 부서를 먼저 지운다. 소속은 사용자를 지울 때 사라지지만, 먼저 비운다
+    await admin.from("profiles").update({ org_unit_id: null }).eq("org_unit_id", id);
+    const { error } = await admin.from("org_units").delete().eq("id", id);
+    if (error) errors.push(error.message);
+  }
   if (made.channels.length) {
     const { error } = await admin.from("channels").delete().in("id", made.channels);
     if (error) errors.push(error.message);
@@ -149,7 +184,7 @@ try {
     const { error } = await admin.auth.admin.deleteUser(id);
     if (error) errors.push(error.message);
   }
-  console.log(errors.length ? `정리 실패: ${errors.join(" / ")}` : `정리: 사용자 ${made.users.length}명, 채널 ${made.channels.length}개`);
+  console.log(errors.length ? `정리 실패: ${errors.join(" / ")}` : `정리: 사용자 ${made.users.length}명, 채널 ${made.channels.length}개, 부서 ${made.units.length}개`);
 }
 
 console.log(results.join("\n"));
