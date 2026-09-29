@@ -41,13 +41,6 @@
   white-space: nowrap;
 }
 
-.viewer {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--muted);
-}
 
 .emptyWeek {
   margin: 0;
@@ -354,7 +347,6 @@
 .field select,
 .field textarea,
 .roomBoardHead input,
-.viewer select,
 .dialog input {
   font: inherit;
   font-weight: 400;

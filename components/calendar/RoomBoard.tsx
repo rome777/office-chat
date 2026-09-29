@@ -22,15 +22,23 @@ export default function RoomBoard({
   version: number;
 }) {
   const [busy, setBusy] = useState<Record<string, BusySlot[]>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!date) return;
     let alive = true;
     const from = fromKstInput(date, "00:00");
     const to = addDays(from, 1);
-    void Promise.all(rooms.map((r) => roomBusy(r.id, from, to))).then((all) => {
-      if (alive) setBusy(Object.fromEntries(rooms.map((r, i) => [r.id, all[i]])));
-    });
+    void Promise.all(rooms.map((r) => roomBusy(r.id, from, to))).then(
+      (all) => {
+        if (!alive) return;
+        setBusy(Object.fromEntries(rooms.map((r, i) => [r.id, all[i]])));
+        setError(null);
+      },
+      (e: unknown) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      },
+    );
     return () => {
       alive = false;
     };
@@ -50,6 +58,10 @@ export default function RoomBoard({
         <span>{String(HOUR_START).padStart(2, "0")}:00</span>
         <span>{HOUR_END}:00</span>
       </div>
+      {error && <p className={s.error}>예약 현황을 불러오지 못했습니다: {error}</p>}
+      {rooms.length === 0 && (
+        <p className={s.hint}>등록된 회의실이 없습니다. 회의실은 관리자가 넣습니다 (시드 데이터).</p>
+      )}
       <ul className={s.roomList}>
         {rooms.map((r) => {
           const slots = busy[r.id] ?? [];
