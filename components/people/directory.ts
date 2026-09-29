@@ -1,7 +1,10 @@
 // ② 조직도 조회 (Supabase `profiles`). DM·캘린더·채널 정보가 이 함수로 사람을 찾는다.
+// 멘션을 "@이름" 으로 보여 줄 이름표(getMentionLabels·useMentionLabels)도 여기서 만든다 (① 채팅·③ 알림·② 검색이 같이 쓴다).
 // profiles 는 로그인한 사람이면 모두 읽을 수 있다 (TECH_SPEC 5절).
 
+import { useSyncExternalStore } from "react";
 import type { Person } from "@/lib/types/people";
+import { mentionLabels } from "@/lib/mentions";
 import { getSupabase } from "@/lib/supabase";
 
 export const MAX_RESULTS = 20;
@@ -54,6 +57,42 @@ export async function getPeople(ids: string[]): Promise<Person[]> {
   if (error) throw new Error(error.message);
   const byId = new Map(((data ?? []) as Person[]).map((p) => [p.id, p]));
   return unique.map((id) => byId.get(id) ?? unknownPerson(id));
+}
+
+/** 멘션 표시용 handle(소문자) → 이름 (회사 전체, lib/mentions). 채널을 나간 사람을 부른 멘션도 이름으로 보인다 */
+export async function getMentionLabels(): Promise<Map<string, string>> {
+  return mentionLabels(await directory());
+}
+
+// 화면 전체가 이름표 하나를 나눠 쓴다 (메시지마다 따로 받지 않는다). 명단 캐시와 같은 주기로 새로 받는다
+const EMPTY: ReadonlyMap<string, string> = new Map();
+let labelsNow: ReadonlyMap<string, string> = EMPTY;
+let labelsAt = 0;
+const labelListeners = new Set<() => void>();
+
+function refreshLabels() {
+  if (Date.now() - labelsAt < CACHE_MS) return;
+  labelsAt = Date.now();
+  getMentionLabels().then(
+    (m) => {
+      labelsNow = m;
+      labelListeners.forEach((fn) => fn());
+    },
+    () => {
+      labelsAt = 0; // 실패하면 다음에 다시
+    },
+  );
+}
+
+function subscribeLabels(fn: () => void) {
+  labelListeners.add(fn);
+  refreshLabels();
+  return () => void labelListeners.delete(fn);
+}
+
+/** getMentionLabels 의 React 판. 명단을 받기 전에는 빈 Map (그동안은 저장된 글자 그대로 보인다) */
+export function useMentionLabels(): ReadonlyMap<string, string> {
+  return useSyncExternalStore(subscribeLabels, () => labelsNow, () => EMPTY);
 }
 
 export function unknownPerson(id: string): Person {

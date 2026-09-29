@@ -176,7 +176,6 @@ function PersonRow({
           {person.title && <span className={s.title}>{person.title}</span>}
           {role && <span className={s.role}>{role}</span>}
         </span>
-        <span className={s.handle}>@{person.handle}</span>
       </span>
       {isMe ? (
         <span className={s.me}>나</span>

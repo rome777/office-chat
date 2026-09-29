@@ -1,6 +1,7 @@
 // ① 메시지 한 건
 
 import { formatBytes } from "@/lib/attachments";
+import { useMentionLabels } from "@/components/people/directory";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
 import AttachmentView from "./AttachmentView";
 import SafeText from "./SafeText";
@@ -37,6 +38,7 @@ export function MessageItem({
   /** 주면 스레드 버튼을 보인다 (채널 본문의 최상위 메시지만. 스레드 패널 안에서는 주지 않는다) */
   onOpenThread?: () => void;
 }) {
+  const names = useMentionLabels(); // 멘션을 아이디 대신 이름으로 (lib/mentions)
   return (
     <article
       data-message-id={message.id}
@@ -53,7 +55,7 @@ export function MessageItem({
       </div>
       {message.body && (
         <p className={s.body}>
-          <SafeText text={message.body} mentions={{ me: myHandle, handles }} />
+          <SafeText text={message.body} mentions={{ me: myHandle, handles, names }} />
         </p>
       )}
       {files && files.length > 0 && <AttachmentView files={files} />}
@@ -82,6 +84,7 @@ export function PendingItem({
   onRetry: () => void;
   onDiscard: () => void;
 }) {
+  const names = useMentionLabels();
   return (
     <article className={`${s.msg} ${s.mine} ${s[message.status]}`}>
       <div className={s.meta}>
@@ -92,7 +95,7 @@ export function PendingItem({
       </div>
       {message.body && (
         <p className={s.body}>
-          <SafeText text={message.body} mentions={{ me: myHandle }} />
+          <SafeText text={message.body} mentions={{ me: myHandle, names }} />
         </p>
       )}
       {message.file && (

@@ -26,9 +26,10 @@ export default function SafeText({
   text: string;
   /**
    * 주면 `@handle` 을 강조한다. `handles` 를 주면 그 안에 있는 것(채널 멤버)만 강조한다.
-   * `me` 와 같으면 나를 부른 것으로 더 눈에 띄게 한다. 대소문자는 가리지 않는다
+   * `me` 와 같으면 나를 부른 것으로 더 눈에 띄게 한다. 대소문자는 가리지 않는다.
+   * `names`(handle → 이름, lib/mentions)를 주면 아이디 대신 `@이름` 으로 보여 준다 — 멤버가 아니어도 이름으로, 강조만 하지 않는다
    */
-  mentions?: { me?: string; handles?: ReadonlySet<string> };
+  mentions?: { me?: string; handles?: ReadonlySet<string>; names?: ReadonlyMap<string, string> };
 }) {
   const out: ReactNode[] = [];
   let last = 0;
@@ -50,11 +51,18 @@ export default function SafeText({
       last = start + trimmed.length;
     } else if (mention && mentions) {
       const name = mention.slice(1).toLowerCase();
-      if (mentions.handles && !mentions.handles.has(name)) continue; // 멤버가 아니면 글자 그대로
+      const label = mentions.names?.get(name);
+      const shown = label ? `@${label}` : whole;
+      if (mentions.handles && !mentions.handles.has(name)) {
+        if (!label) continue; // 멤버가 아니고 모르는 사람이면 글자 그대로
+        out.push(text.slice(last, start), shown); // 멤버가 아니면 이름으로만 (강조 없음)
+        last = start + whole.length;
+        continue;
+      }
       out.push(text.slice(last, start));
       out.push(
         <span key={start} className={`${s.mention} ${name === mentions.me?.toLowerCase() ? s.mentionMe : ""}`}>
-          {whole}
+          {shown}
         </span>,
       );
       last = start + whole.length;

@@ -3,9 +3,11 @@
 // ① 입력창. 첨부 버튼·@ 자동완성·말투 변환 미리보기가 여기에 붙는다.
 // 채널 입력창과 스레드 패널의 답글 입력창이 같이 쓴다 (답글은 첨부 없음).
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ATTACHMENT_ACCEPT, attachmentProblem, formatBytes } from "@/lib/attachments";
 import { TONE_MODES, type ToneMode } from "@/lib/tone";
+import { mentionLabels, storeMentions } from "@/lib/mentions";
+import { useMentionLabels } from "@/components/people/directory";
 import SafeText from "./SafeText";
 import MentionPicker, { filterMembers, mentionQueryAt } from "./MentionPicker";
 import type { Member } from "./useChannelMembers";
@@ -68,6 +70,10 @@ export default function Composer({
   // 첨부만 있고 글이 없어도 보낼 수 있다
   const canSend = draft.trim().length > 0 || file !== null;
   const candidates = mention ? filterMembers(members, mention.query, selfId) : [];
+  // 멘션 이름표: 회사 명부(동명이인은 "이름(부서)"), 받기 전에는 채널 멤버로. 넣을 때와 보낼 때 같은 이름표를 쓴다
+  const company = useMentionLabels();
+  const memberLabels = useMemo(() => mentionLabels(members), [members]);
+  const labels = company.size ? company : memberLabels;
 
   function updateMention(text: string, caret: number) {
     const found = mentionQueryAt(text, caret);
@@ -78,7 +84,7 @@ export default function Composer({
   function pickMention(m: Member) {
     if (!mention) return;
     const caret = mention.start + 1 + mention.query.length;
-    const insert = `@${m.handle} `;
+    const insert = `@${labels.get(m.handle.toLowerCase()) ?? m.display_name} `;
     const next = draft.slice(0, mention.start) + insert + draft.slice(caret);
     setDraft(next);
     setMention(null);
@@ -110,7 +116,8 @@ export default function Composer({
 
   function submit(body = draft) {
     if (!body.trim() && !file) return;
-    onSend(body, file ?? undefined);
+    // 입력창의 "@이름" 을 저장용 "@아이디" 로 (DB 트리거가 아이디로 멘션 알림을 만든다). 명부를 늦게 받았을 때를 위해 멤버 이름표로도 한 번 더
+    onSend(storeMentions(storeMentions(body, labels), memberLabels), file ?? undefined);
     reset();
   }
 

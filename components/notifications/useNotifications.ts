@@ -16,6 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import type { AppNotification, NotificationType } from "@/lib/types/notification";
 import { newClientId } from "@/components/chat/useMessages";
+import { getMentionLabels } from "@/components/people/directory";
+import { showMentions } from "@/lib/mentions";
 
 const LIST_SIZE = 50;
 const PREVIEW_CHARS = 80;
@@ -88,6 +90,8 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
     ? await supabase.from("profiles").select("id, display_name").in("id", authorIds)
     : { data: [] as { id: string; display_name: string }[] };
   const nameById = new Map((people ?? []).map((p) => [p.id, p.display_name]));
+  // 본문의 "@아이디" 는 "@이름" 으로 (토스트·브라우저 알림도 이 미리보기를 쓴다). 명부를 못 받으면 글자 그대로
+  const labels = await getMentionLabels().catch(() => new Map<string, string>());
 
   return list.map((n) => {
     if (n.event_id) {
@@ -106,7 +110,7 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
     const ch = n.channel_id ? chById.get(n.channel_id) : undefined;
     const author = m ? (m.author ?? (m.user_id ? nameById.get(m.user_id) : undefined) ?? "알 수 없음") : "알 수 없음";
     const where = ch?.type === "dm" ? "" : ch?.name ? ` · #${ch.name}` : "";
-    const body = m ? m.body.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS) || "(첨부)" : "볼 수 없는 메시지입니다";
+    const body = m ? showMentions(m.body, labels).replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS) || "(첨부)" : "볼 수 없는 메시지입니다";
     return { ...n, title: `${author}${where}`, preview: body, parentId: m?.parent_id ?? null };
   });
 }

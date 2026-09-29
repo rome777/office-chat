@@ -9,6 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AiError, complete } from "@/lib/ai/openai";
 import { logUsage, overLimit } from "@/lib/ai/usage";
 import { getServerSupabase } from "@/lib/supabase-server";
+import { mentionLabels, showMentions } from "@/lib/mentions";
 
 const MAX_MESSAGES = 200;
 const DEFAULT_RECENT = 50;
@@ -89,10 +90,13 @@ export async function POST(request: NextRequest) {
     ? await supabase.from("profiles").select("id, display_name").in("id", authorIds)
     : { data: [] as { id: string; display_name: string }[] };
   const names = new Map((people ?? []).map((p) => [p.id, p.display_name]));
+  // 본문의 "@아이디" 는 "@이름" 으로 보낸다 — 요약에 아이디가 섞여 나오지 않게 (lib/mentions)
+  const { data: everyone } = await supabase.from("profiles").select("handle, display_name, department").limit(1000);
+  const labels = mentionLabels(everyone ?? []);
   const lines = messages.map((m) => {
     const who = m.author ?? (m.user_id ? names.get(m.user_id) : undefined) ?? "알 수 없음";
     const reply = m.parent_id ? ` (↳ ${m.parent_id} 에 답글)` : "";
-    return `[${m.id}] ${who} ${hhmm(m.created_at)}${reply}: ${m.body.replace(/\s+/g, " ").slice(0, 500)}`;
+    return `[${m.id}] ${who} ${hhmm(m.created_at)}${reply}: ${showMentions(m.body, labels).replace(/\s+/g, " ").slice(0, 500)}`;
   });
   const userPrompt = `<대화>\n${lines.join("\n")}\n</대화>\n위 대화를 요약해 JSON 으로 답하라.`;
 
