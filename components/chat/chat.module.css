@@ -169,6 +169,9 @@
   border-radius: 8px;
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
   z-index: 5;
+  /* 모두·부서까지 10줄 — 낮은 창에서 위로 넘치지 않게 */
+  max-height: min(340px, 50vh);
+  overflow-y: auto;
 }
 
 .mentionPicker li {

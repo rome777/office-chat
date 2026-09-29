@@ -33,18 +33,24 @@ export function channelGroups(members: Member[], units: readonly MentionUnit[], 
   return [{ kind: "group", key: ALL_TOKEN, token: ALL_TOKEN, label: ALL_LABEL, count: others.length, note: "이 채널 전체" }, ...groups];
 }
 
-export function filterMentions(members: Member[], groups: MentionItem[], query: string, selfId: string | null, limit = 8): MentionItem[] {
+/** @ 만 쳤을 때 모두 다음에 먼저 보일 부서 수 (사람에게 밀려 부서가 안 보이지 않게) */
+const GROUPS_FIRST = 3;
+
+export function filterMentions(members: Member[], groups: MentionItem[], query: string, selfId: string | null, limit = 10): MentionItem[] {
   const q = query.toLowerCase();
   const starts = (name: string) => Number(!name.toLowerCase().startsWith(q));
+  const byStart = (name: (it: MentionItem) => string) => (a: MentionItem, b: MentionItem) => starts(name(a)) - starts(name(b));
   const people: MentionItem[] = members
     .filter((m) => m.id !== selfId)
     .filter((m) => !q || [m.display_name, m.department, m.title].some((v) => (v ?? "").toLowerCase().includes(q)))
     .map((m) => ({ kind: "person", key: m.id, member: m }));
   const matched = groups.filter((g) => g.kind === "group" && (!q || g.label.toLowerCase().includes(q)));
-  // 찾는말이 없으면 사람을 먼저 (모두는 맨 위 하나만), 있으면 이름이 그 말로 시작하는 것부터
-  const all = q ? [...people, ...matched] : [...matched.slice(0, 1), ...people, ...matched.slice(1)];
-  const name = (it: MentionItem) => (it.kind === "person" ? it.member.display_name : it.label);
-  return (q ? all.sort((a, b) => starts(name(a)) - starts(name(b))) : all).slice(0, limit);
+  // 찾는말이 없으면 모두 → 부서 몇 개 → 사람. 있으면 맞는 부서를 먼저(수가 적고, 부서 이름을 쳤다면 부서를 찾는 것), 그다음 사람.
+  // 전에는 사람을 먼저 두어 "@" 만 치면 부서가 한 줄도 안 보였다 (2026-09-30)
+  if (!q) return [...matched.slice(0, 1 + GROUPS_FIRST), ...people, ...matched.slice(1 + GROUPS_FIRST)].slice(0, limit);
+  const groupName = (it: MentionItem) => (it.kind === "group" ? it.label : "");
+  const personName = (it: MentionItem) => (it.kind === "person" ? it.member.display_name : "");
+  return [...matched.sort(byStart(groupName)), ...people.sort(byStart(personName))].slice(0, limit);
 }
 
 export default function MentionPicker({
