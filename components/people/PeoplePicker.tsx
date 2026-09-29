@@ -1,7 +1,7 @@
 "use client";
 
 // ② 사람 찾기. 이름·부서로 찾아 여러 명을 고른다 (캘린더 참석자, DM 상대, 채널 멤버 추가에서 쓴다).
-// 한 명만 고를 때는 max={1}.
+// 한 명만 고를 때는 max={1}. 뺄 수 없는 사람(예: 회의를 만든 나)은 fixed 로 맨 앞에 × 없이 보인다.
 
 import { useEffect, useId, useState } from "react";
 import type { Person } from "@/lib/types/people";
@@ -12,6 +12,7 @@ export default function PeoplePicker({
   value,
   onChange,
   exclude = [],
+  fixed = [],
   max,
   placeholder = "이름·부서로 찾기",
 }: {
@@ -19,6 +20,8 @@ export default function PeoplePicker({
   onChange: (people: Person[]) => void;
   /** 결과에서 뺄 사람 (예: 나 자신) */
   exclude?: string[];
+  /** 맨 앞에 × 없이 보일 사람과 설명 (예: 회의를 만든 나 — DB 가 항상 참석자로 넣으므로 뺄 수 있게 보이면 안 된다) */
+  fixed?: { person: Person; note: string }[];
   max?: number;
   placeholder?: string;
 }) {
@@ -27,7 +30,7 @@ export default function PeoplePicker({
   const listId = useId();
   const full = max !== undefined && value.length >= max;
   // 배열은 렌더마다 새로 만들어지므로 글자로 바꿔 비교한다 (효과가 끝없이 다시 돌지 않게)
-  const hiddenKey = [...exclude, ...value.map((p) => p.id)].join(",");
+  const hiddenKey = [...exclude, ...fixed.map((f) => f.person.id), ...value.map((p) => p.id)].join(",");
 
   useEffect(() => {
     let alive = true;
@@ -53,8 +56,14 @@ export default function PeoplePicker({
 
   return (
     <div className={s.picker}>
-      {value.length > 0 && (
+      {(value.length > 0 || fixed.length > 0) && (
         <ul className={s.chips} aria-label="고른 사람">
+          {fixed.map(({ person, note }) => (
+            <li key={person.id} className={`${s.chip} ${s.fixedChip}`}>
+              {person.display_name}
+              <span className={s.chipNote}>{note}</span>
+            </li>
+          ))}
           {value.map((p) => (
             <li key={p.id} className={s.chip}>
               {p.display_name}

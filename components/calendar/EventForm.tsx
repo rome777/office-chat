@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { Room } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
 import PeoplePicker from "@/components/people/PeoplePicker";
+import { getPeople } from "@/components/people/directory";
 import {
   DESCRIPTION_MAX,
   RoomConflictError,
@@ -52,6 +53,18 @@ export default function EventForm({
   const [endTime, setEndTime] = useState(end.time);
   const [roomId, setRoomId] = useState(editing?.room_id ?? "");
   const [people, setPeople] = useState<Person[]>(initialAttendees);
+  // 참석자 칸 맨 앞에 보일 나 (만든 사람). 명부는 캐시돼 있어 바로 온다
+  const [me, setMe] = useState<Person | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getPeople([myId]).then(
+      ([p]) => alive && setMe(p ?? null),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [myId]);
   const [busy, setBusy] = useState<BusySlot[]>([]);
   const [busyError, setBusyError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -204,7 +217,8 @@ export default function EventForm({
 
         <div className={s.field}>
           <span>참석자</span>
-          <PeoplePicker value={people} onChange={setPeople} exclude={[myId]} />
+          {/* 만든 사람은 DB(create_event)가 항상 참석자로 넣는다 → × 없는 이름표로 보여 준다 */}
+          <PeoplePicker value={people} onChange={setPeople} exclude={[myId]} fixed={me ? [{ person: me, note: "· 만든 사람" }] : []} />
         </div>
 
         <label className={s.field}>

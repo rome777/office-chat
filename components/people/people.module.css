@@ -29,6 +29,16 @@
   font-size: 14px;
 }
 
+/* 뺄 수 없는 사람: × 자리가 없으므로 오른쪽 여백을 왼쪽과 맞춘다 */
+.fixedChip {
+  padding-right: 10px;
+}
+
+.chipNote {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .chip button {
   background: none;
   border: none;
