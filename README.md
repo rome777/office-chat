@@ -100,6 +100,14 @@ npm run check:db
 npm run check:attach
 ```
 
+로컬에서 여러 계정으로 시험하려면 시연 계정을 만듭니다. `.env.local` 에 `SEED_PASSWORD=<8자 이상>` 을 넣고 실행하면
+`a@example.com`(사용자A) · `b@example.com`(사용자B) · `admin@example.com`(관리자) · `c@example.com`(비회원C) 이 생깁니다.
+가입 확인 메일 없이 바로 로그인할 수 있고, 여러 번 돌려도 됩니다.
+
+```bash
+npm run seed:users
+```
+
 `check:step1` 은 Step 1 실시간 채팅(익명 `#일반`), `check:db` 는 DB 권한(비회원 거부, DM, 관리자, 회의실 이중 예약 등 48개), `check:attach` 는 파일 첨부(형식·크기·권한 20개, `npm run dev` 를 띄운 채로)를 확인합니다.
 
 ## 개발 문서
