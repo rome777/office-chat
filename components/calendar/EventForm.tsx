@@ -1,6 +1,7 @@
 "use client";
 
-// ② 회의 만들기·고치기. 회의실을 고르면 그날 예약된 시간대를 보여 준다 (남의 회의 내용은 없이).
+// ② 회의실 예약 폼 (예전 "회의 만들기" — 2026-09-30 일정 개편 뒤 회의실 예약 메뉴 /rooms 에서 쓴다).
+// 회의실을 고르면 그날 예약된 시간대를 보여 준다 (남의 회의 내용은 없이). 저장하면 유형 "회의" 일정이 된다.
 
 import { useEffect, useState } from "react";
 import type { Room } from "@/lib/types/calendar";
@@ -31,6 +32,8 @@ export default function EventForm({
   editing,
   initialAttendees,
   defaultDate,
+  defaultRoomId,
+  heading = "회의 만들기",
   onClose,
   onSaved,
 }: {
@@ -40,6 +43,10 @@ export default function EventForm({
   editing?: EventWithAttendees;
   initialAttendees: Person[];
   defaultDate: string;
+  /** 새로 만들 때 미리 골라 둘 회의실 */
+  defaultRoomId?: string;
+  /** 새로 만들 때의 제목 (고치기는 "회의 고치기") */
+  heading?: string;
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
@@ -51,7 +58,7 @@ export default function EventForm({
   const [date, setDate] = useState(start.date);
   const [startTime, setStartTime] = useState(start.time);
   const [endTime, setEndTime] = useState(end.time);
-  const [roomId, setRoomId] = useState(editing?.room_id ?? "");
+  const [roomId, setRoomId] = useState(editing?.room_id ?? defaultRoomId ?? "");
   const [people, setPeople] = useState<Person[]>(initialAttendees);
   // 참석자 칸 맨 앞에 보일 나 (만든 사람). 명부는 캐시돼 있어 바로 온다
   const [me, setMe] = useState<Person | null>(null);
@@ -153,7 +160,7 @@ export default function EventForm({
         className={s.dialog}
         role="dialog"
         aria-modal="true"
-        aria-label={editing ? "회의 고치기" : "회의 만들기"}
+        aria-label={editing ? "회의 고치기" : heading}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.key === "Escape" && onClose()}
         onSubmit={(e) => {
@@ -161,7 +168,7 @@ export default function EventForm({
           if (!saving) void save();
         }}
       >
-        <h2>{editing ? "회의 고치기" : "회의 만들기"}</h2>
+        <h2>{editing ? "회의 고치기" : heading}</h2>
 
         <label className={s.field}>
           <span>제목</span>

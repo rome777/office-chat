@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Room } from "@/lib/types/calendar";
 import { showMentions } from "@/lib/mentions";
 import RoomBoard from "@/components/calendar/RoomBoard";
+import { KIND_LABEL } from "@/components/calendar/kinds"; // ② 일정 유형 이름 (2026-10-01)
 import { listMyEvents, listRooms, type EventWithAttendees } from "@/components/calendar/source";
 import { addDays, formatKstTime, kstDateKey, startOfKstDay } from "@/components/calendar/time";
 import { useSelf } from "@/components/chat/useSelf";
@@ -166,7 +167,7 @@ export default function Dashboard() {
           </span>
           <ArrowIcon size={18} />
         </Link>
-        <Link href="/calendar#rooms" className={`${s.card} ${s.green}`}>
+        <Link href="/rooms" className={`${s.card} ${s.green}`}>
           <span className={s.cardIcon}>
             <RoomIcon size={22} />
           </span>
@@ -205,7 +206,7 @@ export default function Dashboard() {
           {events === null ? (
             <p className={s.empty}>불러오는 중…</p>
           ) : events.length === 0 ? (
-            <p className={s.empty}>오늘 잡힌 회의가 없습니다.</p>
+            <p className={s.empty}>오늘 잡힌 일정이 없습니다.</p>
           ) : (
             <ul className={s.schedule}>
               {events.map((e) => {
@@ -217,12 +218,12 @@ export default function Dashboard() {
                   <li key={e.id}>
                     <Link href={`/calendar?e=${encodeURIComponent(e.id)}`} className={`${s.event} ${state === "종료" ? s.past : ""}`}>
                       <span className={s.eventTime}>
-                        {formatKstTime(e.starts_at)} – {formatKstTime(e.ends_at)}
+                        {e.all_day ? "종일" : `${formatKstTime(e.starts_at)} – ${formatKstTime(e.ends_at)}`}
                       </span>
                       <span className={s.eventText}>
                         <strong>{e.title}</strong>
                         <span>
-                          {roomName(e.room_id) || "회의실 없음"}
+                          {roomName(e.room_id) || e.location || KIND_LABEL[e.kind]}
                           {mine?.response === "pending" && " · 응답 전"}
                           {mine?.response === "declined" && " · 불참"}
                         </span>
@@ -253,9 +254,9 @@ export default function Dashboard() {
                 <PlusIcon size={24} />
               </span>
               <strong>일정 추가</strong>
-              <span>새 회의를 잡으세요</span>
+              <span>새 일정을 만드세요</span>
             </Link>
-            <Link href="/calendar?new=1#rooms" className={`${s.quickItem} ${s.green}`}>
+            <Link href="/rooms?new=1" className={`${s.quickItem} ${s.green}`}>
               <span className={s.quickIcon}>
                 <RoomIcon size={24} />
               </span>

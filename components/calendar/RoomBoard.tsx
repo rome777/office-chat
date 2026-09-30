@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { Room } from "@/lib/types/calendar";
 import { roomBusy, type BusySlot } from "./source";
 import { addDays, formatKstTime, fromKstInput, kstMinuteOfDay } from "./time";
-import { HOUR_END, HOUR_START } from "./WeekGrid";
+import { HOUR_END, HOUR_START } from "./TimeGrid";
 import s from "./calendar.module.css";
 
 export default function RoomBoard({

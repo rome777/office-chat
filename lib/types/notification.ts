@@ -19,6 +19,8 @@ export type AppNotification = {
   event_id: string | null;
   /** 알림을 일으킨 사람. 지금은 회의 불참(event_decline)에서 불참한 사람만 채운다 */
   actor_id: string | null;
+  /** 시작 전 알림(event_reminder)이면 몇 분 전인지 (2026-09-30). 그 밖에는 null */
+  remind_minutes?: number | null;
   created_at: string;
   read_at: string | null;
 };
