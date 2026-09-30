@@ -583,7 +583,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ org/                        ③ 조직도 페이지 (2026-09-30) — OrgPage · OrgDiagram(다이어그램) · OrgTree(계층 목록) · orgSource(org_units)
 │  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
 │  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins
-│  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
+│  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인) · signUp(가입 처리 — 2026-09-30 화면에서 빼고 따로 남김, 지금은 안 씀)
 │  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu · MyMenu(내 메뉴 — 위 막대 내 이름과 왼쪽 메뉴 내 카드가 같이 씀, 2026-09-30)
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
@@ -693,7 +693,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
-| `components/auth/` | 이메일 로그인·가입 화면, 입장 관문 (②) |
+| `components/auth/` | 이메일 로그인 화면, 가입 처리(`signUp.ts`, 화면에서 뺌), 입장 관문 (②) |
 | `components/shell/` | 공통 틀 (2026-09-30 개편: 대시보드 `/`·채팅 `/chat`·캘린더가 같은 메뉴·위 막대·오른쪽 패널을 쓴다) — 7절 "화면 틀·대시보드" |
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
 
@@ -754,6 +754,7 @@ npx supabase db push --db-url $env:DBURL
 - **`supabase db query` 는 한 번에 SQL 문장 하나만 받는다**: 여러 문장을 넣으면 `cannot insert multiple commands into a prepared statement`. 마이그레이션을 미리 시험하려면 트랜잭션으로 묶어 되돌릴 수 있는 Postgres 클라이언트가 필요하다 (2026-09-29 에는 임시 폴더에 `pg` 를 깔아 `begin; …; rollback;` 으로 시험했다). Docker 가 없어 로컬 Supabase(`supabase start`)는 못 띄운다.
 - **가입하면 "메일을 너무 자주 보냈습니다"(rate limit)로 막힌다**: 가입 확인 메일을 Supabase 기본 메일 서버로 보내는데, 시간당 보낼 수 있는 수가 아주 적다 (2026-09-29 로컬 시험 중 발생).
   시험 계정은 `npm run seed:company` 로 만든다 (메일을 보내지 않는다). 가입 화면 자체를 시험하려면 Supabase 대시보드 → Authentication → Email 에서 **Confirm email** 을 끈다 (끄면 확인 없이 아무 메일로나 가입된다).
+- **가입 탭은 화면에서만 뺐다 (2026-09-30)**: 가입 처리는 `components/auth/signUp.ts` 에 남겨 두었고(나중에 다시 열 수 있게, 사용자 요청) 가입 확인 링크 `app/auth/callback` 도 그대로다. 화면이 없어도 Supabase 는 anon 키로 `auth.signUp` 요청을 그대로 받는다 — 화면에서 숨기는 것은 막는 것이 아니다. 가입 자체를 막으려면 Supabase 대시보드 → Authentication → Sign In / Providers 의 "Allow new users to sign up" 을 끈다 (아직 끄지 않음). 로그인 카드 배치는 사용자가 고른 시안 C: 위 여백 76px(오른쪽 위 16px 에 테마 스위치), 로고 38px·슬로건 가운데, 슬로건↔이메일 칸 36px, 아래 36px (`auth.module.css`)
 - **supabase-js 요청은 `await` 나 `.then()` 을 붙여야 실제로 나간다**: `void supabase.rpc(...)` 처럼 결과를 버리면 요청을 **보내지 않는다** (쿼리 빌더는 then 이 불릴 때 실행된다). 2026-09-29 읽음 기록에서 화면만 바뀌고 DB 에 안 남는 것으로 발견했다. 결과가 필요 없어도 `.then(...)` 을 붙인다.
 - **로그인한 화면을 도구로 시험하려면**: service role 로 가상 사용자를 만들고 `generateLink`(magic link)의 `hashed_token` 을 `verifyOtp` 로 바꿔 세션을 얻는다. 그 세션을 `@supabase/ssr` 의 `setSession` 에 넣으면 브라우저에 넣을 로그인 쿠키(`sb-<ref>-auth-token`)가 나온다. 비밀번호는 쓰지 않는다. 끝나면 그 사용자의 메시지를 먼저 지우고 사용자를 지운다 (작성자 FK).
 - **Next.js 는 페이지를 이동할 때(`router.push`) 탭 제목을 다시 씌운다**: `document.title` 에 붙인 알림 수 `(N)` 이 이동할 때마다 사라진다 (2026-09-29). 알림 버튼이 1초마다 확인해서 빠졌으면 다시 붙인다.

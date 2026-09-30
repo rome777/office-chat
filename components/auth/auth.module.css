@@ -7,13 +7,15 @@
   padding: 16px;
 }
 
+/* 배치는 2026-09-30 사용자가 고른 시안 C: 위 76 · 옆 28 · 아래 36px. 위 여백에 테마 스위치(.themeCorner)가 들어간다 */
 .card {
+  position: relative;
   width: 100%;
   max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 28px;
+  padding: 76px 28px 36px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -42,33 +44,9 @@
   font-size: 14px;
 }
 
-.card .notice {
-  font-size: 14px;
-}
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-}
 
-.card .tab,
-.card .tabActive {
-  flex: 1;
-  background: none;
-  color: inherit;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 8px;
-  font-weight: 500;
-  opacity: 0.6;
-}
 
-.card .tabActive {
-  border-bottom-color: var(--accent);
-  opacity: 1;
-}
 
 .card button[type="submit"] {
   background: var(--primary);
@@ -79,18 +57,25 @@
   font-weight: 600;
 }
 
-/* 로고 아래 한 줄 — 브랜드 슬로건 */
+/* 라이트·다크 스위치 — 카드 오른쪽 위 모서리, 로고보다 위 */
+.themeCorner {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+/* 로고(38px)와 슬로건을 가운데로. 로고↔슬로건 14px, 슬로건↔이메일 칸 36px (카드 칸 사이 12 + 24) */
+.brandBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
 .card .slogan {
-  margin: -4px 0 4px;
   font-size: 14px;
   color: var(--muted);
   letter-spacing: 0.02em;
-}
-
-/* 제목 줄 — 왼쪽에 WorkOn 로고, 오른쪽에 라이트·다크 버튼 */
-.titleRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  text-align: center;
 }
