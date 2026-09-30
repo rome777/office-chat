@@ -4,9 +4,9 @@
 // 회사·사업부·본부는 카드, 팀은 알약. 아래가 모두 팀인 조직은 팀 알약을 그 밑에 세로로 쌓아 폭을 줄인다.
 // 선택한 조직까지의 선을 강조하고, 찾기 중이면 맞지 않는 조직을 흐리게 한다. 확대·축소·끌어서 이동.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrgUnit } from "@/lib/types/org";
-import { headcount, leaderOf, type OrgData } from "./orgSource";
+import { headcount, leaderOf, pathTo, type OrgData } from "./orgSource";
 import s from "./org.module.css";
 
 const PAD = 24;
@@ -17,9 +17,12 @@ const STACK_GAP = 8; // 팀 알약 사이
 const CARD = { company: { w: 240, h: 64 }, other: { w: 168, h: 60 } };
 const CHIP = { w: 144, h: 34 };
 const ZOOM_MIN = 0.4;
-const ZOOM_MAX = 1.6;
+const ZOOM_MAX = 2;
+const FIT_MAX = 1.5; // 칸에 맞출 때 최대 배율
+const FIT_PAD = 24; // 칸에 맞출 때 남길 여백(px)
 
-type Node = { unit: OrgUnit; x: number; y: number; w: number; h: number; chip: boolean };
+/** stack: 아래 조직(팀)을 세로로 쌓았다 */
+type Node = { unit: OrgUnit; x: number; y: number; w: number; h: number; chip: boolean; stack: boolean };
 type Seg = { d: string; from: string; to: string };
 
 /** 조직 나무를 자리 잡는다. 결과: 노드 자리, 연결선(부모·자식 id 와 함께), 전체 크기 */
@@ -66,14 +69,14 @@ function layout(org: OrgData) {
       let y = top + h + STACK_TOP;
       let prevBottom = top + h;
       c.forEach((k) => {
-        nodes.set(k.id, { unit: k, x: cx - CHIP.w / 2, y, w: CHIP.w, h: CHIP.h, chip: true });
+        nodes.set(k.id, { unit: k, x: cx - CHIP.w / 2, y, w: CHIP.w, h: CHIP.h, chip: true, stack: false });
         segs.push({ d: `M${cx} ${prevBottom} V${y}`, from: u.id, to: k.id });
         prevBottom = y + CHIP.h;
         y += CHIP.h + STACK_GAP;
       });
       bottom = Math.max(bottom, prevBottom);
     }
-    nodes.set(u.id, { unit: u, x: cx - w / 2, y: top, w, h, chip: isChip(u) });
+    nodes.set(u.id, { unit: u, x: cx - w / 2, y: top, w, h, chip: isChip(u), stack: c.length > 0 && stacks(u) });
     bottom = Math.max(bottom, top + h);
     return cx;
   };
@@ -87,14 +90,11 @@ function layout(org: OrgData) {
 export default function OrgDiagram({
   org,
   selected,
-  path,
   dimmed,
   onSelect,
 }: {
   org: OrgData;
   selected: string | null;
-  /** 맨 위부터 선택한 조직까지의 id */
-  path: ReadonlySet<string>;
   /** 찾기 중 맞지 않는 조직 (없으면 찾기 중이 아님) */
   dimmed: ReadonlySet<string> | null;
   onSelect: (unitId: string) => void;
@@ -105,19 +105,26 @@ export default function OrgDiagram({
   const touched = useRef(false); // 사용자가 확대·축소를 했으면 창 크기가 바뀌어도 맞추지 않는다
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
-  // 처음에는 칸 폭에 맞춘다 (전부 펼친 채로 한눈에)
+  // 칸의 가로·세로에 모두 들어가는 배율. 큰 화면에서는 100% 넘게 키운다 (칸만 커지고 그림이 작아 보이지 않게, 2026-09-30)
+  const fitZoom = useCallback(() => {
+    const el = box.current;
+    if (!el || !width || !height) return 1;
+    const z = Math.min((el.clientWidth - FIT_PAD) / width, (el.clientHeight - FIT_PAD) / height);
+    return Math.round(Math.max(ZOOM_MIN, Math.min(FIT_MAX, z)) * 100) / 100;
+  }, [width, height]);
+
+  // 처음과 창 크기가 바뀔 때마다 맞춘다. 사용자가 직접 확대·축소했으면 그 배율을 둔다
   useLayoutEffect(() => {
     const el = box.current;
-    if (!el || !width) return;
-    const fit = () => {
-      if (touched.current) return;
-      setZoom(Math.max(ZOOM_MIN, Math.min(1, (el.clientWidth - 8) / width)));
+    if (!el) return;
+    const refit = () => {
+      if (!touched.current) setZoom(fitZoom());
     };
-    fit();
-    const ro = new ResizeObserver(fit);
+    refit();
+    const ro = new ResizeObserver(refit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [width]);
+  }, [fitZoom]);
 
   // 선택한 조직이 화면 밖이면 가운데로 옮긴다 (목록에서 골랐을 때)
   useEffect(() => {
@@ -136,11 +143,30 @@ export default function OrgDiagram({
   };
   const fit = () => {
     touched.current = false;
-    const el = box.current;
-    if (el) setZoom(Math.max(ZOOM_MIN, Math.min(1, (el.clientWidth - 8) / width)));
+    setZoom(fitZoom());
   };
 
-  const lit = (seg: Seg) => path.has(seg.from) && path.has(seg.to);
+  // 선택한 조직까지의 강조선: 조각을 겹쳐 그리지 않고 회사부터 한 줄로 (2026-09-30 사용자 선택 "B. 끊김 없는 한 줄").
+  // 조각으로 그리면 꺾이는 곳마다 굵기가 바뀌고, 쌓인 팀은 본부 → 첫 팀 구간이 회색으로 남아 끊겨 보였다.
+  // 쌓인 팀은 본부 아래에서 고른 팀까지 곧게 내려간다 (위의 팀 알약 뒤로 지나간다)
+  const litPath = useMemo(() => {
+    if (!selected) return "";
+    const chain = pathTo(org, selected)
+      .map((u) => nodes.get(u.id))
+      .filter((n): n is Node => !!n);
+    let d = "";
+    for (let i = 1; i < chain.length; i++) {
+      const p = chain[i - 1];
+      const c = chain[i];
+      const px = p.x + p.w / 2;
+      const cx = c.x + c.w / 2;
+      const bottom = p.y + p.h;
+      d += p.stack
+        ? `M${px} ${bottom} V${c.y} `
+        : `M${px} ${bottom} V${bottom + GAP_Y / 2} H${cx} V${c.y} `;
+    }
+    return d.trim();
+  }, [org, selected, nodes]);
 
   return (
     <section className={s.diagram} aria-label="조직도 다이어그램">
@@ -169,11 +195,7 @@ export default function OrgDiagram({
               <path key={`${seg.from}-${seg.to}`} d={seg.d} />
             ))}
           </g>
-          <g className={s.edgesLit}>
-            {segs.filter(lit).map((seg) => (
-              <path key={`${seg.from}-${seg.to}`} d={seg.d} />
-            ))}
-          </g>
+          {litPath && <path className={s.edgeLit} d={litPath} />}
           {[...nodes.values()].map((n) => (
             <UnitNode
               key={n.unit.id}

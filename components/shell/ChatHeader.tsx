@@ -116,7 +116,7 @@ export default function ChatHeader() {
   );
 }
 
-/** 패널 버튼(③ 요약·할 일·잡무·채널 정보·조직도)을 "⋯" 안에 둔다 — 오른쪽 패널을 열면 채팅 칸이 좁아져서 */
+/** 패널 버튼(③ 요약·할 일·잡무·채널 정보)을 "⋯" 안에 둔다 — 오른쪽 패널을 열면 채팅 칸이 좁아져서 */
 function MoreMenu() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -133,7 +133,7 @@ function MoreMenu() {
   }, [open]);
   return (
     <div className={s.more} ref={box}>
-      <button type="button" className={s.members} aria-expanded={open} aria-label="채널 도구" title="요약 · 할 일 · 잡무 · 채널 정보 · 조직도" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className={s.members} aria-expanded={open} aria-label="채널 도구" title="요약 · 할 일 · 잡무 · 채널 정보" onClick={() => setOpen((v) => !v)}>
         ⋯
       </button>
       {open && (

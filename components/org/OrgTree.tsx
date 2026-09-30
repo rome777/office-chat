@@ -22,6 +22,7 @@ export default function OrgTree({
   onToggle,
   onExpandAll,
   onCollapseAll,
+  onClosePane,
 }: {
   org: OrgData;
   me: string | null;
@@ -35,6 +36,8 @@ export default function OrgTree({
   onToggle: (unitId: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
+  /** 목록 칸을 접는다 (다이어그램이 전체 폭) */
+  onClosePane: () => void;
 }) {
   const rows = useRef(new Map<string, HTMLDivElement>());
   const list = useRef<HTMLDivElement>(null);
@@ -103,6 +106,9 @@ export default function OrgTree({
         <button type="button" className="link" onClick={onCollapseAll}>
           모두 접기
         </button>
+        <button type="button" className={s.paneClose} onClick={onClosePane} aria-label="목록 칸 접기" title="목록 칸 접기">
+          접기 ▸
+        </button>
       </div>
       <div className={s.treeList} ref={list}>
         {unitRow(org.root, 0)}
@@ -122,7 +128,7 @@ function PersonRow({ person, unit, isMe }: { person: OrgMember; unit: OrgUnit; i
       onClick={() => openProfileCard(person.id)}
       aria-label={`${person.display_name} ${meta} — 프로필`}
     >
-      <PersonAvatar userId={person.id} name={person.display_name} size={24} />
+      <PersonAvatar userId={person.id} name={person.display_name} size={22} />
       <span className={s.personName}>{person.display_name}</span>
       <span className={s.meta}>{meta}</span>
     </button>
