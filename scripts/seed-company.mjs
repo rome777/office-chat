@@ -11,6 +11,9 @@
 //   조직을 넣으면 같은 이름의 비공개 채널이 생기고, 사람의 소속(profiles.org_unit_id)을 정하면
 //   그 조직과 모든 상위 조직의 채널에 자동으로 들어간다. 회사 채널은 #일반 이다.
 //
+// 연락처(profile_contacts)도 모두 채운다: 010-0000-1001 부터 차례로 (0000 국번은 쓰지 않는 번호라 실제 번호와 겹치지 않는다).
+// 이미 연락처가 있는 사람은 건드리지 않는다 (본인이 고친 번호를 지키려고). 연락처만 채우려면: npm run seed:company -- --contacts-only
+//
 // 실명·실제 사내 정보는 쓰지 않는다. 이름은 지어낸 것이고, example.com 은 예시용으로 예약된 도메인이라 실제 메일이 가지 않는다.
 import { createClient } from "@supabase/supabase-js";
 
@@ -314,6 +317,18 @@ async function seedPeople(units) {
   return { ids, created };
 }
 
+// 연락처가 없는 사람만 넣는다 (있으면 그대로 둔다). 회사 연락처라 공개로 넣는다
+async function seedContacts(ids) {
+  const existing = new Set(
+    must(await admin.from("profile_contacts").select("user_id").in("user_id", [...ids.values()])).map((r) => r.user_id),
+  );
+  const rows = PEOPLE.map((p, i) => ({ user_id: ids.get(p.handle), phone: `010-0000-${1001 + i}`, is_public: true })).filter(
+    (r) => r.user_id && !existing.has(r.user_id),
+  );
+  if (rows.length) must(await admin.from("profile_contacts").insert(rows));
+  return rows.length;
+}
+
 async function seedProjects(ids) {
   const out = new Map();
   for (const pj of PROJECTS) {
@@ -408,15 +423,26 @@ async function insertEvent(id, ids) {
   if (error) throw error;
 }
 
+// --contacts-only: 계정·채널·대화는 건드리지 않고 연락처만 채운다
+if (process.argv.includes("--contacts-only")) {
+  const ids = new Map(
+    must(await admin.from("profiles").select("id, handle").in("handle", PEOPLE.map((p) => p.handle))).map((r) => [r.handle, r.id]),
+  );
+  const added = await seedContacts(ids);
+  console.log(`연락처 ${added}명 새로 넣음 (직원 ${ids.size}명 가운데, 이미 있던 사람은 그대로)`);
+  process.exit(0);
+}
+
 await seedRooms();
 const units = await seedUnits();
 const { ids, created } = await seedPeople(units);
+const contacts = await seedContacts(ids);
 const projects = await seedProjects(ids);
 const messages = await seedChats(ids, units, projects);
 const event = await seedEvent(ids);
 
 console.log(`조직 ${UNITS.length}개 (부서 채널 ${UNITS.length - 1}개 + #일반)`);
-console.log(`직원 ${PEOPLE.length}명 (새로 만든 계정 ${created}명)`);
+console.log(`직원 ${PEOPLE.length}명 (새로 만든 계정 ${created}명), 연락처 ${contacts}명 새로 넣음`);
 console.log(`프로젝트 채널 ${PROJECTS.length}개, 샘플 메시지 ${messages}건 새로 넣음, 샘플 회의 ${event ? "새로 만듦" : "이미 있음"}`);
 console.log("\n로그인: <handle>@example.com + .env.local 의 SEED_PASSWORD (명단은 이 파일의 PEOPLE)");
 console.log("예) 백엔드팀 사원 이서연(sylee@example.com) → #일반·플랫폼사업부·개발본부·백엔드팀·프로젝트-모바일앱");

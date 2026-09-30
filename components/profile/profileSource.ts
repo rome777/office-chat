@@ -12,6 +12,20 @@ const BUCKET = "avatars";
 export const STATUS_MESSAGE_MAX = 60;
 export const PHONE_PATTERN = /^[0-9+() -]{0,20}$/; // DB 제약 profile_contacts_phone 과 같다
 
+/** 화면에서 저장할 수 있는 연락처: 빠짐없는 국내 번호 (010-1234-5678·01012345678·02-123-4567). 비우거나 덜 쓴 번호는 저장하지 않는다 (2026-09-30 사용자 결정) */
+export function normalizePhone(input: string): string | null {
+  const digits = input.replace(/[\s-]/g, "");
+  if (!/^0\d{8,10}$/.test(digits)) return null;
+  if (digits.startsWith("02")) {
+    const mid = digits.length === 9 ? 3 : 4; // 서울 02-123-4567 / 02-1234-5678
+    return `02-${digits.slice(2, 2 + mid)}-${digits.slice(2 + mid)}`;
+  }
+  if (digits.length < 10) return null;
+  if (digits.startsWith("010") && digits.length !== 11) return null; // 010 휴대폰은 늘 11자리 (010-1234-567 은 덜 쓴 번호)
+  const mid = digits.length === 10 ? 3 : 4; // 031-123-4567 / 010-1234-5678
+  return `${digits.slice(0, 3)}-${digits.slice(3, 3 + mid)}-${digits.slice(3 + mid)}`;
+}
+
 export const STATUS_LABEL: Record<DisplayStatus, string> = {
   online: "온라인",
   away: "자리 비움",

@@ -4,7 +4,7 @@
 // 2026-09-30 사용자와 정한 모양 (와이어프레임 5차 + 연락처 줄 정리):
 //   위: 사진 · 이름 · 부서·직급 · [사진 바꾸기]
 //   현재 상태: 버튼 3개(누르면 바로 저장) · 상태 메시지(제목 줄 오른쪽 [저장], Enter 도 됨, 비우고 저장하면 지움)
-//   기본 정보: 글자로만(인사 정보라 고칠 수 없음) + 맨 아래 연락처 — 연락처만 [수정] → [저장], 공개·비공개는 수정 중에만
+//   기본 정보: 글자로만(인사 정보라 고칠 수 없음) + 맨 아래 연락처 — 연락처만 [수정] → 빠짐없는 번호를 넣어야 [저장], 공개·비공개는 언제든 바로 저장
 //   계정 관리: 아이디 · 비밀번호 [변경] · [로그아웃]
 // 전체 [변경사항 저장] 버튼은 두지 않는다 — 부분마다 따로 저장된다.
 // "오프라인으로 표시"는 헤더의 내 메뉴에서만 고른다. 그 상태면 상태 버튼 셋이 모두 꺼지고 안내 줄이 뜬다.
@@ -19,9 +19,9 @@ import Avatar from "./Avatar";
 import AvatarDialog from "./AvatarDialog";
 import PasswordDialog from "./PasswordDialog";
 import {
-  PHONE_PATTERN,
   STATUS_LABEL,
   STATUS_MESSAGE_MAX,
+  normalizePhone,
   saveContact,
   updateMyProfile,
   useMyProfile,
@@ -68,8 +68,8 @@ export default function ProfilePanel() {
           <Row label="직급" value={profile.title ?? "—"} />
           <Row label="이메일" value={profile.email ?? "—"} />
         </dl>
-        <ContactRow key={`${contact.phone}|${contact.is_public}`} phone={contact.phone} isPublic={contact.is_public} />
-        <p className={s.note}>연락처만 직접 고칠 수 있어요. 나머지는 인사팀에 요청하세요.</p>
+        <ContactRow phone={contact.phone} isPublic={contact.is_public} />
+        <p className={s.note}>연락처 외 나머지는 인사팀에 요청하세요.</p>
       </section>
 
       <section className={s.section} aria-labelledby="profile-account">
@@ -191,36 +191,51 @@ function StatusSection({ status, message }: { status: Status; message: string })
   );
 }
 
-// 연락처: [수정]을 누르면 번호가 입력칸이 되고 버튼이 [저장]으로 바뀐다. 공개·비공개는 수정 중에만 고른다
+// 연락처: [수정]을 누르면 번호가 입력칸이 되고 버튼이 [저장]으로 바뀐다. 빠짐없는 번호를 넣어야만 [저장]이 눌린다.
+// 공개·비공개는 [수정]과 따로, 언제든 누르면 바로 저장된다 (2026-09-30 사용자 결정)
 function ContactRow({ phone, isPublic }: { phone: string; isPublic: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(phone);
-  const [pub, setPub] = useState(isPublic);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const valid = PHONE_PATTERN.test(draft.trim());
+  const normalized = normalizePhone(draft);
+  const canSave = !!normalized && normalized !== phone;
+
+  function start() {
+    setDraft(phone);
+    setEditing(true);
+    setError(null);
+  }
 
   function cancel() {
     setDraft(phone);
-    setPub(isPublic);
     setEditing(false);
     setError(null);
   }
 
-  async function onButton() {
-    if (!editing) {
-      setEditing(true);
-      setError(null);
-      return;
-    }
-    if (!valid) return setError("숫자·-·+·괄호·공백만 20자까지 쓸 수 있어요");
-    if (draft.trim() === phone && pub === isPublic) return setEditing(false); // 바꾼 것이 없으면 그냥 닫는다
+  async function save() {
+    if (!canSave || !normalized) return;
     setBusy(true);
     setError(null);
     try {
-      await saveContact({ phone: draft.trim(), is_public: pub }); // 저장하면 key 가 바뀌어 이 줄이 새로 그려진다
+      await saveContact({ phone: normalized, is_public: isPublic });
+      setEditing(false);
     } catch (e) {
       setError(`저장하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setPublic(v: boolean) {
+    if (v === isPublic) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveContact({ phone, is_public: v }); // 저장된 번호 그대로, 공개 여부만
+    } catch (e) {
+      setError(`바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
       setBusy(false);
     }
   }
@@ -230,14 +245,15 @@ function ContactRow({ phone, isPublic }: { phone: string; isPublic: boolean }) {
       <div className={s.row}>
         <span className={s.key}>
           연락처
-          <button
-            type="button"
-            className={`${s.btn} ${s.small} ${editing ? s.primary : ""}`}
-            onClick={() => void onButton()}
-            disabled={busy}
-          >
-            {busy ? "저장 중…" : editing ? "저장" : "수정"}
-          </button>
+          {editing ? (
+            <button type="button" className={`${s.btn} ${s.small} ${s.primary}`} onClick={() => void save()} disabled={busy || !canSave}>
+              {busy ? "저장 중…" : "저장"}
+            </button>
+          ) : (
+            <button type="button" className={`${s.btn} ${s.small}`} onClick={start} disabled={busy}>
+              수정
+            </button>
+          )}
         </span>
         {editing ? (
           <input
@@ -247,12 +263,12 @@ function ContactRow({ phone, isPublic }: { phone: string; isPublic: boolean }) {
             value={draft}
             placeholder="010-1234-5678"
             aria-label="연락처"
-            aria-invalid={!valid}
+            aria-invalid={draft.trim() !== "" && !normalized}
             autoFocus
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
-              if (e.key === "Enter") void onButton();
+              if (e.key === "Enter") void save();
               if (e.key === "Escape") cancel();
             }}
           />
@@ -260,18 +276,19 @@ function ContactRow({ phone, isPublic }: { phone: string; isPublic: boolean }) {
           <span className={s.value}>{phone || <span className={s.muted}>없음</span>}</span>
         )}
       </div>
+      {editing && !normalized && <p className={s.note}>010-1234-5678 처럼 번호를 끝까지 넣어야 저장할 수 있어요</p>}
       <div className={s.publicRow}>
-        <span className={s.note}>{pub ? "같은 회사 사람 모두에게 보여요" : "나와 관리자만 볼 수 있어요"}</span>
+        <span className={s.note}>{isPublic ? "같은 회사 사람 모두에게 보여요" : "나와 관리자만 볼 수 있어요"}</span>
         <span className={s.pair} role="radiogroup" aria-label="연락처 공개 여부">
           {[true, false].map((v) => (
             <button
               key={String(v)}
               type="button"
               role="radio"
-              aria-checked={pub === v}
-              className={`${s.chip} ${pub === v ? s.chipOn : ""}`}
-              disabled={!editing || busy}
-              onClick={() => setPub(v)}
+              aria-checked={isPublic === v}
+              className={`${s.chip} ${isPublic === v ? s.chipOn : ""}`}
+              disabled={busy}
+              onClick={() => void setPublic(v)}
             >
               {v ? "공개" : "비공개"}
             </button>
