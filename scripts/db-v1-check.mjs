@@ -81,7 +81,7 @@ try {
   const roleUp = await A.sb.from("profiles").update({ role: "admin" }).eq("id", A.id).select();
   check("본인 role 을 admin 으로 못 바꾼다", !!roleUp.error, `(${roleUp.error?.code})`);
   const nameUp = await A.sb.from("profiles").update({ display_name: "검사A2" }).eq("id", A.id).select();
-  check("본인 이름은 고칠 수 있다", nameUp.data?.length === 1, `(${nameUp.error?.code ?? "ok"})`);
+  check("본인 이름은 고칠 수 없다 (인사 정보, 20260930130000_my_profile)", nameUp.error?.code === "42501", `(${nameUp.error?.code ?? "ok"})`);
 
   // ── 채널·멤버십 ──
   const X = await A.sb.from("channels").insert({ name: `검사X-${run}`, type: "public" }).select().single();

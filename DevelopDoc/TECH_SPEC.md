@@ -95,7 +95,8 @@ erDiagram
 
 | 테이블 | 주요 컬럼 | 비고 |
 |---|---|---|
-| `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`(직급), `role`(`admin`·`member`), `org_unit_id`(소속, 2026-09-29) | 로그인한 사람은 모두 조회 가능 (조직도 검색). `role`·`org_unit_id` 는 본인이 못 바꾼다 |
+| `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`(직급), `role`(`admin`·`member`), `org_unit_id`(소속, 2026-09-29), `avatar`·`status`·`status_message`(내 프로필, 2026-09-30) | 로그인한 사람은 모두 조회 가능 (조직도 검색). **본인이 고칠 수 있는 것은 `avatar`·`status`·`status_message` 뿐** — 이름·아이디·부서·직급·`role`·`org_unit_id` 는 서버·시드만 (아래 "내 프로필") |
+| `profile_contacts` | `user_id`(기본 키, = profiles.id), `phone`, `is_public`, `updated_at` | 연락처 (2026-09-30). 공개면 로그인한 누구나, 비공개면 본인·관리자만 읽는다. 쓰기는 본인 행만 |
 | `org_units` | `id`, `name`, `kind`(`company`·`division`·`hq`·`team` = 회사·사업부·본부·팀), `parent_id`, `leader_id`(조직의 장), `channel_id`(유일), `sort_order` | 조직도 (2026-09-29 추가, 아래 "조직도·부서 채널"). 조직마다 대화방이 하나. 회사는 `#일반` |
 | `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at` | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값 |
 | `memberships` | `channel_id`, `user_id`, `joined_at`, `can_invite` | 기본 키 (channel_id, user_id). `can_invite` = 이 채널에 남을 넣고 초대 권한을 줄 수 있음 (만든 사람은 처음부터 true, 2026-09-29) |
@@ -157,6 +158,20 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - `profiles.department` 는 그대로 두고 시드가 소속 조직 이름을 넣는다 (사람 찾기가 부서 이름으로 찾는다)
 - 여기서 한 것이 **upsert 로는 안 된다**: `insert ... on conflict` 도 before insert 트리거가 먼저 돌아 채널이 하나 더 생긴다. 시드는 있는지 먼저 보고 insert·update 를 나눈다
 
+### 내 프로필 (2026-09-30, `20260930130000_my_profile.sql`, WU-33)
+
+- **이름·아이디·부서·직급은 본인이 못 고친다** (인사 정보. WU-31 팀 상의: 사칭·아이디를 바꿔 옛 멘션 끊기). `grant update (handle, display_name, department, title)` 를 거두고 `avatar`·`status`·`status_message` 만 줬다. 앱에 이름을 고치는 코드는 없었다
+- `avatar`: null = 이름 첫 글자, `char:<id>` = 캐릭터(`components/profile/characters.tsx` 의 SVG 12종), `photo:<내 id>/<파일>` = 올린 사진. **사진 경로의 폴더가 내 id 가 아니면 제약이 거부한다** (남의 사진을 내 사진으로 못 씀). 캐릭터 id 는 한 번 쓰면 바꾸지 않는다
+- `status`: `online`·`away`·`dnd`·`invisible`. `invisible` = 접속해 있지만 남에게 오프라인으로 보이기 — **남에게 보여 줄 때는 `offline` 과 똑같이 그린다** (지금은 헤더·내 프로필에만 보여서 남에게 보이는 곳이 없다). 로그아웃·탭을 닫았을 때의 오프라인은 접속자(presence)로 정할 일이라 저장하지 않는다. `status_message` 는 60자까지
+- 연락처는 profiles 와 따로 둔다: profiles 는 누구나 모든 행을 읽으므로, 칸 권한으로는 사람마다 숨길 수 없다
+- 사진 버킷 `avatars`: **공개 읽기**(주소만 알면 열림, 파일 이름은 임의 24자), 2MB, WEBP·JPEG·PNG. 쓰기·지우기는 `storage.objects` 정책으로 **본인 폴더(`<내 id>/`)만**. 화면은 브라우저에서 가운데를 256px 정사각형으로 잘라 WEBP(안 되면 JPEG)로 다시 그려 올리고, 새 사진이나 캐릭터로 바꾸면 옛 사진을 지운다
+- 비밀번호 바꾸기는 **지금 비밀번호로 다시 로그인해 본 뒤** `auth.updateUser` 로 바꾼다 (탭을 열어 둔 채 자리를 비운 사이 남이 바꾸지 못하게)
+- 모두 `npm run check:profile` 이 가상 사용자 A·B·관리자로 확인한다 (33개, 2026-09-30 전부 통과)
+- **남은 구멍 (2026-09-30 코드 리뷰, 남의 상태를 화면에 그리기 전에 막는다)**:
+  1. `profiles.status` 는 누구나 읽으므로 API 로 부르면 `invisible` 이 그대로 보인다 ("오프라인으로 표시" 중인데 사실 접속해 있다는 것이 드러난다). 접속자 수(① `useMessages` 의 presence)에도 그대로 들어간다. 남에게 상태를 보일 때는 `status` 칸의 select 권한을 거두고, `invisible` 을 `offline` 으로 바꿔 돌려주는 함수(security definer)로만 읽게 한다
+  2. "지금 비밀번호 확인"은 화면에서만 한다. 세션을 가로챈 사람은 `auth.updateUser` 를 바로 부를 수 있다. 서버에서도 막으려면 Supabase 대시보드 → Authentication → **Secure password change** 를 켠다 (계정 주인이 켠다)
+- 처음 적는 연락처는 화면에서 **비공개가 기본**이다 (DB 기본값은 `true` 지만 화면이 늘 `is_public` 을 보낸다). 연락처를 못 읽으면 빈 값으로 두지 않고 오류를 보인다 (그대로 저장해 덮어쓰지 않게)
+
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
 권한 테스트가 전부 RLS 에 달려 있으므로, 이후 변경도 정책 전체를 함께 보고 반영한다.
 
@@ -177,6 +192,9 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
 | `chore_lists` | 그 채널의 멤버 | 만들기·고치기(`title`·`place`·`memo`)는 멤버. 삭제는 만든 사람·관리자만 |
 | `chore_entries` | 목록을 볼 수 있는 사람 (= 그 채널 멤버) | 추가·고치기(`person_name`·`detail`)·삭제 모두 멤버. 다른 목록으로 옮길 수 없다 (`list_id` 수정 권한 없음) |
+| `profiles` | 로그인 사용자 모두 | 본인 행의 `avatar`·`status`·`status_message` 만 (2026-09-30. 이름·아이디·부서·직급은 서버·시드만) |
+| `profile_contacts` | 본인, 공개한 사람의 것, 관리자 | 본인 행만 (`phone`·`is_public`) |
+| 보관함 `avatars` | 누구나 (공개 버킷) | 본인 폴더 `<내 id>/` 에만 올리고 지운다 |
 
 **남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다.
 
@@ -520,6 +538,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
+│  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀)
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기) · OrgChartPanel(조직도) · orgSource(org_units)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙)
@@ -532,11 +551,11 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · seed-10k · seed-company(시연 회사)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · profile-check.mjs(내 프로필 권한) · seed-10k · seed-company(시연 회사)
 └─ .env.example
 ```
 
-오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경). 조직도 `orgChart` ③ 도 같은 날 한 줄 추가했다.
+오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경). 조직도 `orgChart` ③ 도 같은 날 한 줄 추가했다. 내 프로필 `profile` ② 은 2026-09-30 에 `PanelState` 한 줄과 ③ `RightPanel` 의 제목·분기 한 줄씩을 추가했다 (헤더의 내 이름 메뉴에서 연다).
 
 ## 10. 환경 변수
 

@@ -4,6 +4,7 @@
 // 스레드는 ① 의 ThreadPanel 을, 나머지는 ③ 의 패널을 그린다. 새 패널 종류가 생기면 여기에 한 줄 추가한다.
 
 import ThreadPanel from "@/components/chat/ThreadPanel";
+import ProfilePanel from "@/components/profile/ProfilePanel"; // ② 내 프로필 (2026-09-30)
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import ChannelInfoPanel from "./ChannelInfoPanel";
 import ChoresPanel from "./ChoresPanel";
@@ -19,6 +20,7 @@ const TITLE: Record<PanelState["kind"], string> = {
   channelInfo: "채널 정보",
   chores: "잡무 수첩",
   orgChart: "조직도",
+  profile: "내 프로필",
 };
 
 function PanelBody({ panel }: { panel: PanelState }) {
@@ -35,6 +37,8 @@ function PanelBody({ panel }: { panel: PanelState }) {
       return <ChoresPanel />;
     case "orgChart":
       return <OrgChartPanel />;
+    case "profile":
+      return <ProfilePanel />;
   }
 }
 
