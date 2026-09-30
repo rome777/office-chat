@@ -150,6 +150,35 @@
 .titleBox {
   position: relative;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* DM 제목 앞 상대 사진 (② PersonAvatar) */
+.titleAvatar {
+  display: inline-flex;
+  margin-right: 2px;
+}
+
+/* DM 제목 옆 상대 상태 "자리 비움 · 외근 중" */
+.peerStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .peerStatus {
+    display: none;
+  }
 }
 
 .titleButton {

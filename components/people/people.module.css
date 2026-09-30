@@ -63,7 +63,7 @@
 .results button {
   width: 100%;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 8px;
   background: none;
@@ -85,6 +85,7 @@
 }
 
 .meta {
+  margin-left: auto; /* 사진·이름은 왼쪽, 부서·직급은 오른쪽 */
   color: var(--muted);
   font-size: 13px;
 }
