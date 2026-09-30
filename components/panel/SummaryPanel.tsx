@@ -16,7 +16,7 @@ export default function SummaryPanel() {
   const router = useRouter();
   const { channel } = useWorkspace();
   const [state, setState] = useState<
-    { status: "idle" } | { status: "loading"; label: string } | { status: "done"; result: Result; channelId: string } | { status: "error"; error: string }
+    { status: "idle" } | { status: "loading"; label: string } | { status: "done"; result: Result } | { status: "error"; error: string }
   >({ status: "idle" });
 
   async function summarize(range: "unread" | "recent") {
@@ -30,13 +30,11 @@ export default function SummaryPanel() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return setState({ status: "error", error: data.error ?? "요약하지 못했습니다" });
-      setState({ status: "done", result: data as Result, channelId: channel.id });
+      setState({ status: "done", result: data as Result });
     } catch {
       setState({ status: "error", error: "서버에 연결하지 못했습니다" });
     }
   }
-
-  const stale = state.status === "done" && state.channelId !== channel.id;
 
   return (
     <div className={s.summary}>
@@ -54,7 +52,6 @@ export default function SummaryPanel() {
       {state.status === "error" && <p className="error-text">{state.error}</p>}
       {state.status === "done" && (
         <>
-          {stale && <p className="muted">다른 채널의 요약입니다. 이 채널을 요약하려면 다시 누르세요.</p>}
           {state.result.range.count > 0 && (
             <p className={`${s.summaryRange} muted`}>
               메시지 {state.result.range.count}건 (#{state.result.range.from_id} ~ #{state.result.range.to_id})
