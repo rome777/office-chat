@@ -20,9 +20,18 @@ type Pick =
   | { kind: "character"; id: string }
   | { kind: "photo"; blob: Blob; ext: "webp" | "jpg"; url: string };
 
-export default function AvatarDialog({ me, onClose }: { me: MyProfile; onClose: () => void }) {
+export default function AvatarDialog({
+  me,
+  initialTab,
+  onClose,
+}: {
+  me: MyProfile;
+  /** 처음 열 칸 (내 프로필의 "사진 추가"·"아바타 변경"). 없으면 지금 쓰는 쪽 */
+  initialTab?: "photo" | "character";
+  onClose: () => void;
+}) {
   const current = me.avatar?.startsWith("char:") ? me.avatar.slice(5) : null;
-  const [tab, setTab] = useState<"photo" | "character">(me.avatar?.startsWith("photo:") ? "photo" : "character");
+  const [tab, setTab] = useState<"photo" | "character">(initialTab ?? (me.avatar?.startsWith("photo:") ? "photo" : "character"));
   const [pick, setPick] = useState<Pick | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);

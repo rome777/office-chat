@@ -16,6 +16,7 @@
     "check:events": "node --env-file=.env.local scripts/event-notifications-check.mjs",
     "check:chores": "node --env-file=.env.local scripts/chores-check.mjs",
     "check:profile": "node --env-file=.env.local scripts/profile-check.mjs",
+    "check:chat": "node --env-file=.env.local scripts/chat-extras-check.mjs",
     "seed:company": "node --env-file=.env.local scripts/seed-company.mjs",
     "seed:10k": "node --env-file=.env.local scripts/seed-10k.mjs"
   },

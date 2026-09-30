@@ -3,9 +3,10 @@
 // ① 메시지 목록과 스크롤. 새 메시지가 오면 맨 아래로, 위를 보고 있으면 "새 메시지" 버튼만 띄운다.
 // 맨 위에 가까이 올리면 이전 메시지를 불러오고, 위에 붙은 만큼 내려서 보던 자리를 지킨다.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
 import type { Self } from "./useSelf";
+import type { ReactionMap } from "./useReactions";
 import { MessageItem, PendingItem } from "./MessageItem";
 import s from "./chat.module.css";
 
@@ -21,6 +22,9 @@ function topOf(list: HTMLElement, messageId: number): number {
   if (!item) return 0;
   return item.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
 }
+
+const dayKey = (iso: string) =>
+  new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "long" }).format(new Date(iso));
 
 /** 이동해서 강조할 메시지. 같은 메시지로 다시 이동해도 동작하도록 seq 를 올린다 */
 export type Focus = { id: number; seq: number };
@@ -43,6 +47,10 @@ export default function MessageList({
   onOpenThread,
   onRetry,
   onDiscard,
+  reactions,
+  pinned,
+  onReact,
+  onPin,
 }: {
   messages: ChatMessage[];
   pending: PendingMessage[];
@@ -68,6 +76,11 @@ export default function MessageList({
   onOpenThread: (messageId: number) => void;
   onRetry: (p: PendingMessage) => void;
   onDiscard: (clientId: string) => void;
+  /** 리액션·고정 (2026-09-30) */
+  reactions: ReactionMap;
+  pinned: ReadonlySet<number>;
+  onReact: (messageId: number, emoji: string) => void;
+  onPin: (messageId: number) => void;
 }) {
   const [hasUnseen, setHasUnseen] = useState(false);
   const [highlightId, setHighlightId] = useState<number | null>(null);
@@ -179,9 +192,15 @@ export default function MessageList({
         {messages.length === 0 && pending.length === 0 && (
           <p className={`${s.empty} muted`}>아직 메시지가 없습니다. 첫 메시지를 보내 보세요.</p>
         )}
-        {messages.map((m) => (
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+          {/* 날짜가 바뀌는 곳에 구분선 (한국 시각 기준) */}
+          {(i === 0 || dayKey(messages[i - 1].created_at) !== dayKey(m.created_at)) && (
+            <p className={s.dayDivider}>
+              <span>{dayKey(m.created_at)}</span>
+            </p>
+          )}
           <MessageItem
-            key={m.id}
             message={m}
             authorName={m.author ?? (m.user_id ? names[m.user_id] : undefined) ?? "…"}
             mine={!!self && m.user_id === self.id}
@@ -191,7 +210,15 @@ export default function MessageList({
             unread={unreadCount(m.id, m.user_id)}
             handles={handles}
             onOpenThread={() => onOpenThread(m.id)}
+            extras={{
+              reactions: reactions.get(m.id),
+              selfId: self?.id ?? null,
+              pinned: pinned.has(m.id),
+              onReact: (emoji) => onReact(m.id, emoji),
+              onPin: () => onPin(m.id),
+            }}
           />
+          </Fragment>
         ))}
         {pending.map((p) => (
           <PendingItem

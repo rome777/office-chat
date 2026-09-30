@@ -113,7 +113,7 @@ export default function TodosPanel() {
     void loadSaved();
   }
 
-  const go = (id: number | null) => id && router.push(`/?m=${id}`);
+  const go = (id: number | null) => id && router.push(`/chat?m=${id}`);
 
   return (
     <div className={s.summary}>

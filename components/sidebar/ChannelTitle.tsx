@@ -2,13 +2,13 @@
 
 // ② 헤더 왼쪽의 채널 이름. 누르면 채널 목록이 열린다 —
 // 좁은 화면(768px 미만)에서는 왼쪽 칸이 숨으므로 여기가 채널을 바꾸는 유일한 곳이다.
-// DM 이면 상대 사진·상태 점과, 이름 옆에 상태·상태 메시지("자리 비움 · 외근 중")를 보인다 (2026-09-30)
+// DM 이면 "@이름" 옆에 상대 상태·상태 메시지("● 자리 비움 · 외근 중")를 보인다 (2026-09-30).
+// 사진은 넣지 않는다 — 왼쪽 DM 목록과 메시지마다 이미 있다
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { usePeopleLooks } from "@/components/people/directory";
-import PersonAvatar from "@/components/profile/PersonAvatar";
 import { usePresenceStatus } from "@/components/profile/presence";
 import { STATUS_LABEL } from "@/components/profile/profileSource";
 import pf from "@/components/profile/profile.module.css";
@@ -61,14 +61,7 @@ export default function ChannelTitle() {
           }
           onClick={() => setOpen((v) => !v)}
         >
-          {peer ? (
-            <span className={s.titleAvatar} aria-hidden="true">
-              <PersonAvatar userId={peer.id} name={peer.display_name} size={24} />
-            </span>
-          ) : (
-            <span aria-hidden="true">{channel.type === "dm" ? "@" : "#"}</span>
-          )}{" "}
-          {channel.name}
+          <span aria-hidden="true">{channel.type === "dm" ? "@" : "#"}</span> {channel.name}
           {channel.type === "private" && (
             <span className={s.lock}>
               <LockIcon size={14} />

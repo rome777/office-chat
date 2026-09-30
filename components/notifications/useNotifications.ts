@@ -50,7 +50,7 @@ export function isLooking(): boolean {
 
 /** 알림을 누르면 갈 주소. 메시지 알림은 ① 이 ?m= 로 이동·강조하고, 답글이면 스레드를 연다 */
 export function notificationHref(n: AppNotification): string {
-  if (n.message_id) return `/?m=${n.message_id}`;
+  if (n.message_id) return `/chat?m=${n.message_id}`;
   if (n.event_id) return `/calendar?e=${n.event_id}`;
   return "/";
 }
