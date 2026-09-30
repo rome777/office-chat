@@ -180,7 +180,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ### 채팅 개편 (2026-09-30, `20260930170000_chat_extras.sql`, WU-35)
 
-화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 모두 `npm run check:chat` 으로 확인한다 (원격 적용 뒤).
+화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 2026-09-30 원격 적용, `npm run check:chat` 27개 통과.
 
 - `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별
 - `channels.description`(120자까지): 채널 설명. **이름·설명은 만든 사람·관리자만** 고친다. **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
