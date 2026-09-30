@@ -46,11 +46,148 @@
 }
 
 .msg {
+  position: relative; /* 마우스를 올리면 오른쪽 위에 메시지 도구 */
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.msg:hover {
+  background: color-mix(in srgb, var(--mine) 55%, transparent);
+}
+
+/* 고정된 메시지는 왼쪽에 가는 줄 */
+.pinned {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.avatarButton,
+.authorButton {
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.authorButton:hover strong {
+  text-decoration: underline;
+}
+
+/* 날짜 구분선 */
+.dayDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dayDivider::before,
+.dayDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* 리액션 */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font-size: 13px;
+}
+
+.reaction span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.reactionOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.reactionOn span {
+  color: var(--accent);
+}
+
+/* 메시지 도구 (리액션·답글·고정) */
+.tools {
+  position: absolute;
+  top: -12px;
+  right: 12px;
+  display: none;
+  gap: 2px;
+  padding: 2px;
   border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+
+.msg:hover .tools,
+.tools:focus-within,
+.toolsOpen {
+  display: flex;
+}
+
+.tool {
+  width: 30px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-size: 15px;
+}
+
+.tool:hover,
+.toolOn {
+  background: var(--mine);
+}
+
+.picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(5, 34px);
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+
+.picker button {
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-size: 18px;
+}
+
+.picker button:hover {
+  background: var(--mine);
 }
 
 .avatarCol {
@@ -153,8 +290,16 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  margin: 8px 16px 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.05);
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
 }
 
 .composerRow {
@@ -205,18 +350,18 @@
   max-height: 160px;
   font: inherit;
   color: inherit;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 8px 4px;
 }
 
 .composerRow button[type="submit"] {
   background: var(--accent);
   color: var(--accent-text);
   border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
+  border-radius: 10px;
+  padding: 8px 16px;
   font-weight: 600;
 }
 
@@ -251,10 +396,15 @@
   align-items: center;
   justify-content: center;
   background: none;
-  color: inherit;
-  border: 1px solid var(--border);
+  color: var(--muted);
+  border: none;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0 8px;
+}
+
+.attachButton:hover {
+  background: var(--mine);
+  color: var(--text);
 }
 
 .fileRow {
@@ -304,18 +454,6 @@
   margin-top: 4px;
   font-size: 13px;
   font-weight: 600;
-}
-
-/* 답글이 없는 메시지는 마우스를 올렸을 때만 "답글 달기" */
-.replyHover {
-  margin-top: 2px;
-  font-size: 12px;
-  visibility: hidden;
-}
-
-.msg:hover .replyHover,
-.replyHover:focus-visible {
-  visibility: visible;
 }
 
 .thread {

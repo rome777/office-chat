@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { ChannelSummary } from "@/lib/types/channel";
-import { joinChannel, listPublicChannels, subscribeChannels } from "./channelSource";
+import { GENERAL_ID, joinChannel, listPublicChannels, subscribeChannels } from "./channelSource";
 import Modal from "./Modal";
 import s from "./sidebar.module.css";
 
@@ -29,7 +29,7 @@ export default function BrowseChannelsDialog({
       void listPublicChannels(query).then(
         (found) => {
           if (!alive) return;
-          setList(found);
+          setList(found.filter((c) => c.id !== GENERAL_ID)); // #일반 은 목록에서 숨긴다 (2026-09-30)
           setError(null);
         },
         (e: unknown) => {

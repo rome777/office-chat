@@ -2,10 +2,13 @@
 
 // ③ 조직도 패널. 부서 채널에서 열면 그 부서(와 하위 조직)만, 그 밖의 채널에서는 회사 전체를 보여 준다.
 // 위쪽 경로(회사 › 사업부 › …)를 누르면 범위를 넓히고, 하위 조직의 "보기"를 누르면 그 조직으로 좁힌다.
-// 사람을 누르면 그 사람과의 DM 을 연다 (② 의 startDm 을 가져다 쓴다).
+// 사람을 누르면 프로필 카드, "메시지"를 누르면 그 사람과의 DM 을 연다 (② 의 startDm 을 가져다 쓴다).
+// 대시보드·캘린더에서도 열리므로(2026-09-30 공통 틀) DM 을 열면 채팅 화면으로 옮긴다.
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import PersonAvatar from "@/components/profile/PersonAvatar"; // ② 사진·상태 점 (2026-09-30)
+import { openProfileCard } from "@/components/shell/cardStore";
 import { getMyUserId, startDm } from "@/components/sidebar/channelSource";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import type { OrgMember, OrgUnit } from "@/lib/types/org";
@@ -15,6 +18,8 @@ import s from "./org.module.css";
 
 export default function OrgChartPanel() {
   const { channel, setChannel, closePanel } = useWorkspace();
+  const router = useRouter();
+  const pathname = usePathname();
   const [org, setOrg] = useState<OrgData | null>(null);
   const [me, setMe] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +58,7 @@ export default function OrgChartPanel() {
       const id = await startDm(p.id);
       setChannel({ id, name: p.display_name, type: "dm" });
       closePanel();
+      if (pathname !== "/chat") router.push("/chat");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOpening(null);
@@ -168,8 +174,10 @@ function PersonRow({
 }) {
   return (
     <li className={s.person}>
-      <PersonAvatar userId={person.id} name={person.display_name} size={30} />
-      <span className={s.who}>
+      <button type="button" className={s.cardButton} onClick={() => openProfileCard(person.id)} aria-label={`${person.display_name} 프로필`}>
+        <PersonAvatar userId={person.id} name={person.display_name} size={30} />
+      </button>
+      <span className={s.who} onClick={() => openProfileCard(person.id)}>
         <span className={s.name}>
           {person.display_name}
           {person.title && <span className={s.title}>{person.title}</span>}
