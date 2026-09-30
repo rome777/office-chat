@@ -1,0 +1,399 @@
+/* ② 내 프로필 — 프로필 사진·상태 점, 헤더의 내 메뉴, 내 프로필 패널, 사진 바꾸기 창 */
+
+/* ── 프로필 사진 ── */
+.avatar {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--mine);
+  color: var(--accent);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.avatar > svg,
+.avatarImg {
+  display: block;
+  border-radius: 50%;
+}
+
+.avatarImg {
+  object-fit: cover;
+}
+
+.dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+
+/* 상태 색. invisible(오프라인으로 표시)은 오프라인과 같은 회색 */
+.online {
+  background: var(--ok);
+}
+.away {
+  background: var(--warn);
+}
+.dnd {
+  background: var(--bad);
+}
+.invisible {
+  background: var(--muted);
+}
+
+.swatch {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ── 헤더의 내 이름 ── */
+.meButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 2px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.meButton:hover,
+.meButton[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.caret {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 230px;
+  padding: 6px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  font-size: 14px;
+  white-space: normal;
+}
+
+.menuMe {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 8px;
+}
+
+.menuMeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuTitle {
+  margin: 0;
+  padding: 8px 12px 4px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.menuItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: inherit;
+  background: none;
+  border: none;
+  text-align: left;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--mine);
+}
+
+.check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.menuSep {
+  margin: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.danger {
+  color: var(--bad);
+}
+
+/* ── 내 프로필 패널 ── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  margin: -12px -16px; /* 패널 틀의 안쪽 여백을 없애고 구역 줄을 끝까지 긋는다 */
+  font-size: 14px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+
+.topText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.topName {
+  font-size: 16px;
+}
+
+.topText .button {
+  margin-top: 6px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sectionHead h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tagAccent {
+  background: var(--mine);
+  color: var(--accent);
+}
+
+.statusRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 10px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.chipOn {
+  background: var(--mine);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.offNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.input {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.right {
+  text-align: right;
+}
+
+.info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.info dt {
+  color: var(--muted);
+}
+
+.info dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* ── 사진 바꾸기 창 ── */
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.characterGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.character {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+}
+
+.character:hover {
+  border-color: var(--border);
+}
+
+.characterOn,
+.characterOn:hover {
+  border-color: var(--accent);
+}
+
+.drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.dropOver {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dialogFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.previewImg {
+  display: block;
+  border-radius: 50%;
+}
