@@ -375,19 +375,23 @@
   white-space: nowrap;
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--warn);
+/* 연결이 흔들릴 때만 뜨는 알약 (ConnectionStatus) */
+.conn.reconnecting,
+.conn.disconnected {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.connected .dot {
-  background: var(--ok);
+.conn.reconnecting {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
 }
 
-.disconnected .dot {
-  background: var(--bad);
+.conn.disconnected {
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
 }
 
 /* 첨부 */
