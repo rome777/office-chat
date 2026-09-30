@@ -1,28 +1,21 @@
 "use client";
 
 // ① 헤더에 들어가는 연결 상태 (F1-4)
-// DM 에서는 연결됐을 때 숨긴다 — 1:1 이라 접속자 수(탭 수를 센다)가 뜻이 없고, 옆에 상대 상태(② ChannelTitle)가 있다.
-// 연결 중·재연결 중·끊김은 DM 에서도 보인다 (2026-09-30 ② 김송이)
+// 연결이 흔들릴 때만 보인다 — 재연결 중(노랑)·끊김(빨강) 알약. 연결됨·처음 연결 중에는 아무것도 없다 (2026-09-30 ② 김송이, 사용자 결정).
+// 접속 인원은 여기서 세지 않는다: 채널 헤더의 "총인원 · 접속 N명"(② ChannelTitle)이 사람 수로 센다 (이 구독의 접속자 수는 탭 수였다).
+// 처음 연결이 실패해도 CHANNEL_ERROR → 재연결 중으로 바뀌므로, 연결 중을 숨겨도 문제를 놓치지 않는다.
 
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import type { ConnectionState } from "@/lib/types/message";
 import s from "./chat.module.css";
 
-const LABEL: Record<ConnectionState, string> = {
-  connecting: "연결 중",
-  connected: "연결됨",
-  reconnecting: "재연결 중",
-  disconnected: "끊김",
-};
-
 export default function ConnectionStatus() {
-  const { connection, channel } = useWorkspace();
-  if (channel.type === "dm" && connection.state === "connected") return null;
+  const { connection } = useWorkspace();
+  const { state } = connection;
   return (
-    <span className={`${s.conn} ${s[connection.state] ?? ""}`}>
-      <span className={s.dot} />
-      {LABEL[connection.state]}
-      {connection.state === "connected" && <span className="muted"> · 접속 {connection.online}명</span>}
+    // 알약이 생기고 없어질 때 화면 읽기가 읽어 준다 (알림 칸이라 비어 있어도 숨기지 않는다)
+    <span role="status" aria-live="polite">
+      {state === "reconnecting" && <span className={`${s.conn} ${s.reconnecting}`}>재연결 중…</span>}
+      {state === "disconnected" && <span className={`${s.conn} ${s.disconnected}`}>끊김 · 메시지가 안 갈 수 있어요</span>}
     </span>
   );
 }

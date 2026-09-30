@@ -1,5 +1,6 @@
 // ③ 조직도 데이터 (Supabase `org_units`·`profiles`). 로그인한 사람이면 모두 읽는다 (TECH_SPEC 5절).
 // 사내 조직과 인원은 많지 않으므로 한 번에 받아 두고 브라우저에서 나무 모양으로 묶는다.
+// 2026-09-30 오른쪽 패널에서 조직도 페이지(/org)로 옮겼다.
 
 import type { OrgMember, OrgUnit } from "@/lib/types/org";
 import { RANK_ORDER } from "@/lib/types/org";
@@ -84,4 +85,10 @@ export function headcount(org: OrgData, unitId: string): number {
     (org.members.get(unitId)?.length ?? 0) +
     (org.children.get(unitId) ?? []).reduce((n, c) => n + headcount(org, c.id), 0)
   );
+}
+
+/** 조직의 장 (없으면 null) */
+export function leaderOf(org: OrgData, unit: OrgUnit): OrgMember | null {
+  if (!unit.leader_id) return null;
+  return org.members.get(unit.id)?.find((m) => m.id === unit.leader_id) ?? null;
 }

@@ -1,6 +1,8 @@
 "use client";
 
 // 채팅 머리: 채널 이름·즐겨찾기 별·설명 | 연결 상태·멤버 수·패널 버튼(③).
+// 멤버 수 버튼은 "총인원 45명 · 접속 4명 ●2 ●1 ●1", DM 설명 줄 끝에는 "● 자리 비움 · 외근 중" (② PresenceSummary, 2026-09-30 김송이).
+// 연결 상태(①)는 재연결 중·끊김일 때만 뜬다.
 // DM 이면 상대 사진과 소속을 보이고, 이름을 누르면 프로필 카드가 뜬다.
 // 좁은 화면에서는 메시지 목록 칸이 숨으므로 ② 의 채널 전환(ChannelTitle)을 대신 보인다.
 
@@ -8,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import ConnectionStatus from "@/components/chat/ConnectionStatus"; // ①
 import HeaderActions from "@/components/panel/HeaderActions"; // ③
 import PersonAvatar from "@/components/profile/PersonAvatar";
+import { ChannelPresenceText, PeerPresenceText, useChannelPresence } from "@/components/profile/PresenceSummary"; // ②
 import ChannelTitle from "@/components/sidebar/ChannelTitle"; // ②
 import { useMyChannels, useMyDms } from "@/components/sidebar/useChannels";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
@@ -28,6 +31,7 @@ export default function ChatHeader() {
   const other = isDm ? dms?.find((d) => d.id === channel.id)?.other : undefined;
   const count = channels?.find((c) => c.id === channel.id)?.member_count ?? null;
   const fav = favorites.has(channel.id);
+  const presence = useChannelPresence(isDm ? "" : channel.id); // DM 은 세지 않는다 (빈 id 면 불러오지 않음)
 
   async function star() {
     setError(null);
@@ -73,7 +77,15 @@ export default function ChatHeader() {
             {error ? (
               <span className="error-text">{error}</span>
             ) : isDm ? (
-              [other?.department, other?.title].filter(Boolean).join(" · ") || "1:1 대화"
+              <>
+                {[other?.department, other?.title].filter(Boolean).join(" · ") || "1:1 대화"}
+                {other && (
+                  <>
+                    {" · "}
+                    <PeerPresenceText userId={other.id} />
+                  </>
+                )}
+              </>
             ) : (
               details?.description || <span className="muted">{channel.type === "private" ? "비공개 채널" : "공개 채널"}</span>
             )}
@@ -88,10 +100,14 @@ export default function ChatHeader() {
             className={`${s.members} ${infoOpen ? s.membersOn : ""}`}
             aria-pressed={infoOpen}
             onClick={() => (infoOpen ? closePanel() : openPanel({ kind: "channelInfo" }))}
-            aria-label={`멤버 ${count ?? ""}명 — 채널 정보`}
+            aria-label={
+              presence.loaded
+                ? `총인원 ${presence.total}명, 접속 ${presence.here}명 (${presence.detail}) — 채널 정보`
+                : `멤버 ${count ?? ""}명 — 채널 정보`
+            }
           >
             <UsersIcon size={18} />
-            {count ?? ""}
+            <ChannelPresenceText p={presence} fallbackTotal={count} />
           </button>
         )}
         <MoreMenu />

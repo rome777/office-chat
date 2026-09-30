@@ -398,3 +398,33 @@
   display: block;
   border-radius: 50%;
 }
+
+/* ── 채팅 헤더의 접속 요약 (PresenceSummary) ── */
+.presenceText {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.presenceCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.presenceShort {
+  display: none;
+}
+
+/* 채팅 헤더(ChatHeader 의 .chatHead, container-type)가 좁으면 "총인원 · 접속" 글자를 빼고 숫자만 */
+@container (max-width: 460px) {
+  .presenceWords {
+    display: none;
+  }
+
+  .presenceShort {
+    display: inline;
+  }
+}

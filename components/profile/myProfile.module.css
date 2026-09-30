@@ -1,61 +1,48 @@
-/* ② 내 프로필 패널 (2026-09-30 개편) */
+/* ② 내 프로필 패널 (2026-09-30 사용자와 정한 모양).
+   버튼은 세 가지 크기로만 쓴다: 보통 30px·13px, 작은 24px·12px, 둥근 32px·13px. 표시 알약은 22px. */
 
 .panel {
   display: flex;
   flex-direction: column;
-  height: calc(100% + 24px);
   margin: -12px -16px; /* 패널 틀의 안쪽 여백을 없애고 구역 줄을 끝까지 긋는다 */
   font-size: 14px;
 }
 
-.scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
+/* ── 위: 사진·이름·부서·[사진 바꾸기] ── */
 .top {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 18px 16px;
+  gap: 14px;
+  padding: 16px;
 }
 
-.topText {
+.who {
   min-width: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 2px;
 }
 
-.topRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.name {
+  font-size: 16px;
 }
 
-.topName {
-  font-size: 17px;
-}
-
-.topButtons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.muted {
+.dept {
+  font-size: 13px;
   color: var(--muted);
 }
 
+.photoBtn {
+  margin-top: 8px;
+}
+
+/* ── 구역 ── */
 .section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 16px;
+  padding: 14px 16px;
   border-top: 1px solid var(--border);
 }
 
@@ -63,113 +50,155 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 2px;
 }
 
 .head h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .tag {
-  padding: 2px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--bg);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
-  border: none;
+  line-height: 1;
 }
 
-.tagOk {
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
-  color: var(--ok);
+.tagAccent {
+  background: var(--mine);
+  color: var(--accent);
 }
 
-.switch {
-  cursor: pointer;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--bg);
-}
-
-.label {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.input,
-.select {
-  width: 100%;
-  font: inherit;
+/* ── 버튼 ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
   color: inherit;
-  background: var(--surface);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.small {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: inherit;
+  background: none;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 9px 14px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-textarea.input {
-  border-radius: 12px;
-  resize: vertical;
+.chipOn {
+  background: var(--mine);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.input:disabled {
-  color: var(--muted);
-  background: var(--bg);
+/* 공개·비공개는 [수정] 중에만 누를 수 있다. 평소에는 고른 쪽만 흐리게 보인다 */
+.chip:disabled {
+  opacity: 0.5;
 }
 
-.input[aria-invalid="true"] {
-  border-color: var(--bad);
+.chipOn:disabled {
+  opacity: 0.8;
 }
 
-.selectWrap {
-  position: relative;
-  display: flex;
-  align-items: center;
+/* ── 현재 상태 ── */
+.statusRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 }
 
-.selectWrap .dot {
-  position: absolute;
-  left: 14px;
-  pointer-events: none;
-}
-
-.select {
-  padding-left: 32px;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
+.swatch {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
 .online {
   background: var(--ok);
 }
-
 .away {
   background: var(--warn);
 }
-
 .dnd {
   background: var(--bad);
 }
-
 .invisible {
   background: var(--muted);
+}
+
+.offNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .note {
@@ -178,50 +207,74 @@ textarea.input {
   color: var(--muted);
 }
 
-.right {
-  text-align: right;
+.muted {
+  color: var(--muted);
+}
+
+/* ── 기본 정보·계정 관리의 줄 ── */
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
 }
 
 .row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  min-height: 30px;
+}
+
+.key {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  color: var(--muted);
 }
 
-.strong {
-  font-weight: 600;
+.value {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
-.pill {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.pill:hover {
-  background: var(--mine);
-}
-
-.footer {
+/* ── 연락처 (기본 정보 맨 아래) ── */
+.contact {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 16px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
 }
 
-.save {
-  width: 100%;
-  padding: 11px;
-  border-radius: 999px;
-  border: none;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 700;
+.phone {
+  width: 160px;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  text-align: right;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.phone[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+/* 공개 여부 안내(왼쪽) · 공개·비공개 버튼(오른쪽)을 한 줄에, 세로 가운데 */
+.publicRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair {
+  display: inline-flex;
+  gap: 6px;
 }

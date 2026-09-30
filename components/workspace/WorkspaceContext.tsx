@@ -14,7 +14,6 @@ export type PanelState =
   | { kind: "todos" } // ③ AI 할 일
   | { kind: "channelInfo" } // ③ 채널 정보(멤버·내보내기·관리 기록)
   | { kind: "chores" } // ③ 잡무 수첩 (2026-09-29)
-  | { kind: "orgChart" } // ③ 조직도 (부서 채널이면 그 부서만)
   | { kind: "profile" }; // ② 내 프로필 (2026-09-30, 헤더의 내 이름 메뉴에서 연다)
 
 export type Me = { name: string };

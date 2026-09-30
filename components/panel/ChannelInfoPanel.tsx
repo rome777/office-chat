@@ -236,7 +236,7 @@ export default function ChannelInfoPanel() {
         {!allMembers ? (
           <div className={s.avatars}>
             {shownAvatars.map((m) => (
-              <button key={m.id} type="button" className={s.avatarButton} onClick={() => openProfileCard(m.id)} title={m.display_name} aria-label={`${m.display_name} 프로필`}>
+              <button key={m.id} type="button" className={s.avatarButton} onClick={() => openProfileCard(m.id)} title={[m.display_name, m.department, m.title].filter(Boolean).join(" · ")} aria-label={`${m.display_name} 프로필`}>
                 <PersonAvatar userId={m.id} name={m.display_name} size={34} />
               </button>
             ))}
@@ -254,7 +254,7 @@ export default function ChannelInfoPanel() {
                   <PersonAvatar userId={m.id} name={m.display_name} size={28} />
                   <span>
                     <strong>{m.display_name}</strong>
-                    {m.department && <span className="muted"> · {m.department}</span>}
+                    {(m.department || m.title) && <span className="muted"> · {[m.department, m.title].filter(Boolean).join(" · ")}</span>}
                     {roles[m.id] === "admin" && <span className={s.adminBadge}>관리자</span>}
                     {channelKind && m.can_invite && <span className={s.inviteBadge}>초대 권한</span>}
                     {self?.id === m.id && <span className="muted"> (나)</span>}

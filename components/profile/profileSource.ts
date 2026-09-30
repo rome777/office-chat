@@ -70,6 +70,16 @@ async function readMyStatus(id: string): Promise<{ data: Status | null; error: {
   return { data: (old.data?.status as Status | undefined) ?? null, error: old.error };
 }
 
+/** DB 의 내 상태를 다시 읽어 바뀌었으면 맞춘다. 다른 브라우저·기기·주소(운영 URL 등)에서 바꾼 상태는 BroadcastChannel 로
+ *  오지 않아서, 창에 초점이 돌아올 때와 접속자 채널이 30초마다 다시 보낼 때(presence) 부른다 */
+export async function refreshMyStatus() {
+  const me = state.profile;
+  if (!me) return;
+  const { data } = await readMyStatus(me.id);
+  const now = state.profile;
+  if (data && now && now.id === me.id && now.status !== data) set({ profile: { ...now, status: data } });
+}
+
 function startLoad() {
   loading ??= load()
     .catch((e: unknown) => set({ error: e instanceof Error ? e.message : String(e) }))
@@ -88,14 +98,7 @@ function watchAuth() {
   if (watching) return;
   watching = true;
   // 다른 기기(폰 등)에서 바꾼 상태는 BroadcastChannel 로 오지 않는다 → 이 창에 초점이 돌아오면 다시 읽는다
-  window.addEventListener("focus", () => {
-    const me = state.profile;
-    if (!me) return;
-    void readMyStatus(me.id).then(({ data }) => {
-      const now = state.profile;
-      if (data && now && now.id === me.id && now.status !== data) set({ profile: { ...now, status: data } });
-    });
-  });
+  window.addEventListener("focus", () => void refreshMyStatus());
   if (typeof BroadcastChannel !== "undefined") {
     tabs = new BroadcastChannel("office-chat:my-profile");
     tabs.onmessage = (e: MessageEvent<TabPatch>) => {
