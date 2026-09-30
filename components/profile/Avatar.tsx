@@ -1,8 +1,9 @@
 "use client";
 
 // ② 프로필 사진 동그라미 — 올린 사진, 캐릭터, 없으면 이름 첫 글자. status 를 주면 오른쪽 아래에 상태 점을 그린다.
+// 남의 사진은 PersonAvatar 가 사람 id 로 찾아 이것을 그린다.
 
-import type { AvatarValue, Status } from "@/lib/types/profile";
+import type { AvatarValue, DisplayStatus } from "@/lib/types/profile";
 import { CharacterArt, findCharacter } from "./characters";
 import { avatarPhotoUrl, STATUS_LABEL } from "./profileSource";
 import s from "./profile.module.css";
@@ -12,17 +13,21 @@ export default function Avatar({
   avatar,
   size,
   status,
+  message,
 }: {
   name: string;
   avatar: AvatarValue;
   size: number;
-  status?: Status;
+  status?: DisplayStatus;
+  /** 상태 메시지. 상태 점에 마우스를 올리면 상태와 같이 보인다 */
+  message?: string;
 }) {
   const photo = avatarPhotoUrl(avatar);
   // 모르는 캐릭터 id(다른 버전에서 고른 것 등)면 이름 첫 글자로
   const character = avatar?.startsWith("char:") && findCharacter(avatar.slice(5)) ? avatar.slice(5) : null;
+  const label = status ? STATUS_LABEL[status] + (message ? ` · ${message}` : "") : undefined;
   return (
-    <span className={s.avatar} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}>
+    <span className={s.avatar} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }} title={label}>
       {photo ? (
         // 보관함의 공개 주소를 그대로 쓴다 (next/image 는 외부 주소 설정이 필요해 쓰지 않는다)
         <img src={photo} alt="" width={size} height={size} className={s.avatarImg} />
@@ -34,8 +39,9 @@ export default function Avatar({
       {status && (
         <span
           className={`${s.dot} ${s[status]}`}
-          style={{ width: Math.max(8, Math.round(size * 0.26)), height: Math.max(8, Math.round(size * 0.26)) }}
-          title={STATUS_LABEL[status]}
+          style={{ width: Math.max(8, Math.round(size * 0.28)), height: Math.max(8, Math.round(size * 0.28)) }}
+          role="img"
+          aria-label={label}
         />
       )}
     </span>

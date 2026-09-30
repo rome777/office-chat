@@ -6,4 +6,7 @@ export type Person = {
   display_name: string;
   department: string | null;
   title: string | null;
+  /** 프로필 사진 (lib/types/profile AvatarValue). 명단(directory)에만 들어 있다 */
+  avatar?: string | null;
+  status_message?: string;
 };

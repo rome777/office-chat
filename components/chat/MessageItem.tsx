@@ -3,9 +3,13 @@
 import { formatBytes } from "@/lib/attachments";
 import { useMentionLabels, useMyMentionTokens } from "@/components/people/directory";
 import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types/message";
+import PersonAvatar from "@/components/profile/PersonAvatar"; // ② 사진·상태 점 (2026-09-30)
+import { useMyProfile } from "@/components/profile/profileSource";
 import AttachmentView from "./AttachmentView";
 import SafeText from "./SafeText";
 import s from "./chat.module.css";
+
+const AVATAR = 32; // 메시지 왼쪽 프로필 사진 크기(px)
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
@@ -45,31 +49,34 @@ export function MessageItem({
       data-message-id={message.id}
       className={`${s.msg} ${mine ? s.mine : ""} ${highlighted ? s.highlight : ""}`}
     >
-      <div className={s.meta}>
-        <strong>{authorName}</strong>
-        <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
-        {unread > 0 && (
-          <span className={s.unread} title={`안 읽은 사람 ${unread}명`} aria-label={`안 읽은 사람 ${unread}명`}>
-            {unread}
-          </span>
+      <PersonAvatar userId={message.user_id} name={authorName} size={AVATAR} />
+      <div className={s.msgMain}>
+        <div className={s.meta}>
+          <strong>{authorName}</strong>
+          <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
+          {unread > 0 && (
+            <span className={s.unread} title={`안 읽은 사람 ${unread}명`} aria-label={`안 읽은 사람 ${unread}명`}>
+              {unread}
+            </span>
+          )}
+        </div>
+        {message.body && (
+          <p className={s.body}>
+            <SafeText text={message.body} mentions={{ me: myHandle, handles, names, mine: callsMe }} />
+          </p>
         )}
+        {files && files.length > 0 && <AttachmentView files={files} />}
+        {onOpenThread &&
+          (message.reply_count > 0 ? (
+            <button type="button" className={`link ${s.replies}`} onClick={onOpenThread}>
+              💬 답글 {message.reply_count}개
+            </button>
+          ) : (
+            <button type="button" className={`link ${s.replyHover}`} onClick={onOpenThread}>
+              답글 달기
+            </button>
+          ))}
       </div>
-      {message.body && (
-        <p className={s.body}>
-          <SafeText text={message.body} mentions={{ me: myHandle, handles, names, mine: callsMe }} />
-        </p>
-      )}
-      {files && files.length > 0 && <AttachmentView files={files} />}
-      {onOpenThread &&
-        (message.reply_count > 0 ? (
-          <button type="button" className={`link ${s.replies}`} onClick={onOpenThread}>
-            💬 답글 {message.reply_count}개
-          </button>
-        ) : (
-          <button type="button" className={`link ${s.replyHover}`} onClick={onOpenThread}>
-            답글 달기
-          </button>
-        ))}
     </article>
   );
 }
@@ -86,35 +93,39 @@ export function PendingItem({
   onDiscard: () => void;
 }) {
   const names = useMentionLabels();
+  const { profile } = useMyProfile(); // 보내는 중인 메시지는 늘 내 것
   return (
     <article className={`${s.msg} ${s.mine} ${s[message.status]}`}>
-      <div className={s.meta}>
-        <strong>{message.author}</strong>
-        <span>
-          {message.status === "failed" ? "전송 실패" : message.file ? "올리는 중…" : "보내는 중…"}
-        </span>
-      </div>
-      {message.body && (
-        <p className={s.body}>
-          <SafeText text={message.body} mentions={{ me: myHandle, names }} />
-        </p>
-      )}
-      {message.file && (
-        <p className={`${s.fileLink} muted`}>
-          📎 {message.file.name} ({formatBytes(message.file.size)})
-        </p>
-      )}
-      {message.status === "failed" && (
-        <div className={s.actions}>
-          <span className="error-text">{message.error}</span>
-          <button className="link" onClick={onRetry}>
-            다시 보내기
-          </button>
-          <button className="link" onClick={onDiscard}>
-            삭제
-          </button>
+      <PersonAvatar userId={profile?.id ?? null} name={message.author} size={AVATAR} />
+      <div className={s.msgMain}>
+        <div className={s.meta}>
+          <strong>{message.author}</strong>
+          <span>
+            {message.status === "failed" ? "전송 실패" : message.file ? "올리는 중…" : "보내는 중…"}
+          </span>
         </div>
-      )}
+        {message.body && (
+          <p className={s.body}>
+            <SafeText text={message.body} mentions={{ me: myHandle, names }} />
+          </p>
+        )}
+        {message.file && (
+          <p className={`${s.fileLink} muted`}>
+            📎 {message.file.name} ({formatBytes(message.file.size)})
+          </p>
+        )}
+        {message.status === "failed" && (
+          <div className={s.actions}>
+            <span className="error-text">{message.error}</span>
+            <button className="link" onClick={onRetry}>
+              다시 보내기
+            </button>
+            <button className="link" onClick={onDiscard}>
+              삭제
+            </button>
+          </div>
+        )}
+      </div>
     </article>
   );
 }

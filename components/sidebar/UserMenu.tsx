@@ -6,6 +6,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { Status } from "@/lib/types/profile";
 import Avatar from "@/components/profile/Avatar";
+import { setMyPresence } from "@/components/profile/presence";
 import { STATUS_LABEL, updateMyProfile, useMyProfile } from "@/components/profile/profileSource";
 import p from "@/components/profile/profile.module.css";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
@@ -44,6 +45,12 @@ export default function UserMenu() {
 
   const name = profile?.display_name ?? me.name;
   const status = profile?.status ?? "online";
+
+  // 헤더는 늘 떠 있으므로 여기서 회사 접속자 채널에 내 상태를 보낸다 (남의 상태 점은 이 채널로 본다, profile/presence)
+  const loaded = !!profile;
+  useEffect(() => {
+    if (loaded) setMyPresence(status);
+  }, [loaded, status]);
 
   async function pick(next: Status) {
     setError(null);

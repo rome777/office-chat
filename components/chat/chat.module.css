@@ -46,8 +46,17 @@
 }
 
 .msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 6px 10px;
   border-radius: 8px;
+}
+
+/* 프로필 사진(② PersonAvatar) 오른쪽의 이름·본문 */
+.msgMain {
+  flex: 1;
+  min-width: 0;
 }
 
 .mine {

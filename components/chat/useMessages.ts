@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
+import { useMyProfile } from "@/components/profile/profileSource"; // ② 내 상태 (오프라인으로 표시)
 import type {
   ChatMessage,
   ConnectionState,
@@ -66,6 +67,10 @@ export function useMessages(channelId: string, myName: string) {
   const lastIdRef = useRef(0);
   const oldestIdRef = useRef(0);
   const loadingOlderRef = useRef(false);
+  // "오프라인으로 표시"(② 내 프로필)면 접속자 수에 넣지 않는다 — 넣으면 숨긴 사람이 접속해 있다는 것이 드러난다
+  const invisible = useMyProfile().profile?.status === "invisible";
+  const invisibleRef = useRef(invisible);
+  const roomRef = useRef<RealtimeChannel | null>(null);
 
   const resolveNames = useCallback(async (list: ChatMessage[]) => {
     const supabase = supabaseRef.current;
@@ -239,6 +244,7 @@ export function useMessages(channelId: string, myName: string) {
     const channel: RealtimeChannel = supabase.channel(`room:${channelId}`, {
       config: { presence: { key: newClientId() } },
     });
+    roomRef.current = channel;
 
     channel
       .on(
@@ -267,7 +273,7 @@ export function useMessages(channelId: string, myName: string) {
           void sync();
           // 구독 직후 잠깐은 실시간 이벤트가 빠질 수 있다 (2026-09-28 첫 테스트에서 확인). 한 번 더 맞춘다.
           resyncTimer = setTimeout(() => void sync(), 2000);
-          void channel.track({ name: myName });
+          if (!invisibleRef.current) void channel.track({ name: myName });
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConn("reconnecting"); // supabase-js 가 자동으로 다시 붙는다
         } else if (status === "CLOSED") {
@@ -286,8 +292,18 @@ export function useMessages(channelId: string, myName: string) {
       window.removeEventListener("online", goOnline);
       void supabase.removeChannel(channel);
       supabaseRef.current = null;
+      roomRef.current = null;
     };
   }, [channelId, myName, merge, sync, addAttachments]);
+
+  // 보고 있는 중에 "오프라인으로 표시"를 켜고 끄면 접속자 수에서 빼고 넣는다
+  useEffect(() => {
+    invisibleRef.current = invisible;
+    const room = roomRef.current;
+    if (!room || room.state !== "joined") return;
+    if (invisible) void room.untrack();
+    else void room.track({ name: myName });
+  }, [invisible, myName]);
 
 
   async function send(body: string, clientId = newClientId(), file?: File) {
