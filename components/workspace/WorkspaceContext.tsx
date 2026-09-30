@@ -15,12 +15,38 @@ export type PanelState =
   | { kind: "todos" } // ③ AI 할 일
   | { kind: "channelInfo" } // ③ 채널 정보(멤버·내보내기·관리 기록)
   | { kind: "chores" } // ③ 잡무 수첩 (2026-09-29)
-  | { kind: "profile" }; // ② 내 프로필 (2026-09-30, 헤더의 내 이름 메뉴에서 연다)
+  | { kind: "profile" } // ② 내 프로필 (2026-09-30, 헤더의 내 이름 메뉴에서 연다)
+  // ② 일정 (2026-09-30 일정 개편) — 상세·만들기·고치기·팀원 일정. /calendar 를 떠나면 닫힌다
+  | { kind: "event"; eventId: string }
+  | { kind: "eventNew"; date: string; time?: string; withIds?: string[] }
+  | { kind: "eventEdit"; eventId: string }
+  | {
+      kind: "teamEvent";
+      name: string;
+      userId: string;
+      eventKind: "work" | "personal" | "outside" | "leave" | null;
+      label: string;
+      title: string | null;
+      location: string | null;
+      assignees: string[];
+      startsAt: string;
+      endsAt: string;
+      allDay: boolean;
+    };
 
 /** 나에게 딸린 패널 — 어느 페이지에서나 열려 있다. 나머지는 대화에 딸린 패널이라
  *  채널을 바꾸거나 /chat 을 떠나면 닫힌다 (2026-09-30, 다른 채널·캘린더 옆에 남던 것을 고침) */
 const GLOBAL_PANELS: ReadonlySet<PanelState["kind"]> = new Set(["profile"]);
 const keepGlobal = (p: PanelState | null) => (p && GLOBAL_PANELS.has(p.kind) ? p : null);
+/** 페이지에 딸린 패널 — 그 페이지를 떠나면 닫힌다. 적지 않은 것은 대화 패널(/chat) */
+const PAGE_OF: Partial<Record<PanelState["kind"], string>> = {
+  event: "/calendar",
+  eventNew: "/calendar",
+  eventEdit: "/calendar",
+  teamEvent: "/calendar",
+};
+const keepOn = (pathname: string) => (p: PanelState | null) =>
+  p && (GLOBAL_PANELS.has(p.kind) || pathname.startsWith(PAGE_OF[p.kind] ?? "/chat")) ? p : null;
 
 export type Me = { name: string };
 
@@ -67,9 +93,10 @@ export function WorkspaceProvider({
     setChannelState(c);
   }, []);
 
-  // 채팅 화면을 떠나면 대화 패널을 닫는다 (돌아와도 다시 열지 않는다 — 2026-09-30 사용자 결정)
+  // 페이지를 떠나면 그 페이지의 패널을 닫는다 — 채팅 화면의 대화 패널, 일정 화면의 일정 패널
+  // (돌아와도 다시 열지 않는다 — 2026-09-30 사용자 결정)
   useEffect(() => {
-    if (!pathname.startsWith("/chat")) setPanel(keepGlobal);
+    setPanel(keepOn(pathname));
   }, [pathname]);
   const [connection, setConnection] = useState<Workspace["connection"]>({
     state: "connecting",

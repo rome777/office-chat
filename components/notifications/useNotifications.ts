@@ -26,12 +26,21 @@ export const TYPE_LABEL: Record<NotificationType, string> = {
   mention: "멘션",
   thread_reply: "스레드 답글",
   dm: "DM",
-  event_invite: "회의 초대",
-  event_update: "회의 변경",
-  event_cancel: "회의 취소",
-  event_reminder: "10분 후 회의",
-  event_decline: "회의 불참",
+  event_invite: "일정 초대",
+  event_update: "일정 변경",
+  event_cancel: "일정 취소",
+  event_reminder: "곧 시작하는 일정", // 몇 분 전인지는 미리보기 앞에 붙인다 (사람마다 알림 시각이 다르다, 2026-09-30)
+  event_decline: "일정 불참",
 };
+
+/** 시작 전 알림의 앞말 (예전 알림은 remind_minutes 가 없다 → 10분) */
+function reminderLead(m: number | null | undefined): string {
+  const v = m ?? 10;
+  if (v === 0) return "지금 시작";
+  if (v === 1440) return "내일 시작";
+  if (v >= 60) return `${v / 60}시간 후 시작`;
+  return `${v}분 후 시작`;
+}
 
 /** 화면에 그릴 알림 한 건. parentId 는 답글이면 부모 메시지 id */
 export type NotificationView = AppNotification & { title: string; preview: string; parentId: number | null };
@@ -73,8 +82,8 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
       ? supabase.from("channels").select("id, name, type").in("id", channelIds)
       : Promise.resolve({ data: [] as { id: string; name: string | null; type: string }[] }),
     eventIds.length
-      ? supabase.from("events").select("id, title, starts_at, rooms(name)").in("id", eventIds)
-      : Promise.resolve({ data: [] as { id: string; title: string; starts_at: string; rooms: unknown }[] }),
+      ? supabase.from("events").select("id, title, starts_at, location, rooms(name)").in("id", eventIds)
+      : Promise.resolve({ data: [] as { id: string; title: string; starts_at: string; location: string | null; rooms: unknown }[] }),
   ]);
   const msgById = new Map((messages.data ?? []).map((m) => [m.id, m]));
   const chById = new Map((channels.data ?? []).map((c) => [c.id, c]));
@@ -100,11 +109,12 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
         ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ev.starts_at))
         : "";
       // 회의에서 빠졌거나 지워진 회의면 RLS 가 주지 않는다
-      const room = (ev?.rooms as { name?: string } | null | undefined)?.name;
+      const room = (ev?.rooms as { name?: string } | null | undefined)?.name ?? ev?.location ?? undefined;
       // 회의 불참은 누가 불참했는지를 앞에 붙인다 ("김OO 님 · 10. 1. 오후 02:00 · 회의실")
       const who = n.type === "event_decline" ? `${(n.actor_id && nameById.get(n.actor_id)) || "알 수 없음"} 님` : "";
-      const preview = ev ? [who, when, room].filter(Boolean).join(" · ") : "볼 수 없는 회의입니다";
-      return { ...n, title: ev?.title ?? "회의", preview, parentId: null };
+      const soon = n.type === "event_reminder" ? reminderLead(n.remind_minutes) : "";
+      const preview = ev ? [soon, who, when, room].filter(Boolean).join(" · ") : "볼 수 없는 일정입니다";
+      return { ...n, title: ev?.title ?? "일정", preview, parentId: null };
     }
     const m = n.message_id ? msgById.get(n.message_id) : undefined;
     const ch = n.channel_id ? chById.get(n.channel_id) : undefined;

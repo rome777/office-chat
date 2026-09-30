@@ -26,6 +26,13 @@
   --ok: #2f9e44;
   --warn: #e8a100;
   --bad: #e03131;
+  /* 일정 유형 색 (② 일정, 2026-09-30) — 회의·업무·개인·외근·휴가·부재·바쁨 */
+  --k-meeting: #1f6feb;
+  --k-work: #2b8a3e;
+  --k-personal: #7048e8;
+  --k-outside: #d9480f;
+  --k-leave: #c2255c;
+  --k-busy: #7a8699; /* 팀원의 "바쁨" — 유형을 드러내지 않는 색 */
 }
 
 :root[data-theme="light"] {
@@ -48,6 +55,12 @@
     --accent: #8eb8ff;
     --mine: #173a6b;
     --logo-ink: #ffffff;
+  --k-meeting: #74aaff;
+  --k-work: #69db7c;
+  --k-personal: #b197fc;
+  --k-outside: #ffa94d;
+  --k-leave: #f783ac;
+  --k-busy: #8595ad;
   }
 }
 
@@ -67,6 +80,12 @@
   --accent: #8eb8ff;
   --mine: #173a6b;
   --logo-ink: #ffffff;
+  --k-meeting: #74aaff;
+  --k-work: #69db7c;
+  --k-personal: #b197fc;
+  --k-outside: #ffa94d;
+  --k-leave: #f783ac;
+  --k-busy: #8595ad;
 }
 
 * {

@@ -6,7 +6,8 @@
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import s from "./panel.module.css";
 
-const BUTTONS: { kind: Exclude<PanelState["kind"], "thread">; label: string }[] = [
+// 값 없이 여는 대화 패널만 (일정 패널 등 값이 필요한 종류가 늘어도 여기엔 안 들어온다)
+const BUTTONS: { kind: Extract<PanelState, { kind: "summary" | "todos" | "chores" | "channelInfo" }>["kind"]; label: string }[] = [
   { kind: "summary", label: "요약" },
   { kind: "todos", label: "할 일" },
   { kind: "chores", label: "잡무" },

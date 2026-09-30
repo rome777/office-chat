@@ -1,230 +1,317 @@
 "use client";
 
-// ② 캘린더 화면 (/calendar). 주간 보기 + 회의 만들기·상세 + 회의실 예약 현황.
-// 회의 하나를 여는 주소는 /calendar?e=<회의 id> — 일정 알림(③)이 이 주소로 보낸다.
-// /calendar?new=1 은 회의 만들기를 바로 열고, &with=<사람 id> 면 그 사람을 참석자로 넣어 둔다 (대시보드·프로필 카드의 "일정 잡기").
-// /calendar#rooms 는 회의실 예약 현황으로 내려간다. 메뉴·테마 버튼은 공통 틀(2026-09-30)에 있다.
+// ② 일정 화면 (/calendar, 2026-09-30 개편). 서브 메뉴 칸 | 큰 캘린더(월·주·일) + 아래 목록 두 칸.
+// 일정 상세·만들기·고치기는 공통 틀의 오른쪽 패널에 연다 (RightPanel → EventPanel·EventEditor).
+// 주소:
+//   /calendar?e=<일정 id>        그 일정의 상세를 연다 (일정 알림 ③ 이 이 주소로 보낸다)
+//   /calendar?new=1&with=<사람>   일정 만들기를 그 사람을 참석자로 넣어 연다 (대시보드·프로필 카드의 "일정 잡기")
+//   /calendar#rooms               회의실 예약(/rooms)으로 넘긴다 (예전 주소)
+// 보이는 것은 내가 만들었거나 초대받은 일정 + 같은 부서 팀원이 공개 범위만큼 보여 준 일정뿐이다 (DB 가 지킨다).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Room } from "@/lib/types/calendar";
-import type { Person } from "@/lib/types/people";
-import { getPeople, unknownPerson } from "@/components/people/directory";
-import EventDetail from "./EventDetail";
-import EventForm from "./EventForm";
-import RoomBoard from "./RoomBoard";
-import WeekGrid from "./WeekGrid";
-import { getEvent, getMyId, listMyEvents, listRooms, type EventWithAttendees } from "./source";
-import { addDays, formatKstDay, kstDateKey, startOfKstWeek, toMs } from "./time";
-import s from "./calendar.module.css";
+import type { TeamEvent } from "@/lib/types/calendar";
+import { getPeople } from "@/components/people/directory";
+import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import CalendarNav from "./CalendarNav";
+import EventLists, { rangeOf, type RowNames } from "./EventLists";
+import MonthGrid from "./MonthGrid";
+import TimeGrid from "./TimeGrid";
+import { focusCalendarDate, useCalendarFocus, useCalendarVersion } from "./calendarBus";
+import {
+  DEFAULT_FILTERS,
+  addDaysKey,
+  addMonthKey,
+  byDay as groupByDay,
+  dayStart,
+  eventItem,
+  mondayOf,
+  monthGrid,
+  passes,
+  teamItem,
+  type CalItem,
+  type Filters,
+} from "./items";
+import { getCategoryNames, getEvent, getMyId, listMyEvents, listRooms, listTeamEvents, type EventWithAttendees } from "./source";
+import { kstDateKey } from "./time";
+import s from "./schedule.module.css";
 
-type Dialog = { kind: "create"; with?: Person[] } | { kind: "edit"; event: EventWithAttendees } | null;
+type View = "month" | "week" | "day";
+const VIEW_KEY = "workon.calendar.view";
+const FILTER_KEY = "workon.calendar.filters";
+
+function readStored<T>(key: string, fallback: T, ok: (v: unknown) => boolean): T {
+  try {
+    const raw = localStorage.getItem(key);
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    return v !== null && ok(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function store(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 저장이 막힌 브라우저(사생활 보호 창)면 이번 화면에서만 기억한다
+  }
+}
 
 export default function CalendarView() {
   const router = useRouter();
   const params = useSearchParams();
-  const openId = params.get("e");
-  const wantNew = params.get("new") === "1";
-  const withId = params.get("with");
+  const { openPanel } = useWorkspace();
+  const [today, setToday] = useState(() => kstDateKey(new Date()));
 
   const [myId, setMyId] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [weekStart, setWeekStart] = useState(() => startOfKstWeek(new Date()));
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [view, setViewState] = useState<View>("month");
+  const [filters, setFiltersState] = useState<Filters>(DEFAULT_FILTERS);
+  const [selected, setSelected] = useState(today);
+  const [month, setMonth] = useState(today.slice(0, 7));
   const [events, setEvents] = useState<EventWithAttendees[]>([]);
-  const [people, setPeople] = useState<Map<string, Person>>(new Map());
-  const [opened, setOpened] = useState<EventWithAttendees | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [dialog, setDialog] = useState<Dialog>(null);
-  const [boardDate, setBoardDate] = useState(() => kstDateKey(new Date()));
-  const [version, setVersion] = useState(0);
-  const refresh = useCallback(() => setVersion((v) => v + 1), []);
-  const fail = useCallback((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)), []);
+  const [teamEvents, setTeamEvents] = useState<TeamEvent[]>([]);
+  const [names, setNames] = useState<RowNames>({ rooms: new Map(), units: new Map(), channels: new Map(), people: new Map() });
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [teamError, setTeamError] = useState<string | null>(null);
+  const [localVersion, setLocalVersion] = useState(0);
+  const version = useCalendarVersion();
+  const focus = useCalendarFocus();
+
+  // 보는 방식·필터는 이 브라우저에 기억한다 (처음 그림은 기본값 — 서버 그림과 같게)
+  useEffect(() => {
+    setViewState(readStored<View>(VIEW_KEY, "month", (v) => v === "month" || v === "week" || v === "day"));
+    setFiltersState(
+      readStored<Filters>(FILTER_KEY, DEFAULT_FILTERS, (v) => typeof v === "object" && v !== null && "cats" in v && "types" in v),
+    );
+  }, []);
+  const setView = (v: View) => {
+    setViewState(v);
+    store(VIEW_KEY, v);
+    if (v === "month") setMonth(selected.slice(0, 7));
+  };
+  const setFilters = (f: Filters) => {
+    setFiltersState(f);
+    store(FILTER_KEY, f);
+  };
+
+  const select = useCallback((d: string) => {
+    setSelected(d);
+    setMonth(d.slice(0, 7));
+  }, []);
 
   useEffect(() => {
-    void getMyId().then(setMyId, fail);
-    void listRooms().then(setRooms, fail);
-  }, [fail]);
+    void getMyId().then(setMyId, (e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)));
+    void listRooms().then(
+      (rooms) => setNames((n) => ({ ...n, rooms: new Map(rooms.map((r) => [r.id, r.name])) })),
+      () => {},
+    );
+  }, []);
 
   // 다른 사람이 초대·수정·취소한 것은 실시간으로 오지 않으므로(일정 알림은 ③), 탭으로 돌아오면 다시 불러온다
   useEffect(() => {
-    const onVisible = () => document.visibilityState === "visible" && refresh();
+    // 켜 둔 채 자정이 지나면 "오늘"도 다시 정한다
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      setLocalVersion((v) => v + 1);
+      setToday(kstDateKey(new Date()));
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [refresh]);
+  }, []);
 
-  // 이번 주 회의
+  // 패널에서 저장한 일정의 날짜로 옮긴다. 화면을 열기 전에 남아 있던 것은 따르지 않는다 (다른 화면에 다녀오면 오늘로 열리게)
+  const [focusSeen] = useState(() => focus?.seq ?? 0);
+  useEffect(() => {
+    if (focus && focus.seq > focusSeen) select(focus.date);
+  }, [focus, focusSeen, select]);
+
+  // 불러올 기간: 미니 캘린더·월 보기의 달 격자 + 주·일 보기와 오른쪽 목록이 쓰는 날짜
+  const monday = mondayOf(selected);
+  const grid = monthGrid(month);
+  const viewFrom = view === "month" ? grid.first : view === "week" ? monday : selected;
+  const viewTo = view === "month" ? addDaysKey(grid.last, 1) : view === "week" ? addDaysKey(monday, 7) : addDaysKey(selected, 8);
+  const from = viewFrom < grid.first ? viewFrom : grid.first;
+  const to = viewTo > addDaysKey(grid.last, 1) ? viewTo : addDaysKey(grid.last, 1);
+
   useEffect(() => {
     let alive = true;
-    void listMyEvents(weekStart, addDays(weekStart, 7)).then((list) => {
-      if (!alive) return;
-      setEvents(list);
-      setLoadError(null);
-    }, fail);
+    const a = dayStart(from);
+    const b = dayStart(to);
+    void Promise.all([
+      listMyEvents(a, b),
+      listTeamEvents(a, b).then(
+        (t) => (setTeamError(null), t),
+        (e: unknown) => (setTeamError(e instanceof Error ? e.message : String(e)), [] as TeamEvent[]),
+      ),
+    ]).then(
+      async ([list, team]) => {
+        if (!alive) return;
+        setEvents(list);
+        setTeamEvents(team);
+        setLoadError(null);
+        const unitIds = [...new Set(list.map((e) => e.team_unit_id).filter((v): v is string => !!v))];
+        const channelIds = [...new Set(list.map((e) => e.channel_id).filter((v): v is string => !!v))];
+        const [cat, people] = await Promise.all([
+          getCategoryNames(unitIds, channelIds).catch(() => ({ units: new Map<string, string>(), channels: new Map<string, string>() })),
+          team.length ? getPeople([...new Set(team.flatMap((t) => [t.user_id, ...(t.assignees ?? [])]))]).catch(() => []) : Promise.resolve([]),
+        ]);
+        if (!alive) return;
+        setNames((n) => ({ ...n, units: cat.units, channels: cat.channels, people: new Map(people.map((p) => [p.id, p.display_name])) }));
+      },
+      (e: unknown) => {
+        if (alive) setLoadError(e instanceof Error ? e.message : String(e));
+      },
+    );
     return () => {
       alive = false;
     };
-  }, [weekStart, version, fail]);
+  }, [from, to, version, localVersion]);
 
-  // ?e= 로 연 회의. 참석자가 아니면 "찾을 수 없음"
+  // ?e= · ?new=1 · #rooms 를 한 번 처리하고 주소에서 지운다 (새로고침해도 다시 열리지 않게)
+  const openId = params.get("e");
+  const wantNew = params.get("new") === "1";
+  const withId = params.get("with");
   useEffect(() => {
-    if (!openId) {
-      setOpened(null);
-      setNotFound(false);
+    if (window.location.hash === "#rooms") {
+      router.replace(wantNew ? "/rooms?new=1" : "/rooms");
       return;
     }
-    let alive = true;
-    void getEvent(openId).then((e) => {
-      if (!alive) return;
-      setOpened(e);
-      setNotFound(!e);
-      // 다른 주의 회의로 바로 들어온 경우 그 주를 보여 준다
-      if (e) {
-        setWeekStart((w) => {
-          const at = toMs(e.starts_at);
-          return at < w.getTime() || at >= addDays(w, 7).getTime() ? startOfKstWeek(e.starts_at) : w;
-        });
-      }
-    }, fail);
-    return () => {
-      alive = false;
-    };
-  }, [openId, version, fail]);
-
-  // 참석자 이름
-  const attendeeIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const e of [...events, ...(opened ? [opened] : [])]) {
-      e.attendees.forEach((a) => ids.add(a.user_id));
-    }
-    return [...ids].sort().join(",");
-  }, [events, opened]);
-  useEffect(() => {
-    if (!attendeeIds) return;
-    let alive = true;
-    void getPeople(attendeeIds.split(",")).then((list) => {
-      if (alive) setPeople(new Map(list.map((p) => [p.id, p])));
-    }, fail);
-    return () => {
-      alive = false;
-    };
-  }, [attendeeIds]);
-
-  // ?new=1 (&with=) 로 왔으면 회의 만들기를 연다. 주소는 원래대로 돌려 둔다 (새로고침해도 다시 열리지 않게)
-  useEffect(() => {
-    if (!wantNew || !myId) return;
-    router.replace(`/calendar${window.location.hash}`, { scroll: false });
-    if (withId && withId !== myId) {
-      void getPeople([withId]).then(
-        (list) => setDialog({ kind: "create", with: list }),
-        () => setDialog({ kind: "create" }),
-      );
+    if (!openId && !wantNew) return;
+    router.replace("/calendar", { scroll: false });
+    if (openId) {
+      openPanel({ kind: "event", eventId: openId });
+      void getEvent(openId).then((e) => e && focusCalendarDate(kstDateKey(e.starts_at)), () => {});
     } else {
-      setDialog({ kind: "create" });
+      openPanel({ kind: "eventNew", date: kstDateKey(new Date()), withIds: withId ? [withId] : [] });
     }
-  }, [wantNew, withId, myId, router]);
+  }, [openId, wantNew, withId, router, openPanel]);
 
-  // #rooms 로 왔으면 회의실 예약 현황으로 내린다 (회의실 목록을 받아 높이가 정해진 뒤)
-  useEffect(() => {
-    if (rooms.length && window.location.hash === "#rooms") {
-      document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const items = useMemo(() => {
+    const all: CalItem[] = [
+      ...events.map(eventItem),
+      ...teamEvents.map((t) => teamItem(t, names.people.get(t.user_id) ?? "팀원")),
+    ];
+    return all.filter((it) => passes(it, filters));
+  }, [events, teamEvents, names.people, filters]);
+  const byDay = useMemo(() => groupByDay(items), [items]);
+  const marked = useMemo(() => new Set(byDay.keys()), [byDay]);
+
+  const onOpen = (it: CalItem) => {
+    if (it.event) openPanel({ kind: "event", eventId: it.event.id });
+    else if (it.team) {
+      const t = it.team;
+      openPanel({
+        kind: "teamEvent",
+        name: t.name,
+        userId: t.user_id,
+        eventKind: t.kind,
+        label: t.label,
+        title: t.title,
+        location: t.location,
+        assignees: (t.assignees ?? []).map((id) => names.people.get(id) ?? "팀원"),
+        startsAt: t.starts_at,
+        endsAt: t.ends_at,
+        allDay: t.all_day,
+      });
     }
-  }, [rooms]);
+  };
+  const onCreate = (date: string, time?: string) => {
+    select(date);
+    openPanel({ kind: "eventNew", date, time });
+  };
 
-  const openEvent = (id: string | null) =>
-    router.replace(id ? `/calendar?e=${encodeURIComponent(id)}` : "/calendar", { scroll: false });
+  const move = (n: number) => {
+    if (view === "month") {
+      const next = addMonthKey(month, n);
+      setMonth(next);
+      setSelected(next === today.slice(0, 7) ? today : `${next}-01`);
+    } else select(addDaysKey(selected, view === "week" ? 7 * n : n));
+  };
 
-  const weekEnd = addDays(weekStart, 6);
-  const thisWeek = startOfKstWeek(new Date()).getTime() === weekStart.getTime();
+  const label =
+    view === "month"
+      ? `${month.slice(0, 4)}년 ${Number(month.slice(5))}월`
+      : view === "week"
+        ? `${Number(monday.slice(5, 7))}월 ${Number(monday.slice(8))}일 ~ ${Number(addDaysKey(monday, 6).slice(5, 7))}월 ${Number(addDaysKey(monday, 6).slice(8))}일`
+        : `${selected.slice(0, 4)}년 ${Number(selected.slice(5, 7))}월 ${Number(selected.slice(8))}일`;
+  const range = rangeOf(view, month, selected, monday);
+  const onToday = view === "month" ? month === today.slice(0, 7) && selected === today : selected === today;
 
   return (
     <div className={s.page}>
-      <header className={s.toolbar}>
-        <h1>캘린더</h1>
-        <div className={s.weekNav}>
-          <button type="button" className={s.secondary} onClick={() => setWeekStart((w) => addDays(w, -7))} aria-label="이전 주">
+      <CalendarNav
+        month={month}
+        selected={selected}
+        today={today}
+        marked={marked}
+        filters={filters}
+        onFilters={setFilters}
+        onSelect={select}
+        onMonthChange={setMonth}
+        onCreate={() => onCreate(selected)}
+      />
+      <section className={s.body} aria-label="일정 캘린더">
+        <div className={s.toolbar}>
+          <button type="button" className={s.secondary} disabled={onToday} onClick={() => select(today)}>
+            오늘
+          </button>
+          <button type="button" className={s.iconButton} aria-label="이전" onClick={() => move(-1)}>
             ‹
           </button>
-          <button type="button" className={s.secondary} disabled={thisWeek} onClick={() => setWeekStart(startOfKstWeek(new Date()))}>
-            이번 주
-          </button>
-          <button type="button" className={s.secondary} onClick={() => setWeekStart((w) => addDays(w, 7))} aria-label="다음 주">
+          <button type="button" className={s.iconButton} aria-label="다음" onClick={() => move(1)}>
             ›
           </button>
-          <span className={s.weekLabel}>
-            {formatKstDay(weekStart)} ~ {formatKstDay(weekEnd)}
-          </span>
-        </div>
-        <button
-          type="button"
-          className={s.primary}
-          disabled={!myId}
-          onClick={() => setDialog({ kind: "create" })}
-        >
-          회의 만들기
-        </button>
-      </header>
-
-      {loadError && (
-        <p className={s.error} role="alert">
-          캘린더를 불러오지 못했습니다: {loadError}
-        </p>
-      )}
-      {events.length === 0 && !loadError && <p className={s.emptyWeek}>이번 주에 내 회의가 없습니다.</p>}
-      <WeekGrid weekStart={weekStart} events={events} myId={myId ?? ""} onSelect={openEvent} />
-
-      <div id="rooms" className={s.roomsAnchor}>
-        <RoomBoard rooms={rooms} date={boardDate} onDateChange={setBoardDate} version={version} />
-      </div>
-
-      {notFound && (
-        <div className={s.backdrop} onClick={() => openEvent(null)}>
-          <section className={s.dialog} role="dialog" aria-modal="true" aria-label="회의 없음" onClick={(e) => e.stopPropagation()}>
-            <h2>회의를 찾을 수 없습니다</h2>
-            <p className="muted">지워졌거나, 초대받지 않은 회의입니다.</p>
-            <div className={s.actions}>
-              <button type="button" className={s.secondary} onClick={() => openEvent(null)}>
-                닫기
+          <h1 className={s.label}>{label}</h1>
+          <div className={s.seg} role="group" aria-label="보기">
+            {(
+              [
+                ["month", "월"],
+                ["week", "주"],
+                ["day", "일"],
+              ] as const
+            ).map(([v, t]) => (
+              <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+                {t}
               </button>
-            </div>
-          </section>
+            ))}
+          </div>
         </div>
-      )}
-
-      {opened && myId && !dialog && (
-        <EventDetail
-          event={opened}
-          rooms={rooms}
-          people={people}
-          myId={myId}
-          onClose={() => openEvent(null)}
-          onEdit={() => setDialog({ kind: "edit", event: opened })}
-          onChanged={refresh}
+        {loadError && (
+          <p className={s.loadError} role="alert">
+            일정을 불러오지 못했습니다: {loadError}
+          </p>
+        )}
+        {teamError && !loadError && (
+          <p className={s.loadError} role="alert">
+            팀원 일정을 불러오지 못했습니다 (내 일정은 보입니다): {teamError}
+          </p>
+        )}
+        {view === "month" ? (
+          <MonthGrid month={month} selected={selected} today={today} days={byDay} onSelect={select} onCreate={onCreate} onOpen={onOpen} />
+        ) : (
+          <TimeGrid
+            days={view === "week" ? Array.from({ length: 7 }, (_, i) => addDaysKey(monday, i)) : [selected]}
+            byDay={byDay}
+            selected={selected}
+            today={today}
+            myId={myId ?? ""}
+            onSelect={select}
+            onCreate={onCreate}
+            onOpen={onOpen}
+          />
+        )}
+        <EventLists
+          selected={selected}
+          today={today}
+          byDay={byDay}
+          rangeDays={range.days}
+          rangeTitle={range.title}
+          myId={myId ?? ""}
+          names={names}
+          onOpen={onOpen}
+          onCreate={(d) => onCreate(d)}
         />
-      )}
-
-      {dialog && myId && (
-        <EventForm
-          rooms={rooms}
-          myId={myId}
-          editing={dialog.kind === "edit" ? dialog.event : undefined}
-          // 참석자 id 를 기준으로 만든다 (이름을 아직 못 불러온 사람도 빠지지 않게)
-          initialAttendees={
-            dialog.kind === "edit"
-              ? dialog.event.attendees
-                  .filter((a) => a.user_id !== myId)
-                  .map((a) => people.get(a.user_id) ?? unknownPerson(a.user_id))
-              : (dialog.with ?? [])
-          }
-          defaultDate={thisWeek ? kstDateKey(new Date()) : kstDateKey(weekStart)}
-          onClose={() => setDialog(null)}
-          onSaved={(id) => {
-            setDialog(null);
-            refresh();
-            openEvent(id);
-          }}
-        />
-      )}
+      </section>
     </div>
   );
 }

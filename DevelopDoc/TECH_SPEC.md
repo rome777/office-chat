@@ -103,15 +103,15 @@ erDiagram
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`·`event_decline`), `channel_id`, `message_id`, `event_id`, `actor_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). `actor_id` 는 알림을 일으킨 사람 — 지금은 회의 불참(`event_decline`)의 불참한 사람만 채운다 (2026-09-29 추가). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. 유일 (user_id, event_id, type) where type in (`event_invite`, `event_reminder`) → 초대·10분 전 알림은 한 번만. 본문은 저장하지 않는다 |
+| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`·`event_decline`), `channel_id`, `message_id`, `event_id`, `actor_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). `actor_id` 는 알림을 일으킨 사람 — 지금은 회의 불참(`event_decline`)의 불참한 사람만 채운다 (2026-09-29 추가). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. `remind_minutes` 는 시작 전 알림이 몇 분 전인지 (2026-10-01). 유일 (user_id, event_id) where 초대 → 초대는 한 번만, 유일 (user_id, event_id, remind_minutes) where 시작 전 알림 → 알림 시각마다 한 번만. 본문은 저장하지 않는다 |
 | `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
 | `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
 | `chore_lists` | `id`, `channel_id`, `title`, `place`, `memo`, `created_by`, `updated_by`, `created_at`, `updated_at` | 잡무 수첩의 목록 (예: 커피 — 1층 카페). 2026-09-29 추가 (`20260929160000_chore_notes.sql`, WU-28). 만든 사람이 탈퇴해도 남는다 (`on delete set null`) |
 | `chore_entries` | `id`, `list_id`, `person_name`, `detail`, `updated_by`, `created_at`, `updated_at` | 목록 아래 사람별 기록 (예: 이부장님 — 아아 얼음 많이). 사람은 **글자로** 적는다 (호칭으로 부르고, 계정 없는 사람도 있어서) |
 | `rooms` | `id`, `name`(유일), `capacity`, `location` | 회의실. 시드로 넣는다 |
-| `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at` | 회의. `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
-| `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다 |
+| `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at`, `kind`, `subtype`, `all_day`, `location`, `visibility`, `channel_id`, `category`, `team_unit_id` | 일정 (2026-10-01 개편 — 아래 "일정 개편"). `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
+| `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at`, `remind_minutes` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다. `remind_minutes` 는 사람마다 시작 전 알림 (5·10·30·60·1440분 전, 기본 `{10}`) |
 
 회의실 이중 예약은 DB 가 막는다 (`btree_gist` 확장 필요). 화면에서 검사하면 두 사람이 동시에 누를 때 둘 다 통과한다.
 
@@ -196,6 +196,35 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
 권한 테스트가 전부 RLS 에 달려 있으므로, 이후 변경도 정책 전체를 함께 보고 반영한다.
 
+### 일정 개편 (2026-10-01, `20260930230000_schedule_v2.sql`, WU-41·42)
+
+사용자와 정한 규칙 (제안서·와이어프레임: WorkOn 일정 개편안, 2026-09-30~10-01).
+
+| 칸 | 값 | 설명 |
+|---|---|---|
+| `kind` | `meeting`·`work`·`personal`·`outside`·`leave` (기본 meeting) | 회의·업무·개인·외근·휴가/부재 |
+| `subtype` | 유형마다 정해진 값만 (제약 `events_subtype`), 비워도 됨 | 휴가·부재는 버튼으로 고른다(연차·반차·병가·휴직·기타 부재). 나머지는 화면이 제목에서 알아낸다 (`kinds.ts` 의 `detectSubtype`) |
+| `all_day` | boolean | 종일은 한국 0시 ~ 마지막 날 다음 날 0시로 저장 |
+| `location` | 100자까지 | 외근 장소·거래처, 회의실 밖 장소 |
+| `visibility` | `public`·`time_only`·`private` | 같은 부서 팀원에게 보이는 정도. 회의는 쓰지 않는다. 주지 않으면 개인은 time_only, 나머지는 public (`create_event`) |
+| `channel_id` | 채널 (멤버인 곳만 — 트리거가 42501) | 일정을 만든 채널. 프로젝트 분류에 쓴다 |
+| `category`·`team_unit_id` | `team`·`project`·`mine` | **트리거만 쓴다** (사용자 컬럼 권한 없음). 만들 때·참석자가 들고 날 때·유형이나 채널을 바꿀 때 다시 정한다 |
+
+- **분류 순서**: ① 회의·업무이고 어떤 조직(하위 포함, 2명 이상)의 사람이 모두 참석자(불참 응답도 포함) → team, 그런 조직 중 가장 큰 것 ② 부서 채널이 아닌 일반 채널에서 만듦 → project ③ 나머지 → mine. 볼 때마다 따지지 않는 이유: 새 팀원이 오거나 조직이 바뀌면 지난 일정이 저절로 바뀐다
+- **보이는 범위**: 일정 행은 그대로 만든 사람·참석자만 읽는다 (RLS 안 바꿈). 같은 소속 조직 팀원에게는 `list_team_events(from, to)`(security definer, 62일까지 — 화면 `listTeamEvents` 는 60일씩 나눠 부른다)가 가린 칸만 준다. 회의·나만 보기·내가 참석자인 일정은 주지 않는다. **"바쁨"이면 `kind` 도 null** 이다 (2026-10-01 검토 반영 `20261001090000` — 전에는 화면만 회색이고 API 로는 업무·개인이 보였다)
+
+| 유형 | 팀에 공개 | 시간만 공개 |
+|---|---|---|
+| 업무 | 일정명 · 시작~마감 · 담당자(참석자 id) | "바쁨" + 시간 |
+| 개인 | "개인 일정" + 시간 (제목 없이) | "바쁨" + 시간 |
+| 외근 | 일정명 · 장소 · 시간 | "외근" + 시간 (장소 없이) |
+| 휴가·부재 | 연차·반차·기타 부재 + 기간. **병가는 "휴가", 휴직은 "부재"** (건강·인사 정보), 종류를 모르면 "부재" | "부재" + 기간 |
+
+- **알림**: `send_event_reminders()` 가 참석자마다 `remind_minutes` 의 시각에 보낸다 (1분마다 `pg_cron`). 30분보다 이른 알림(1시간·하루 전)은 **알릴 시각이 지난 지 5분 안에만** 보낸다 (`20261001090000` — 전에는 `created_at` 만 봐서, 시작을 앞당기면 곧바로 "내일 시작"이 갔다). 종일 일정의 초대자는 알림 없이 넣는다 (0시 10분 전 = 전날 23:50 이 되므로 — `create_event`, 고치기에서 넣는 사람도)
+- **유형을 참석자 칸이 없는 것(개인·휴가)으로 고쳐도 참석자는 지우지 않는다**: 지우면 알림 없이 그 사람들 캘린더에서 사라진다 (`EventEditor`, 2026-10-01 검토 반영)
+- **확인**: `npm run check:schedule` (20개 — 시험 팀·가상 사용자 3명을 만들고 끝나면 지운다)
+- **`create_event` 새 판**: 인자 13개 (뒤 7개는 기본값) — 예전 6개 인자 호출(운영 화면·검사 스크립트)이 그대로 된다
+
 ## 5. 권한 (RLS)
 
 | 테이블 | 읽기 | 쓰기 |
@@ -212,8 +241,8 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
 | `admin_logs` | 관리자만 | DB 트리거만 |
 | `rooms` | 로그인 사용자 모두 | 관리자만 |
-| `events` | 만든 사람과 참석자만 | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음 |
-| `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
+| `events` | 만든 사람과 참석자만. 같은 부서 팀원은 `list_team_events()` 로 공개 범위만큼 가린 칸만 (2026-10-01) | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음. `category`·`team_unit_id` 는 트리거만 |
+| `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response`·`remind_minutes` 만 수정 |
 | `chore_lists` | 그 채널의 멤버 | 만들기·고치기(`title`·`place`·`memo`)는 멤버. 삭제는 만든 사람·관리자만 |
 | `chore_entries` | 목록을 볼 수 있는 사람 (= 그 채널 멤버) | 추가·고치기(`person_name`·`detail`)·삭제 모두 멤버. 다른 목록으로 옮길 수 없다 (`list_id` 수정 권한 없음) |
 | `profiles` | 로그인 사용자 모두 (`status` 칸만 본인, `my_status()` — 2026-09-30) | 본인 행의 `avatar`·`status`·`status_message` 만 (2026-09-30. 이름·아이디·부서·직급은 서버·시드만) |
@@ -366,10 +395,20 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ### 캘린더·회의 예약 (F7)
 
-**화면** — `/calendar`
+**화면 — `/calendar` 일정 (2026-10-01 개편, WU-41)**
+
+- 배치: 서브 메뉴 칸(`CalendarNav`: [+ 일정 만들기] · 미니 캘린더 · 분류 필터 내 일정/팀 일정/프로젝트 일정 · 유형 필터 5개) | 본문(툴바 오늘·‹›·월/주/일 → `MonthGrid`·`TimeGrid` → 아래 목록 두 칸 `EventLists`: 선택한 날짜 | 보고 있는 기간). 보기·필터는 `localStorage` 에 기억
+- 날짜를 누르면 선택, **두 번 누르면 그 날짜로 만들기** (주·일 보기는 시간 칸을 두 번 누르면 그 시각, 30분 단위). 키보드는 날짜 칸에서 Enter, 목록 머리의 [이 날에 만들기]
+- 만들기·고치기·상세는 **공통 틀의 오른쪽 패널** (`EventEditor`·`EventPanel`, 패널 종류 `eventNew`·`eventEdit`·`event`·`teamEvent`). 패널과 캘린더는 `calendarBus`(바뀜·보여 줄 날짜)로 잇는다
+- 폼: 유형 5개 → 휴가·부재면 종류 버튼 → 제목(칸 안에 유형별 예시, 비우면 유형 이름 — 휴가는 고른 종류) → 시작(날짜·시간)·종료(날짜·시간)·종일 → 회의실(회의 기본, 업무는 [+ 회의실], 그날 빈 시간 막대) · 장소 · 참석자(업무는 "담당자", 외근은 [+ 동행]) · 관련 채널 → 공개 범위 3단계와 "팀원 캘린더에는 이렇게 보입니다" 미리보기 (회의 제외) → 알림 → 상세 내용. 반복은 아직 없다 (4단계)
+- 팀원 일정은 `list_team_events` 결과를 "이름 · 일정명" / "이름 바쁨" 처럼 빗금 칸으로 그린다. "바쁨"은 유형을 드러내지 않게 회색(`--k-busy`)
+- 공휴일은 코드 표(`kinds.ts` `HOLIDAYS`, 2026~2027). 해가 바뀌기 전에 더한다
+- **회의실 예약은 `/rooms`** (`RoomsView`): 회의실별 하루 현황(`RoomBoard`) + 예전 회의 만들기 폼(`EventForm`)을 [회의실 예약]으로. 예전 주소 `/calendar#rooms` 는 `/rooms` 로 넘긴다
+
+**예전 화면 (2026-09-29, 참고)**
 
 - 주간 보기: 내가 만들었거나 초대받은 회의(`event_attendees` 에 내가 있는 것). 취소된 회의는 줄을 그어 보인다.
-- 회의 만들기: 제목, 날짜·시작·끝, 회의실, 참석자. 회의실을 고르면 `room_busy` 로 그날 예약된 시간대를 회색으로 보여 준다. 참석자는 DM 의 사람 검색(WU-08)을 다시 쓴다. 만든 사람(나)은 `create_event` 가 항상 "참석"으로 넣으므로, 참석자 칸 맨 앞에 **× 없는 이름표** `이름 · 만든 사람` 으로 보인다 (`PeoplePicker` 의 `fixed`, 2026-09-30). 검색 결과에는 나오지 않는다.
+- 회의 만들기 (지금은 `/rooms` 의 회의실 예약 폼): 제목, 날짜·시작·끝, 회의실, 참석자. 회의실을 고르면 `room_busy` 로 그날 예약된 시간대를 회색으로 보여 준다. 참석자는 DM 의 사람 검색(WU-08)을 다시 쓴다. 만든 사람(나)은 `create_event` 가 항상 "참석"으로 넣으므로, 참석자 칸 맨 앞에 **× 없는 이름표** `이름 · 만든 사람` 으로 보인다 (`PeoplePicker` 의 `fixed`, 2026-09-30). 검색 결과에는 나오지 않는다.
 - 회의 상세: 참석자별 응답, 참석·불참 버튼 (DB 값은 `accepted`·`declined`, 화면 말만 2026-09-29 "수락·거절"에서 바꿈). 만든 사람에게는 수정·취소 버튼.
 - 저장은 `events` 한 행과 `event_attendees` 여러 행을 **한 번에** 넣어야 한다 → `create_event(...)` 함수 하나로 묶는다. 회의실이 겹치면 제약 오류를 "이미 예약된 시간입니다"로 바꿔 보여 준다.
 
@@ -380,7 +419,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `event_invite` | `event_attendees` INSERT 트리거 | 새 참석자 (만든 사람 제외) |
 | `event_update` | `events` UPDATE 트리거 — 제목·시각·회의실이 바뀔 때 | 거절하지 않은 참석자 (고친 사람 제외) |
 | `event_cancel` | `events` UPDATE 트리거 — `canceled_at` 이 채워질 때 | 거절하지 않은 참석자 (취소한 사람 제외) |
-| `event_reminder` | `pg_cron` 1분마다: 10분 안에 시작하고 취소되지 않은 회의 | 거절하지 않은 참석자 (만든 사람 포함) |
+| `event_reminder` | `pg_cron` 1분마다: 참석자마다 고른 시각(`remind_minutes`, 기본 10분 전)이 된 취소되지 않은 일정 (2026-10-01) | 거절하지 않은 참석자 (만든 사람 포함). 알림 목록에 "30분 후 시작"처럼 앞말이 붙는다 |
 | `event_decline` | `event_attendees` UPDATE 트리거 — 응답이 `declined` 로 바뀔 때 (취소된 회의 제외, `20260929190000`) | 회의를 만든 사람. `actor_id` = 불참한 사람. 다시 참석하면 만든 사람이 **아직 안 읽은** 그 사람의 불참 알림을 지운다 (읽은 것은 남긴다). 화면은 알림 DELETE 를 받아 목록에서 뺀다 |
 
 - 10분 전 알림은 유일 제약 덕분에 1분마다 돌아도 한 번만 들어간다.
@@ -391,6 +430,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 **함정**
 
 - **회의 고치기는 한 번에 저장되지 않는다**: `events` 수정 뒤 `event_attendees` 추가·삭제를 따로 부른다 (한 번에 고치는 DB 함수가 없다). 참석자 저장이 실패하면 회의 내용만 바뀐 채 남으므로 화면에 "회의는 고쳤지만 참석자를 …하지 못했습니다"를 띄운다. 자주 문제가 되면 `update_event(...)` 함수를 만든다.
+- **여러 행을 한 번에 넣을 때 빠진 칸은 null 이 된다** (4절 함정과 같은 것, 2026-10-01 화면 시험 데이터에서 또 겪음): `all_day` 를 한 행에만 주면 나머지가 null 이라 not null 제약에 걸린다. 모든 행에 같은 키를 적는다
 - **DB 시각 문자열은 `+00:00` 형식이다**: 화면에서 만든 `toISOString()`(`Z`)과 글자로 비교하면 같은 시각도 다르게 나온다. 시각 비교는 밀리초(`Date.getTime()`)로만 한다 (`components/calendar/time.ts` 의 `toMs`).
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
 - **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. 회의 폼의 날짜(`<input type="date">`)와 시·분 목록 값은 한국 시각으로 보고 변환한다 (`time.ts` 의 `fromKstInput`).
@@ -524,11 +564,11 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ### 화면 틀·대시보드 (2026-09-30, WU-35)
 
-- **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 캘린더, `/org` = 조직도(2026-09-30). 모두 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다. **단 오른쪽 패널은 대화에 딸린 것(스레드·요약·할 일·잡무·채널 정보)이면 `/chat` 을 떠날 때 닫히고, 나에게 딸린 것(내 프로필)만 이어진다** (2026-09-30 WU-40 — 아래 "오른쪽 패널" 규칙)
-- **왼쪽 메뉴**(`NavRail`): WorkOn 로고(폭 170px 가운데) · 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) | 구분선 | 조직도(`/org` 페이지) · 알림(안 읽은 알림 수, 누르면 알림 목록) | 내 카드. 메뉴 사이 12px, 홈 아래와 구분선 위아래는 24px. **"설정"은 2026-09-30 뺐다** — 내 카드를 누르면 위 막대 내 이름(`UserMenu`)과 같은 내 메뉴(② `sidebar/MyMenu`: 상태·내 프로필·로그아웃)가 카드 위로 열리고, 내 프로필 패널은 그 메뉴에서 연다 (예전에는 내 카드·설정이 패널을 바로 열었다). 메뉴 칸(`.nav`)이 `overflow-y: auto` 라 넘친 부분이 잘리므로 카드 위 메뉴는 칸 폭에 맞춘다. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
+- **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 일정, `/rooms` = 회의실 예약(2026-10-01), `/org` = 조직도(2026-09-30). 모두 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다. **단 오른쪽 패널은 대화에 딸린 것(스레드·요약·할 일·잡무·채널 정보)이면 `/chat` 을 떠날 때 닫히고, 나에게 딸린 것(내 프로필)만 이어진다** (2026-09-30 WU-40 — 아래 "오른쪽 패널" 규칙)
+- **왼쪽 메뉴**(`NavRail`): WorkOn 로고(폭 170px 가운데) · 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/rooms`, 2026-10-01) | 구분선 | 조직도(`/org` 페이지) · 알림(안 읽은 알림 수, 누르면 알림 목록) | 내 카드. 메뉴 사이 12px, 홈 아래와 구분선 위아래는 24px. **"설정"은 2026-09-30 뺐다** — 내 카드를 누르면 위 막대 내 이름(`UserMenu`)과 같은 내 메뉴(② `sidebar/MyMenu`: 상태·내 프로필·로그아웃)가 카드 위로 열리고, 내 프로필 패널은 그 메뉴에서 연다 (예전에는 내 카드·설정이 패널을 바로 열었다). 메뉴 칸(`.nav`)이 `overflow-y: auto` 라 넘친 부분이 잘리므로 카드 위 메뉴는 칸 폭에 맞춘다. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
 - **메시지 목록 칸**: 검색(이름으로 거르기) · 즐겨찾기 · 채널 · 다이렉트 메시지. 채널을 즐겨찾기에 넣으면 채널 칸에서는 빠진다. 알림을 끈 채널에는 종 표시
 - **`#일반` 은 목록에서만 숨긴다** (2026-09-30 결정): 채널 목록·채널 찾기·대시보드·메시지 합계에서 뺀다. 채널·멤버십·자동 가입은 그대로라 알림·검색·`?m=` 으로는 열린다. `/chat` 을 처음 열면(기본값이 `#일반`) 즐겨찾기 → 첫 채널 → 첫 DM 을 연다. 보던 채널에서 빠지면 보이는 첫 채널로 간다
-- **주소로 열기**: `/chat?c=<채널 id>`(대시보드·프로필 카드), `/chat?m=<메시지 id>`(알림·검색·요약·할 일), `/calendar?e=<회의 id>`, `/calendar?new=1&with=<사람 id>`(회의 만들기를 그 사람을 참석자로 넣어 연다). 예전 주소 `/?m=`·`/?c=` 는 대시보드가 `/chat` 으로 넘긴다
+- **주소로 열기**: `/chat?c=<채널 id>`(대시보드·프로필 카드), `/chat?m=<메시지 id>`(알림·검색·요약·할 일), `/calendar?e=<일정 id>`(상세 패널), `/calendar?new=1&with=<사람 id>`(일정 만들기 패널을 그 사람을 참석자로 넣어 연다), `/rooms?new=1`(회의실 예약 폼). 예전 주소 `/?m=`·`/?c=` 는 대시보드가 `/chat` 으로 넘긴다
 - **알림 구독은 알림 버튼 하나만 연다**: 왼쪽 메뉴·대시보드 카드는 `notifications/bellStore` 로 숫자를 받고 목록을 연다 (훅을 두 번 쓰면 토스트가 두 번 뜬다). 알림 버튼은 `/chat` 에 있을 때만 "그 대화를 보고 있다"로 친다
 - **대시보드**: 요약 카드(오늘의 일정·안 읽은 메시지·내 회의실 예약·새 알림) → 오늘의 일정 | 빠른 실행(새 DM·회의 만들기·회의실) → 오늘 할 일(담당이 나인 안 끝난 `todos`, 기한 지난 것·오늘 것부터, 체크하면 `done_at`) | 회의실 사용현황(② `RoomBoard`) → 최근 대화(대화마다 가장 최근 최상위 메시지, 대화 수만큼 조회). 새 표는 없다
 - **프로필 카드**(`shell/ProfileCard`): 메시지 작성자·채널 멤버·조직도 사람을 누르면 뜬다. 사진·소속·상태 메시지는 `profiles`, 상태는 접속자 채널, 연락처는 공개한 것만(RLS), **이메일은 본인 것만** (남의 로그인 메일은 DB 가 주지 않는다). "메시지"는 DM 을 열고 `/chat` 으로, "일정 잡기"는 `/calendar?new=1&with=`
@@ -590,7 +630,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ README.md
 ├─ DevelopDoc/                    PRD · TECH_SPEC · WORK_UNITS · FINAL_CHECKLIST
 ├─ app/
-│  ├─ (app)/                      로그인한 화면 (2026-09-30) — layout.tsx(공통 틀) · page.tsx(대시보드 /) · chat/(채팅) · calendar/(② 캘린더·회의 예약)
+│  ├─ (app)/                      로그인한 화면 (2026-09-30) — layout.tsx(공통 틀) · page.tsx(대시보드 /) · chat/(채팅) · calendar/(② 일정) · rooms/(② 회의실 예약, 2026-10-01)
 │  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만 · icon.svg(파비콘, 2026-09-30)
 │  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
 │  └─ api/
@@ -610,7 +650,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀) · PersonAvatar(사람 id 로 사진·상태 점, 채팅·조직도가 씀) · presence(회사 접속자 채널)
-│  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
+│  ├─ calendar/                   ② 일정·회의실 예약 화면 부품 · source.ts(DB 창구) · kinds.ts(유형·공개 범위·공휴일) · items.ts(그릴 칸·날짜 키)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙) · bellStore(메뉴·대시보드와 숫자 나누기) · mutes(채널별 알림 끄기)
 ├─ lib/
@@ -628,7 +668,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경). 조직도 `orgChart` ③ 도 같은 날 한 줄 추가했다가 2026-09-30 조직도를 페이지(`/org`)로 옮기며 뺐다. 내 프로필 `profile` ② 은 2026-09-30 에 `PanelState` 한 줄과 ③ `RightPanel` 의 제목·분기 한 줄씩을 추가했다 (헤더의 내 이름 메뉴에서 연다).
 
-**패널이 닫히는 때** (2026-09-30 WU-40, 공통 틀 변경): `WorkspaceContext` 가 패널을 두 갈래로 나눈다. `GLOBAL_PANELS`(지금은 `profile` 하나)는 어느 페이지·채널에서나 열려 있고, 나머지는 대화 패널이라 ① `setChannel` 로 **다른 id** 의 대화로 옮기거나(이름만 바뀐 것은 그대로) ② 주소가 `/chat` 이 아니게 되면 닫힌다. 돌아와도 다시 열지 않는다 (사용자 결정). 전에는 패널이 채널과 따로 저장돼 다른 채널·DM·캘린더 옆에 남았다 (WU-35 에서 오른쪽 패널을 공통 틀로 옮기며 생김). 채팅 머리 `⋯` 드롭다운도 `key={channel.id}` 로 채널이 바뀌면 닫힌다. **새 패널이 나에게 딸린 것(페이지와 상관없는 것)이면 `GLOBAL_PANELS` 에 넣는다.** 알림으로 다른 채널 답글에 갈 때는 `setChannel` 로 패널이 닫힌 뒤, 그 채널을 다 불러오고 나서 ① `ChatPane` 이 스레드를 연다 — 순서가 바뀌면 방금 연 스레드가 닫히니 유의.
+**패널이 닫히는 때** (2026-09-30 WU-40, 공통 틀 변경): `WorkspaceContext` 가 패널을 두 갈래로 나눈다. `GLOBAL_PANELS`(지금은 `profile` 하나)는 어느 페이지·채널에서나 열려 있고, 나머지는 대화 패널이라 ① `setChannel` 로 **다른 id** 의 대화로 옮기거나(이름만 바뀐 것은 그대로) ② 주소가 `/chat` 이 아니게 되면 닫힌다. 돌아와도 다시 열지 않는다 (사용자 결정). 전에는 패널이 채널과 따로 저장돼 다른 채널·DM·캘린더 옆에 남았다 (WU-35 에서 오른쪽 패널을 공통 틀로 옮기며 생김). 채팅 머리 `⋯` 드롭다운도 `key={channel.id}` 로 채널이 바뀌면 닫힌다. **새 패널이 나에게 딸린 것(페이지와 상관없는 것)이면 `GLOBAL_PANELS` 에 넣는다.** 페이지에 딸린 패널은 `PAGE_OF` 에 그 페이지를 적는다 — 일정 패널 4종은 `/calendar` 를 떠나면 닫힌다 (2026-10-01). 적지 않은 것은 대화 패널(`/chat`)로 본다. 알림으로 다른 채널 답글에 갈 때는 `setChannel` 로 패널이 닫힌 뒤, 그 채널을 다 불러오고 나서 ① `ChatPane` 이 스레드를 연다 — 순서가 바뀌면 방금 연 스레드가 닫히니 유의.
 
 ## 10. 환경 변수
 
@@ -720,6 +760,8 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `components/auth/` | 이메일 로그인 화면, 가입 처리(`signUp.ts`, 화면에서 뺌), 입장 관문 (②) |
 | `components/shell/` | 공통 틀 (2026-09-30 개편: 대시보드 `/`·채팅 `/chat`·캘린더가 같은 메뉴·위 막대·오른쪽 패널을 쓴다) — 7절 "화면 틀·대시보드" |
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
+| `supabase/migrations/20260930230000_schedule_v2.sql` | 일정 개편: `events` 유형·세부 유형·종일·장소·공개 범위·채널·분류, 사람별 알림 `remind_minutes`, 분류 트리거, `create_event` 새 판, `list_team_events` (4절 "일정 개편", WU-42) |
+| `supabase/migrations/20261001090000_schedule_fixes.sql` | 일정 개편 검토 반영: "바쁨"은 `kind` 도 가림, 1시간·하루 전 알림은 제때(5분 안)만, 종일 일정 초대자는 알림 없음 (WU-42) |
 | `supabase/migrations/20260930210000_channel_leaders.sql` | 일반 채널 리더·부리더 `memberships.role`, 수정·초대·내보내기 정책, `set_sub_leader`·`transfer_leader`, 리더 자동 위임 트리거 (5절 "리더·부리더", WU-39) |
 
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
@@ -730,6 +772,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
 | `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명·프로젝트 채널 2개·샘플 대화·샘플 회의·회의실. 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD` (6자 이상 — Supabase 최소 길이). 여러 번 돌려도 된다. 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다) |
+| `scripts/schedule-check.mjs` | 일정 개편 검사 (`npm run check:schedule`, 20개): 분류, 남의 채널 거부, category 못 고침, 팀원에게 보이는 칸(바쁨·외근·병가·휴직·나만 보기), 다른 부서 못 봄, 종일 초대자 알림 없음. 시험 팀·가상 사용자 3명을 끝나면 지운다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다

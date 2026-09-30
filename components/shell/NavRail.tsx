@@ -98,7 +98,7 @@ export default function NavRail() {
           badge={<Badge n={unread.total} />}
         />
         <Item href="/calendar" icon={<CalendarIcon />} label="일정" active={path === "/calendar"} />
-        <Item href="/calendar#rooms" icon={<RoomIcon />} label="회의실 예약" className={s.navWide} />
+        <Item href="/rooms" icon={<RoomIcon />} label="회의실 예약" active={path === "/rooms"} className={s.navWide} />
       </ul>
       <ul className={`${s.navList} ${s.navGroup}`}>
         <Item href="/org" icon={<OrgIcon />} label="조직도" active={path === "/org"} className={s.navWide} />

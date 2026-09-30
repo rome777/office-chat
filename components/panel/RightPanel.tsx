@@ -5,6 +5,8 @@
 
 import ThreadPanel from "@/components/chat/ThreadPanel";
 import ProfilePanel from "@/components/profile/ProfilePanel"; // ② 내 프로필 (2026-09-30)
+import EventEditor from "@/components/calendar/EventEditor"; // ② 일정 만들기·고치기 (2026-09-30)
+import EventPanel, { TeamEventPanel } from "@/components/calendar/EventPanel"; // ② 일정 상세·팀원 일정
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import ChannelInfoPanel from "./ChannelInfoPanel";
 import ChoresPanel from "./ChoresPanel";
@@ -19,6 +21,10 @@ const TITLE: Record<PanelState["kind"], string> = {
   channelInfo: "채널 정보",
   chores: "잡무 수첩",
   profile: "내 프로필",
+  event: "일정 상세",
+  eventNew: "일정 만들기",
+  eventEdit: "일정 고치기",
+  teamEvent: "팀원 일정",
 };
 
 function PanelBody({ panel }: { panel: PanelState }) {
@@ -35,6 +41,14 @@ function PanelBody({ panel }: { panel: PanelState }) {
       return <ChoresPanel />;
     case "profile":
       return <ProfilePanel />;
+    case "event":
+      return <EventPanel eventId={panel.eventId} />;
+    case "eventNew":
+      return <EventEditor mode="new" date={panel.date} time={panel.time} withIds={panel.withIds} />;
+    case "eventEdit":
+      return <EventEditor mode="edit" eventId={panel.eventId} />;
+    case "teamEvent":
+      return <TeamEventPanel {...panel} />;
   }
 }
 
