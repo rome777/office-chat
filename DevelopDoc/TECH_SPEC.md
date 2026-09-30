@@ -460,13 +460,17 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
   초대 권한이 있는 사람(관리자·만든 사람·권한 받은 멤버)에게 "멤버 추가"(② 의 `PeoplePicker`)와 권한 없는 멤버 옆 "초대 권한 주기", 관리자에게만 "초대 권한 빼기" (WU-27). 권한 변경은 `useChannelMembers` 가 memberships UPDATE 를 받아 바로 반영한다. 관리 기록은 멤버 목록이나 누구의 권한이 바뀌면 다시 불러온다 (전에는 멤버 수만 봐서 권한을 바꿔도 기록이 안 늘었다).
   권한이 없으면 RLS 가 0건을 지우므로(오류가 아님) 지운 행 수로 성공을 판단한다. 멤버 목록은 실시간으로 바뀐다 (`useChannelMembers`).
 
-### 조직도 (2026-09-29, ③ `OrgChartPanel`)
+### 조직도 (2026-09-30 페이지로 옮김, ③ `components/org/`, WU-36)
 
-- 헤더의 "조직도" 버튼 → 오른쪽 패널. **지금 채널이 부서 채널이면 그 부서와 하위 조직만**, 그 밖(프로젝트 채널·DM)에서는 회사 전체를 보여 준다
-- 위쪽 경로(회사 › 사업부 › 본부 › 팀)를 누르면 범위가 넓어지고, 하위 조직의 "보기"로 좁힌다. 채널을 바꾸면 그 채널의 부서로 돌아간다
-- 조직마다 장을 맨 위에(직책 배지), 나머지는 직급(`RANK_ORDER`, `lib/types/org.ts`) → 이름 순. 인원 수는 하위 조직까지 합친 수
-- 사람의 "메시지"를 누르면 ② 의 `startDm` 으로 DM 을 열고 패널을 닫는다
-- `org_units` 와 소속 있는 `profiles` 를 한 번에 받아 1분 동안 기억한다 (`orgSource.ts`). 조직이 적어 나무 모양은 브라우저에서 만든다
+- **독립 페이지 `/org`** (2026-09-29 에는 채팅 오른쪽 패널 `OrgChartPanel` 이었다 — 지웠다, `PanelState` 의 `orgChart` 도 뺐다). 왼쪽 메뉴 "조직도"는 페이지 이동이다
+- **나란히 보기**: 왼쪽 넓은 칸 = 다이어그램(`OrgDiagram`), 오른쪽 = 계층 목록(`OrgTree`). 선택한 조직은 양쪽이 같이 쓴다 — 다이어그램에서 고르면 목록이 그 줄로 스크롤·펼침, 목록에서 고르면 다이어그램이 그 노드로 옮겨 간다. 900px 미만에서는 위의 "다이어그램 / 목록" 버튼으로 하나씩
+- **처음 고르는 조직**: `?unit=<조직 id>` → `?channel=<채널 id>` 의 부서(채팅 "⋯ → 조직도") → 내 소속 → 회사. 고르면 주소가 `?unit=` 으로 바뀐다
+- **다이어그램**: 위 → 아래, 처음부터 전부 펼침, **연결선은 직선·직각**(부모 아래 → 가로선 → 자식 위). 회사·사업부·본부는 카드(단계 색 줄·이름·조직장 이름과 직급·인원), 팀은 알약. **아래가 모두 팀이면 팀 알약을 세로로 쌓아** 폭을 줄인다. 자리 계산은 `layout()` (조직 수가 적어 라이브러리 없이). 선택한 조직까지의 선은 `--accent` 로 굵게. 처음에는 칸 폭에 맞춰 축소(최소 40%), −·+·맞추기, 빈 곳을 끌어서 이동
+- **단계 색**: 회사 보라 `#7c5cff`·사업부 청록 `#1d9e75`·본부 주황 `#d85a30`·팀 파랑 `#378add` (`org.module.css` 의 `--tone`). 알약 바탕·테두리는 `color-mix` 로 `--surface`·`--border` 에 섞어 라이트·다크 모두 맞춘다
+- **계층 목록**: 조직 줄(단계 색 네모·이름·인원, 꺾쇠로 접기) 아래에 그 조직에 바로 속한 사람(장 먼저, 그다음 직급 `RANK_ORDER` → 이름), 그 아래 하위 조직. 사람 줄은 사진·상태 점·이름·"직급 · 직책 · 나". **사람을 누르면 프로필 카드**(메시지·일정 잡기는 카드에서). 처음에는 전부 펼침, "모두 펼치기·모두 접기"
+- **찾기**: 이름·직급·아이디·조직 이름. 목록은 맞는 사람·조직과 그 위 조직만 남기고, 다이어그램은 맞지 않는 조직을 흐리게. Enter 면 처음 맞은 조직을 고른다
+- 고른 조직 막대의 "# 부서 채널"은 내가 멤버인 부서 채널일 때만 보인다 (비공개라서). 회사 채널(`#일반`)은 목록에서 숨기므로 뺀다
+- `org_units` 와 소속 있는 `profiles` 를 한 번에 받아 1분 동안 기억한다 (`components/org/orgSource.ts`). 인원 수는 하위 조직까지 합친 수
 
 ### 안전한 출력 (F4-6)
 
@@ -494,8 +498,8 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ### 화면 틀·대시보드 (2026-09-30, WU-35)
 
-- **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 캘린더. 셋 다 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다
-- **왼쪽 메뉴**(`NavRail`): 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) | 알림(안 읽은 알림 수, 누르면 알림 목록) · 조직도(오른쪽 패널) · 설정(내 프로필 패널) | 내 카드. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
+- **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 캘린더, `/org` = 조직도(2026-09-30). 모두 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다
+- **왼쪽 메뉴**(`NavRail`): 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) | 알림(안 읽은 알림 수, 누르면 알림 목록) · 조직도(`/org` 페이지, 2026-09-30) · 설정(내 프로필 패널) | 내 카드. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
 - **메시지 목록 칸**: 검색(이름으로 거르기) · 즐겨찾기 · 채널 · 다이렉트 메시지. 채널을 즐겨찾기에 넣으면 채널 칸에서는 빠진다. 알림을 끈 채널에는 종 표시
 - **`#일반` 은 목록에서만 숨긴다** (2026-09-30 결정): 채널 목록·채널 찾기·대시보드·메시지 합계에서 뺀다. 채널·멤버십·자동 가입은 그대로라 알림·검색·`?m=` 으로는 열린다. `/chat` 을 처음 열면(기본값이 `#일반`) 즐겨찾기 → 첫 채널 → 첫 DM 을 연다. 보던 채널에서 빠지면 보이는 첫 채널로 간다
 - **주소로 열기**: `/chat?c=<채널 id>`(대시보드·프로필 카드), `/chat?m=<메시지 id>`(알림·검색·요약·할 일), `/calendar?e=<회의 id>`, `/calendar?new=1&with=<사람 id>`(회의 만들기를 그 사람을 참석자로 넣어 연다). 예전 주소 `/?m=`·`/?c=` 는 대시보드가 `/chat` 으로 넘긴다
@@ -571,6 +575,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ components/
 │  ├─ workspace/                  공통 틀 — WorkspaceContext(화면 상태). 세 칸 Workspace·Header 는 2026-09-30 shell/ 로 바꾸며 지웠다
 │  ├─ shell/                      공통 틀 (2026-09-30, 이호섭) — AppFrame · AppShell(배치) · NavRail(왼쪽 메뉴) · ChatWorkspace(/chat) · MessageNav(메시지 목록 칸) · ChatHeader · ProfileCard · favorites · channelDetails · cardStore · useUnreadTotals · icons
+│  ├─ org/                        ③ 조직도 페이지 (2026-09-30) — OrgPage · OrgDiagram(다이어그램) · OrgTree(계층 목록) · orgSource(org_units)
 │  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
 │  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
@@ -579,7 +584,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀) · PersonAvatar(사람 id 로 사진·상태 점, 채팅·조직도가 씀) · presence(회사 접속자 채널)
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
-│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기) · OrgChartPanel(조직도) · orgSource(org_units)
+│  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙) · bellStore(메뉴·대시보드와 숫자 나누기) · mutes(채널별 알림 끄기)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
@@ -594,7 +599,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 └─ .env.example
 ```
 
-오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경). 조직도 `orgChart` ③ 도 같은 날 한 줄 추가했다. 내 프로필 `profile` ② 은 2026-09-30 에 `PanelState` 한 줄과 ③ `RightPanel` 의 제목·분기 한 줄씩을 추가했다 (헤더의 내 이름 메뉴에서 연다).
+오른쪽 패널에는 `WorkspaceContext` 의 `openPanel({ kind })` 로 연다. 계획된 패널 네 가지(`thread` ① · `summary` · `todos` · `channelInfo` ③)는 이미 들어 있다. 잡무 수첩 `chores` ③ 은 2026-09-29 `PanelState` 에 한 줄 추가했다 (공통 틀 변경). 조직도 `orgChart` ③ 도 같은 날 한 줄 추가했다가 2026-09-30 조직도를 페이지(`/org`)로 옮기며 뺐다. 내 프로필 `profile` ② 은 2026-09-30 에 `PanelState` 한 줄과 ③ `RightPanel` 의 제목·분기 한 줄씩을 추가했다 (헤더의 내 이름 메뉴에서 연다).
 
 ## 10. 환경 변수
 
@@ -633,7 +638,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - **스타일은 컴포넌트 옆 `*.module.css`** 에 쓴다. `globals.css` 에 덧붙이지 않는다.
 - **타입은 `lib/types/<영역>.ts`** 에 둔다.
 - **실시간 구독은 영역마다 따로 연다**: 메시지 ①, 미읽음 ②, 알림 ③. 하나의 구독을 셋이 고치지 않는다.
-- **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `/chat?m=<메시지 id>`(① 이 이동·강조), 대화는 `/chat?c=<채널 id>`, 회의는 `/calendar?e=<회의 id>`·새 회의는 `/calendar?new=1&with=<사람 id>`(②). 2026-09-30 까지는 `/?m=` 이었다 (대시보드가 넘겨 준다).
+- **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `/chat?m=<메시지 id>`(① 이 이동·강조), 대화는 `/chat?c=<채널 id>`, 회의는 `/calendar?e=<회의 id>`·새 회의는 `/calendar?new=1&with=<사람 id>`(②), 조직도는 `/org?unit=<조직 id>`·`/org?channel=<채널 id>`(③). 2026-09-30 까지는 `/?m=` 이었다 (대시보드가 넘겨 준다).
   `?m=` 은 새로고침 없이 `router.push` 로 붙여도 동작하고, ① 이 처리한 뒤 주소에서 `m` 만 지운다 (같은 메시지로 다시 이동할 수 있게). 없는 메시지면 가운데 칸에 안내가 뜬다.
 - **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM 은 SDK 를 넣지 않고 REST API 를 `fetch` 로 부른다 (`lib/ai/openai.ts`, 2026-09-29).
 - **줄바꿈은 LF 로 고정한다** (`.gitattributes`, 2026-09-29): 윈도우에서 저장해도 저장소에는 LF 로 들어간다. 없을 때는 README 가 통째로 CRLF 로 바뀌어 모든 줄이 바뀐 것처럼 보이고 머지 충돌이 났다 (PR #16). 이미지·PDF 는 바이너리로 둔다.
