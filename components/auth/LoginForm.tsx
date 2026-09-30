@@ -74,7 +74,7 @@ export default function LoginForm({
         <input
           type="password"
           autoComplete="current-password"
-          placeholder={`비밀번호 (${MIN_PASSWORD}자 이상)`}
+          placeholder="비밀번호"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />

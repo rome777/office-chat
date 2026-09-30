@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { useSelf } from "@/components/chat/useSelf";
+import { useMyProfile } from "@/components/profile/profileSource";
 import SafeText from "@/components/chat/SafeText";
 import { TYPE_LABEL, isLooking, notificationHref, useNotifications, type Arrival, type NotificationView } from "./useNotifications";
 import { onOpenRequest, publishUnread } from "./bellStore";
@@ -34,6 +35,11 @@ export default function NotificationBell() {
   const pathname = usePathname();
   const { channel, panel } = useWorkspace();
   const self = useSelf();
+  // 내 상태가 방해 금지면 토스트·브라우저 알림을 띄우지 않는다. 알림은 그대로 쌓여 목록·배지·탭 제목 숫자는 는다
+  // (2026-09-30 사용자 요청). ref 로 읽어서 상태가 바뀌어도 알림 구독(useNotifications)을 다시 맺지 않는다
+  const { profile } = useMyProfile();
+  const dndRef = useRef(false);
+  dndRef.current = profile?.status === "dnd";
   const [open, setOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [permission, setPermission] = useState<Permission>("unsupported");
@@ -60,6 +66,7 @@ export default function NotificationBell() {
 
   const onArrive = useCallback(
     (arrival: Arrival) => {
+      if (dndRef.current) return;
       const toast = () => {
         const key = ++toastSeq.current;
         setToasts((prev) => [...prev.slice(-(MAX_TOASTS - 1)), { key, arrival }]);
