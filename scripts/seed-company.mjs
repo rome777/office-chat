@@ -1,6 +1,6 @@
 // 회사 시드 데이터. 가상 회사 "한결테크 주식회사" 의 조직(회사 → 사업부 → 본부 → 팀)과 직원 37명,
 // 부서 채널, 프로젝트 채널 2개, 샘플 대화, 샘플 회의를 만든다. 운영 DB 에도 이것을 넣는다 (2026-09-29).
-// 실행: .env.local 에 SEED_PASSWORD=<비밀번호 8자 이상> 을 넣고 npm run seed:company
+// 실행: .env.local 에 SEED_PASSWORD=<비밀번호 6자 이상> 을 넣고 npm run seed:company
 //
 // 여러 번 돌려도 된다: 이 스크립트가 만든 계정(가입 정보 seed = "company")은 이름·소속·직급만 맞추고,
 // 대화·회의는 다시 넣지 않는다. 비밀번호는 새로 만들 때만 정하고 다시 바꾸지 않는다.
@@ -21,8 +21,8 @@ if (!url || !serviceKey) {
   console.error("Supabase 환경 변수가 없습니다. npx vercel env pull .env.local 을 먼저 실행하세요.");
   process.exit(1);
 }
-if (!password || password.length < 8) {
-  console.error(".env.local 에 SEED_PASSWORD (8자 이상) 를 넣어 주세요. 새로 만드는 계정이 모두 이 비밀번호를 씁니다.");
+if (!password || password.length < 6) {
+  console.error(".env.local 에 SEED_PASSWORD (6자 이상, Supabase 최소 길이) 를 넣어 주세요. 새로 만드는 계정이 모두 이 비밀번호를 씁니다.");
   process.exit(1);
 }
 /** 이 스크립트가 만든 계정 표시 (auth 가입 정보) */

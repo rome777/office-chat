@@ -120,11 +120,12 @@ npm run check:attach
 
 1만 건 채널로 페이지네이션·검색 속도를 재려면 `npm run seed:10k` → `npm run seed:10k -- --measure`, 다 쓰면 `npm run seed:10k -- --delete` (공유 DB 라 꼭 지웁니다).
 
-회사 데이터는 스크립트로 넣습니다 (운영 DB 에도 이것을 씁니다). `.env.local` 에 `SEED_PASSWORD=<8자 이상>` 을 넣고 실행하면
+회사 데이터는 스크립트로 넣습니다 (운영 DB 에도 이것을 씁니다). `.env.local` 에 `SEED_PASSWORD=<6자 이상>` 을 넣고 실행하면
 가상 회사 "한결테크 주식회사"(사업부 2 · 본부 5 · 팀 10)의 직원 37명, 부서 채널, 프로젝트 채널 2개, 샘플 대화, 샘플 회의가 생깁니다.
-계정은 `<handle>@example.com` 이고(명단은 `scripts/seed-company.mjs`), 새 계정은 모두 `SEED_PASSWORD` 로 로그인합니다.
+계정은 `<handle>@example.com` 이고(명단은 `scripts/seed-company.mjs`), 모두 같은 비밀번호로 로그인합니다.
+운영 DB 의 37명 비밀번호는 팀원끼리 따로 전달하고 `.env.local` 의 `SEED_PASSWORD` 에 적어 둡니다 (저장소에는 쓰지 않습니다).
 예: 백엔드팀 사원 이서연 `sylee@example.com`. 가입 확인 메일 없이 바로 로그인할 수 있고, 여러 번 돌려도 됩니다.
-**원래 있던 계정(사용자A·B·관리자·비회원C·팀원 계정)은 건드리지 않습니다** — 소속 없이 `#일반` 과 자기가 들어간 채널만 그대로입니다.
+시드는 자기가 만들지 않은 계정은 건드리지 않습니다. 운영 DB 에는 시드 직원 37명과 관리자 2명(김송이·이호섭 계정)만 있습니다 (2026-09-30 정리).
 
 ```powershell
 npm run seed:company
