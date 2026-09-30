@@ -31,7 +31,7 @@
   border: 2px solid var(--surface);
 }
 
-/* 상태 색. invisible(오프라인으로 표시)은 오프라인과 같은 회색 */
+/* 상태 색. invisible(오프라인으로 표시)과 offline(접속 안 함)은 같은 회색 */
 .online {
   background: var(--ok);
 }
@@ -41,7 +41,8 @@
 .dnd {
   background: var(--bad);
 }
-.invisible {
+.invisible,
+.offline {
   background: var(--muted);
 }
 

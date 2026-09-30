@@ -5,6 +5,7 @@
 // 사람을 누르면 그 사람과의 DM 을 연다 (② 의 startDm 을 가져다 쓴다).
 
 import { useEffect, useState } from "react";
+import PersonAvatar from "@/components/profile/PersonAvatar"; // ② 사진·상태 점 (2026-09-30)
 import { getMyUserId, startDm } from "@/components/sidebar/channelSource";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import type { OrgMember, OrgUnit } from "@/lib/types/org";
@@ -167,9 +168,7 @@ function PersonRow({
 }) {
   return (
     <li className={s.person}>
-      <span className={s.avatar} aria-hidden>
-        {person.display_name.slice(0, 1)}
-      </span>
+      <PersonAvatar userId={person.id} name={person.display_name} size={30} />
       <span className={s.who}>
         <span className={s.name}>
           {person.display_name}
