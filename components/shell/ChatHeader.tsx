@@ -110,7 +110,8 @@ export default function ChatHeader() {
             <ChannelPresenceText p={presence} fallbackTotal={count} />
           </button>
         )}
-        <MoreMenu />
+        {/* 채널을 바꾸면 새로 그려 드롭다운이 닫힌다 */}
+        <MoreMenu key={channel.id} />
       </div>
     </header>
   );
