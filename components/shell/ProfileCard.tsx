@@ -2,7 +2,8 @@
 
 // 프로필 카드 — 메시지 작성자·채널 멤버·조직도·DM 목록에서 사람을 누르면 뜬다.
 // 사진·상태 메시지·소속은 명단(profiles), 상태는 접속자 채널(presence, 남의 status 칸은 읽을 수 없다),
-// 연락처는 공개한 사람 것만 (profile_contacts RLS). 이메일은 본인 것만 보인다 (남의 로그인 메일은 DB 가 주지 않는다).
+// 연락처는 공개한 사람 것만 (profile_contacts RLS, 관리자는 비공개도). 이메일은 profile_email() 로 그 사람 것 하나를 읽는다
+// (20260930200000_profile_emails, 2026-09-30 ② 김송이 — 아이디 줄을 빼고 소속 다음에 이메일(복사 버튼)·연락처를 넣음).
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ import { usePresenceStatus } from "@/components/profile/presence";
 import { STATUS_LABEL, useMyProfile } from "@/components/profile/profileSource";
 import { startDm } from "@/components/sidebar/channelSource";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import { BuildingIcon, CalendarIcon, ChatBubbleIcon, EditIcon, MailIcon, PhoneIcon } from "./icons";
+import { BuildingIcon, CalendarIcon, ChatBubbleIcon, CheckIcon, CopyIcon, EditIcon, MailIcon, PhoneIcon } from "./icons";
 import { closeProfileCard, useOpenProfileCard } from "./cardStore";
 import s from "./card.module.css";
 
@@ -29,6 +30,7 @@ type Card = {
   avatar: string | null;
   status_message: string;
   phone: string | null;
+  email: string | null;
 };
 
 const SHOWN: Record<DisplayStatus, string> = { ...STATUS_LABEL, invisible: "오프라인", offline: "오프라인" };
@@ -60,10 +62,15 @@ function ProfileCard({ userId }: { userId: string }) {
         .eq("id", userId)
         .maybeSingle(),
       supabase.from("profile_contacts").select("phone").eq("user_id", userId).maybeSingle(),
-    ]).then(([p, c]) => {
+      supabase.rpc("profile_email", { p_user: userId }), // 함수가 없는 DB(적용 전)면 오류 → 메일 줄만 빠진다
+    ]).then(([p, c, m]) => {
       if (!alive) return;
       if (p.error || !p.data) return setError(p.error?.message ?? "찾을 수 없는 사람입니다");
-      setCard({ ...(p.data as Omit<Card, "phone">), phone: (c.data?.phone as string | undefined) || null });
+      setCard({
+        ...(p.data as Omit<Card, "phone" | "email">),
+        phone: (c.data?.phone as string | undefined) || null,
+        email: m.error ? null : ((m.data as string | null) ?? null),
+      });
     });
     return () => {
       alive = false;
@@ -126,7 +133,6 @@ function ProfileCard({ userId }: { userId: string }) {
                   <span className={`${s.status} ${s[status]}`}>{SHOWN[status]}</span>
                 </div>
                 <span className={s.sub}>{[card.department, card.title].filter(Boolean).join(" · ") || "소속 없음"}</span>
-                <span className={s.handle}>@{card.handle}</span>
               </div>
             </header>
 
@@ -136,9 +142,10 @@ function ProfileCard({ userId }: { userId: string }) {
                   <BuildingIcon size={16} /> {path}
                 </li>
               )}
-              {isMe && mine?.email && (
+              {(card.email ?? (isMe ? mine?.email : null)) && (
                 <li>
-                  <MailIcon size={16} /> {mine.email}
+                  <MailIcon size={16} /> {card.email ?? mine?.email}
+                  <CopyButton text={(card.email ?? mine?.email)!} />
                 </li>
               )}
               {card.phone && (
@@ -187,5 +194,29 @@ function ProfileCard({ userId }: { userId: string }) {
         )}
       </section>
     </div>
+  );
+}
+
+// 이메일 복사. 누르면 잠깐 체크 표시로 바뀐다. IP 주소로 열어 clipboard 가 없는 곳(보안 연결 아님)은 옛 방식으로 복사한다
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setDone(true);
+    setTimeout(() => setDone(false), 1500);
+  }
+  return (
+    <button type="button" className={s.copy} onClick={() => void copy()} aria-label={done ? "복사했습니다" : "이메일 복사"} title={done ? "복사했습니다" : "이메일 복사"}>
+      {done ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+    </button>
   );
 }
