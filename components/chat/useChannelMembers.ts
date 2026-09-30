@@ -1,7 +1,7 @@
 "use client";
 
 // ① 지금 채널의 멤버와 그 프로필. 안 읽은 사람 수, @ 자동완성, 멘션 강조(멤버만)가 같이 쓴다.
-// 멤버가 들어오고 나가는 것, 초대 권한이 바뀌는 것은 실시간으로 받는다.
+// 멤버가 들어오고 나가는 것, 리더·부리더가 바뀌는 것은 실시간으로 받는다.
 
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
@@ -14,9 +14,12 @@ export type Member = {
   department: string | null;
   title: string | null; // 직급 (@ 자동완성에서 동명이인을 가린다)
   org_unit_id: string | null; // 소속 부서 (@부서 자동완성에서 이 채널의 부서와 인원을 센다)
-  can_invite: boolean; // 이 채널에 남을 넣고 초대 권한을 줄 수 있다 (만든 사람은 처음부터 true)
+  role: ChannelRole; // 일반 채널의 리더·부리더 (부서 채널·DM 은 모두 member, 20260930210000_channel_leaders)
+  role_at: string | null; // 리더·부리더가 된 시각
 };
-type Profile = Omit<Member, "can_invite">;
+export type ChannelRole = "leader" | "sub" | "member";
+type Profile = Omit<Member, "role" | "role_at">;
+const asRole = (v: unknown): ChannelRole => (v === "leader" || v === "sub" ? v : "member");
 
 export function useChannelMembers(channelId: string) {
   const [members, setMembers] = useState<Member[]>([]);
@@ -29,16 +32,19 @@ export function useChannelMembers(channelId: string) {
 
     async function load() {
       // memberships → profiles 를 FK 로 붙여 한 번에 받는다
-      const { data } = await supabase
-        .from("memberships")
-        .select("user_id, can_invite, profiles(id, handle, display_name, department, title, org_unit_id)")
-        .eq("channel_id", channelId);
+      const PROFILE = "profiles(id, handle, display_name, department, title, org_unit_id)";
+      let res = await supabase.from("memberships").select(`user_id, role, role_at, ${PROFILE}`).eq("channel_id", channelId);
+      // role 칸이 아직 없는 DB(20260930210000_channel_leaders 적용 전)면 역할 없이 읽는다 — 멤버 목록이 비지 않게
+      if (res.error) {
+        res = (await supabase.from("memberships").select(`user_id, ${PROFILE}`).eq("channel_id", channelId)) as unknown as typeof res;
+      }
+      const data = res.data;
       if (!alive || !data) return;
       setMembers(
         data
           .map((row) => {
             const p = row.profiles as unknown as Profile | null;
-            return p ? { ...p, can_invite: !!row.can_invite } : null;
+            return p ? { ...p, role: asRole(row.role), role_at: (row.role_at as string | null) ?? null } : null;
           })
           .filter((m): m is Member => !!m)
           .sort((a, b) => a.display_name.localeCompare(b.display_name, "ko")),
@@ -58,8 +64,8 @@ export function useChannelMembers(channelId: string) {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "memberships", filter: `channel_id=eq.${channelId}` },
         (payload) => {
-          const row = payload.new as { user_id?: string; can_invite?: boolean };
-          setMembers((prev) => prev.map((m) => (m.id === row.user_id ? { ...m, can_invite: !!row.can_invite } : m)));
+          const row = payload.new as { user_id?: string; role?: string; role_at?: string | null };
+          setMembers((prev) => prev.map((m) => (m.id === row.user_id ? { ...m, role: asRole(row.role), role_at: row.role_at ?? null } : m)));
         },
       )
       // DELETE 는 필터를 걸 수 없어서 전부 받고 거른다 (기본 키만 온다)

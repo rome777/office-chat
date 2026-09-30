@@ -151,7 +151,7 @@
 
 .memberList li {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: 4px 8px;
@@ -169,14 +169,7 @@
   text-align: left;
 }
 
-.memberActions {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.adminBadge,
-.inviteBadge {
+.adminBadge {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
@@ -189,9 +182,162 @@
   color: var(--accent);
 }
 
-.inviteBadge {
-  background: color-mix(in srgb, var(--ok) 18%, transparent);
-  color: var(--ok);
+/* 리더·부리더 — 채운 왕관 = 리더, 테두리 왕관 = 부리더 (2026-09-30 WU-39). 색은 --accent (라이트 네이비·다크 하늘색) */
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: var(--mine);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.memberSub {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 멤버 옆 ⋯ — 누르면 내가 할 수 있는 것만 담은 메뉴 */
+.memberMenuWrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.dots {
+  width: 30px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dots:hover,
+.dotsOn {
+  background: var(--mine);
+  color: var(--text);
+}
+
+.memberMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+}
+
+.memberMenuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.memberMenuItem:hover:not(:disabled) {
+  background: var(--mine);
+}
+
+.memberMenuLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+}
+
+.memberMenuLine svg {
+  color: var(--accent);
+}
+
+.memberMenuItem.danger {
+  color: var(--bad);
+  font-weight: 700;
+}
+
+.memberMenuHint {
+  padding-left: 22px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 리더에게만: 부리더 인원 */
+.leaderInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--mine);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.leaderInfo svg {
+  color: var(--accent);
+}
+
+/* 리더 넘기기 확인 창 */
+.confirmBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.35);
+}
+
+.confirm {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.2);
+}
+
+.confirm h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+}
+
+.confirm h4 svg {
+  color: var(--accent);
+}
+
+.confirm p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .pinList li {

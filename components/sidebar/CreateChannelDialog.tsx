@@ -78,7 +78,7 @@ export default function CreateChannelDialog({
               onChange={() => setType("private")}
             />
             <span>
-              <strong>비공개</strong> — 초대받은 사람만 보입니다 (초대는 관리자가 채널 정보에서)
+              <strong>비공개</strong> — 초대받은 사람만 보입니다 (만든 사람이 리더가 되고, 리더·부리더가 채널 정보에서 초대)
             </span>
           </label>
         </fieldset>
