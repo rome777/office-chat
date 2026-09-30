@@ -128,8 +128,11 @@
   padding: 2px 0;
 }
 
+/* 칸 폭(약 33px)으로 늘어나면 동그라미가 타원이 된다 → 28px 정사각형으로 고정해 칸 가운데에 (2026-10-01 사용자 제보) */
 .miniDay {
   position: relative;
+  justify-self: center;
+  width: 28px;
   height: 28px;
   border: none;
   background: none;
