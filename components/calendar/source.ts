@@ -13,11 +13,14 @@ import type {
   CalendarEvent,
   EventAttendee,
   EventKind,
+  Recurrence,
   Room,
   TeamEvent,
   Visibility,
 } from "@/lib/types/calendar";
 import { getSupabase } from "@/lib/supabase";
+import { newClientId } from "@/components/chat/useMessages";
+import { toKstInput } from "./time";
 
 export type EventWithAttendees = CalendarEvent & { attendees: EventAttendee[] };
 
@@ -38,6 +41,8 @@ export type EventInput = {
   channel_id?: string | null;
   /** 만든 사람(나)의 시작 전 알림. 고치기에서는 setMyReminders 로 따로 바꾼다 */
   remind_minutes?: number[];
+  /** 새로 만들 때만: 반복 규칙과 종료일(한국 날짜 "YYYY-MM-DD") */
+  repeat?: { rule: Recurrence; until: string } | null;
 };
 
 export type BusySlot = { starts_at: string; ends_at: string };
@@ -65,7 +70,7 @@ export const LOCATION_MAX = 100;
 
 const EVENT_COLUMNS =
   "id, title, description, starts_at, ends_at, room_id, created_by, created_at, updated_at, canceled_at, " +
-  "kind, subtype, all_day, location, visibility, channel_id, category, team_unit_id";
+  "kind, subtype, all_day, location, visibility, channel_id, category, team_unit_id, series_id, recurrence, chat_channel_id";
 const WITH_ATTENDEES = `${EVENT_COLUMNS}, attendees:event_attendees(event_id, user_id, response, responded_at, remind_minutes)`;
 
 // ── 공통 ────────────────────────────────────────────────────
@@ -87,6 +92,8 @@ function friendly(error: DbError): Error {
     return new Error(`제목(1~${TITLE_MAX}자)·설명(${DESCRIPTION_MAX}자까지)·장소(${LOCATION_MAX}자까지)·시각을 확인해 주세요`);
   }
   if (error.code === "23503") return new Error("없는 회의실이나 사람이 들어 있습니다");
+  // 반복 일정의 겹치는 날, 반복 규칙 오류 등은 DB 가 한국어로 알려 준다
+  if (error.code === "P0001" || error.code === "22023") return new Error(error.message);
   return new Error(error.message);
 }
 
@@ -210,7 +217,9 @@ export async function roomBusy(roomId: string, from: Date, to: Date): Promise<Bu
 export async function createEvent(input: EventInput): Promise<EventWithAttendees> {
   validate(input);
   const extra = extraColumns(input);
-  const { data: id, error } = await getSupabase().rpc("create_event", {
+  const repeat = input.repeat ? { p_repeat: input.repeat.rule, p_until: input.repeat.until } : null;
+  const { data: id, error } = await getSupabase().rpc(repeat ? "create_event_series" : "create_event", {
+    ...(repeat ?? {}),
     p_title: input.title.trim(),
     p_starts_at: input.starts_at,
     p_ends_at: input.ends_at,
@@ -303,6 +312,79 @@ export async function updateEvent(
   const fresh = await getEvent(id);
   if (!fresh) throw new Error("일정을 고쳤지만 다시 읽지 못했습니다. 새로고침해 주세요");
   return fresh;
+}
+
+/** 반복 일정 "이후 모두" 고치기 (만든 사람만). 회차마다 날짜는 그대로, 시각·내용·참석자·내 알림을 바꾼다. 알림은 사람마다 한 번 */
+export async function updateEventSeries(id: string, input: EventInput): Promise<EventWithAttendees> {
+  validate(input);
+  const extra = extraColumns(input);
+  const { error } = await getSupabase().rpc("update_event_series", {
+    p_event: id,
+    p_title: input.title.trim(),
+    p_description: input.description?.trim() || null,
+    p_kind: extra.kind,
+    p_subtype: extra.subtype,
+    p_all_day: extra.all_day,
+    p_location: extra.location,
+    p_visibility: extra.visibility,
+    p_room_id: input.room_id,
+    p_channel_id: extra.channel_id,
+    p_start_time: toKstInput(input.starts_at).time,
+    p_end_time: toKstInput(input.ends_at).time,
+    p_attendee_ids: [...new Set(input.attendee_ids)],
+    p_remind_minutes: input.remind_minutes ?? null,
+  });
+  if (error) throw friendly(error);
+  const fresh = await getEvent(id);
+  if (!fresh) throw new Error("일정을 고쳤지만 다시 읽지 못했습니다. 새로고침해 주세요");
+  return fresh;
+}
+
+/** 반복 일정 "이후 모두" 취소 (만든 사람만). 취소한 회차 수 */
+export async function cancelEventSeries(id: string): Promise<number> {
+  const { data, error } = await getSupabase().rpc("cancel_event_series", { p_event: id });
+  if (error) throw friendly(error);
+  return data as number;
+}
+
+/** 반복 묶음의 첫·마지막 회차와 회차 수 (내가 참석자인 회차만 보인다) */
+export async function getSeriesRange(seriesId: string): Promise<{ first: string; last: string; count: number } | null> {
+  const { data, error } = await getSupabase()
+    .from("events")
+    .select("starts_at")
+    .eq("series_id", seriesId)
+    .is("canceled_at", null)
+    .order("starts_at");
+  if (error) throw friendly(error);
+  if (!data?.length) return null;
+  return { first: data[0].starts_at as string, last: data[data.length - 1].starts_at as string, count: data.length };
+}
+
+/** [참석자와 대화]: 상대가 한 명이면 DM, 여럿이면 일정에 이은 비공개 채널 (없으면 만든다). 채널 id */
+export async function openEventChat(id: string): Promise<string> {
+  const { data, error } = await getSupabase().rpc("open_event_chat", { p_event: id });
+  if (error) throw friendly(error);
+  return data as string;
+}
+
+/** [채팅에 공유]: 고른 대화방에 일정 링크를 메시지로 보낸다 (그 방 멤버라야 보낼 수 있다 — RLS) */
+export async function shareEventToChannel(channelId: string, body: string): Promise<void> {
+  const { error } = await getSupabase().from("messages").insert({ client_id: newClientId(), channel_id: channelId, body });
+  if (error) throw friendly(error);
+}
+
+/** 메시지로 일정 만들기: 그 메시지의 본문과 채널 (내가 멤버인 채널의 메시지만 읽힌다) */
+export async function getMessageForEvent(id: number): Promise<{ body: string; channel_id: string; dm: boolean } | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const { data } = await getSupabase()
+    .from("messages")
+    .select("body, channel_id, channels(type)")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!data) return null;
+  const type = (data.channels as unknown as { type?: string } | null)?.type;
+  return { body: data.body as string, channel_id: data.channel_id as string, dm: type === "dm" };
 }
 
 /** 만든 사람만. 지우지 않고 canceled_at 을 채운다 (회의실 자리는 비워진다) */

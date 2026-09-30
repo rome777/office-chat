@@ -35,7 +35,15 @@ export type CalendarEvent = {
   channel_id: string | null;
   category: EventCategory;
   team_unit_id: string | null;
+  /** 반복 일정의 묶음 (같은 반복의 회차는 같은 값) */
+  series_id: string | null;
+  recurrence: Recurrence | null;
+  /** [참석자와 대화]로 만든 비공개 채널 */
+  chat_channel_id: string | null;
 };
+
+/** 반복 규칙 — 매일·매주(시작 요일)·평일·매월(시작 날짜) */
+export type Recurrence = "daily" | "weekly" | "weekdays" | "monthly";
 
 export type AttendeeResponse = "pending" | "accepted" | "declined";
 

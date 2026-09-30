@@ -7,10 +7,10 @@
 //   시작·종료는 각각 날짜와 시간 (여러 날에 걸쳐도 된다). 종일이면 시간 칸이 사라진다.
 //   공개 범위(회의 제외): 팀에 공개 · 시간만 공개 · 나만 보기 — 같은 부서 팀원에게 무엇이 보이는지 바로 아래에 보여 준다
 //   관련 채널(회의·업무): 일반 채널이면 프로젝트 일정으로 분류된다 (분류는 저장할 때 DB 가 정한다)
-// 반복은 다음 단계(4단계)에서 넣는다.
+//   반복(새로 만들 때): 매일·매주·평일·매월 + 종료일 (최대 1년·52회). 반복 일정을 고칠 때는 "이 일정만 / 이후 모두"
 
 import { useEffect, useMemo, useState } from "react";
-import type { EventKind, Room, Visibility } from "@/lib/types/calendar";
+import type { EventKind, Recurrence, Room, Visibility } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
 import PeoplePicker from "@/components/people/PeoplePicker";
 import { getPeople } from "@/components/people/directory";
@@ -33,7 +33,7 @@ import {
   titleExamples,
   titleFallback,
 } from "./kinds";
-import { addDaysKey } from "./items";
+import { addDaysKey, weekdayOf } from "./items";
 import {
   DESCRIPTION_MAX,
   LOCATION_MAX,
@@ -45,6 +45,8 @@ import {
   listOrgChannelIds,
   roomBusy,
   updateEvent,
+  updateEventSeries,
+  getMessageForEvent,
   type BusySlot,
   type EventInput,
   type EventWithAttendees,
@@ -54,7 +56,10 @@ import { HOUR_END, HOUR_START } from "./TimeGrid";
 import { addDays, formatKstTime, fromKstInput, kstDateKey, kstMinuteOfDay, toKstInput, toMs } from "./time";
 import s from "./schedule.module.css";
 
-export type EditorProps = { mode: "new"; date: string; time?: string; withIds?: string[] } | { mode: "edit"; eventId: string };
+/** fromMessage: 메시지 ⋯ "일정으로 만들기" — 그 메시지 내용을 제목·상세 내용에, 그 채널을 관련 채널에 채운다 */
+export type EditorProps =
+  | { mode: "new"; date: string; time?: string; withIds?: string[]; fromMessage?: number }
+  | { mode: "edit"; eventId: string };
 
 type Form = {
   kind: EventKind;
@@ -76,6 +81,9 @@ type Form = {
   visibility: Visibility;
   reminders: number[];
   description: string;
+  /** 새로 만들 때만. 빈 문자열 = 반복 안 함 */
+  repeat: "" | Recurrence;
+  until: string;
 };
 
 const hasPeopleByDefault = (kind: EventKind) => kind === "meeting" || kind === "work";
@@ -112,6 +120,8 @@ function newForm(date: string, time?: string): Form {
     visibility: defaultVisibility("meeting"),
     reminders: defaultReminders("meeting", false),
     description: "",
+    repeat: "",
+    until: addDaysKey(date, 90),
   };
 }
 
@@ -138,6 +148,8 @@ function editForm(e: EventWithAttendees, myId: string): Form {
     visibility: e.visibility,
     reminders: e.attendees.find((a) => a.user_id === myId)?.remind_minutes ?? [],
     description: e.description ?? "",
+    repeat: "",
+    until: start.date,
   };
 }
 
@@ -153,10 +165,15 @@ export default function EventEditor(props: EditorProps) {
   const [busyError, setBusyError] = useState(false);
   const [orgChannels, setOrgChannels] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  /** 반복 일정을 고칠 때: 이 회차만 / 이 회차부터 뒤 모두 */
+  const [scope, setScope] = useState<"one" | "following">("one");
   const [error, setError] = useState<string | null>(null);
   const { channels } = useMyChannels();
 
-  const key = props.mode === "new" ? `new:${props.date}:${props.time ?? ""}:${(props.withIds ?? []).join(",")}` : `edit:${props.eventId}`;
+  const key =
+    props.mode === "new"
+      ? `new:${props.date}:${props.time ?? ""}:${(props.withIds ?? []).join(",")}:${props.fromMessage ?? ""}`
+      : `edit:${props.eventId}`;
 
   // 열 때 한 번: 나, 회의실, 부서 채널, (고치기면) 일정, (with 가 있으면) 참석자
   useEffect(() => {
@@ -180,7 +197,16 @@ export default function EventEditor(props: EditorProps) {
         const others = e.attendees.map((a) => a.user_id).filter((u) => u !== id);
         setPeople(others.length ? await getPeople(others).catch(() => []) : []);
       } else {
-        setForm(newForm(props.date, props.time));
+        const f = newForm(props.date, props.time);
+        const msg = props.fromMessage ? await getMessageForEvent(props.fromMessage).catch(() => null) : null;
+        if (!alive) return;
+        if (msg) {
+          const text = msg.body.replace(/\s+/g, " ").trim();
+          f.title = [...text].slice(0, 40).join("");
+          f.description = msg.body.slice(0, DESCRIPTION_MAX);
+          if (!msg.dm) Object.assign(f, { channelId: msg.channel_id, showChannel: true });
+        }
+        setForm(f);
         const withIds = (props.withIds ?? []).filter((u) => u !== id);
         setPeople(withIds.length ? await getPeople(withIds).catch(() => []) : []);
       }
@@ -270,6 +296,9 @@ export default function EventEditor(props: EditorProps) {
   const subtype = form.kind === "leave" ? form.leave : detectSubtype(form.kind, title);
   const valid = title.length > 0 && [...title].length <= TITLE_MAX && timeOk;
   const sameDay = form.startDate === form.endDate;
+  // 반복은 하루 안의 일정만, 휴가·부재는 빼고 (DB create_event_series 와 같은 조건)
+  const canRepeat = form.kind !== "leave" && sameDay;
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
   // 회의실 막대 (08~21시, 하루 안의 일정만)
   const span = (HOUR_END - HOUR_START) * 60;
@@ -295,10 +324,13 @@ export default function EventEditor(props: EditorProps) {
       visibility: form.visibility,
       channel_id: canRoom && form.showChannel && form.channelId ? form.channelId : null,
       remind_minutes: form.reminders,
+      repeat: !editing && canRepeat && form.repeat ? { rule: form.repeat, until: form.until } : null,
     };
     try {
       const saved = editing
-        ? await updateEvent(editing.id, input, editing.attendees.map((a) => a.user_id))
+        ? editing.series_id && scope === "following"
+          ? await updateEventSeries(editing.id, input)
+          : await updateEvent(editing.id, input, editing.attendees.map((a) => a.user_id))
         : await createEvent(input);
       bumpCalendar();
       focusCalendarDate(kstDateKey(saved.starts_at));
@@ -376,6 +408,60 @@ export default function EventEditor(props: EditorProps) {
         </div>
         {!timeOk && <p className={`${s.hint} ${s.bad}`}>종료가 시작보다 늦어야 합니다.</p>}
       </div>
+
+      {!editing && canRepeat && (
+        <div className={s.field}>
+          <label className={s.fieldLabel} htmlFor="ev-repeat">
+            반복
+          </label>
+          <div className={s.inline}>
+            <select id="ev-repeat" className={s.inlineSelect} value={form.repeat} onChange={(e) => set({ repeat: e.target.value as Form["repeat"] })}>
+              <option value="">반복 안 함</option>
+              <option value="daily">매일</option>
+              <option value="weekly">매주 {DOW[weekdayOf(form.startDate)]}요일</option>
+              <option value="weekdays">평일 (월~금)</option>
+              <option value="monthly">매월 {Number(form.startDate.slice(8))}일</option>
+            </select>
+            {form.repeat && (
+              <>
+                <span className={s.hint}>종료</span>
+                <input
+                  type="date"
+                  aria-label="반복 종료일"
+                  min={form.startDate}
+                  max={addDaysKey(form.startDate, 365)}
+                  value={form.until}
+                  onChange={(e) => e.target.value && set({ until: e.target.value })}
+                />
+              </>
+            )}
+          </div>
+          {form.repeat && (
+            <p className={s.hint}>회차를 최대 1년·52회까지 만듭니다. 회의실이 겹치는 날이 있으면 저장하지 않고 그 날짜를 알려 줍니다.</p>
+          )}
+        </div>
+      )}
+      {editing?.series_id && (
+        <div className={s.field}>
+          <span className={s.fieldLabel}>반복 일정 고치기</span>
+          <div className={s.radio}>
+            <label>
+              <input type="radio" name="ev-scope" checked={scope === "one"} onChange={() => setScope("one")} />
+              <span>
+                이 일정만
+                <small>이 회차만 바뀝니다. 날짜도 옮길 수 있습니다.</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="ev-scope" checked={scope === "following"} onChange={() => setScope("following")} />
+              <span>
+                이후 모두
+                <small>이 회차와 뒤 회차 모두. 날짜는 회차마다 그대로 두고 시각·내용·참석자·내 알림이 바뀝니다.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
 
       {canRoom && form.showRoom && (
         <div className={s.field}>

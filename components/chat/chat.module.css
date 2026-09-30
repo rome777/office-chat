@@ -158,6 +158,13 @@
   font-size: 15px;
 }
 
+/* 링크 도구 (📅 일정으로 만들기, ② 2026-10-01) */
+a.tool {
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
+}
+
 .tool:hover,
 .toolOn {
   background: var(--mine);

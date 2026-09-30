@@ -65,6 +65,7 @@ export function EventRow({ item, myId, names, onOpen }: { item: CalItem; myId: s
           : `참석 ${e.attendees.filter((a) => a.response === "accepted").length}/${e.attendees.length}`,
       );
     }
+    if (e.recurrence) sub.push("반복");
     pending = e.attendees.some((a) => a.user_id === myId && a.response === "pending") && e.created_by !== myId;
     if (e.kind !== "meeting" && e.created_by === myId) lock = VIS_TEXT[e.visibility] ?? "";
   }
