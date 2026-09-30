@@ -278,8 +278,8 @@
   left: 50%;
   bottom: 12px;
   transform: translateX(-50%);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   border-radius: 999px;
   padding: 6px 14px;
@@ -357,8 +357,8 @@
 }
 
 .composerRow button[type="submit"] {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   border-radius: 10px;
   padding: 8px 16px;
@@ -551,8 +551,8 @@
 }
 
 .primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   border-radius: 6px;
   padding: 6px 12px;

@@ -3,7 +3,7 @@
 import LoginForm from "@/components/auth/LoginForm";
 import { safeNext } from "@/components/auth/safeNext";
 
-export const metadata = { title: "로그인 · 오피스톡" };
+export const metadata = { title: "로그인 · WorkOn" };
 
 export default async function LoginPage({
   searchParams,

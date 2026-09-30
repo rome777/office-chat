@@ -19,52 +19,38 @@
   flex-direction: column;
   gap: 4px;
   padding: 14px 12px 12px;
-  background: var(--surface);
+  background: var(--nav);
   border-right: 1px solid var(--border);
   overflow-y: auto;
 }
 
+/* 로고 자리 — WorkOn 로고(components/brand/WorkOnLogo) 높이 32px·폭 170px 을 메뉴 폭 가운데에, 위아래 여백을 넉넉히
+   (2026-09-30 사용자가 크기 시안 6종 중 170px 을 고르고 "위아래 여백 더"). 아래 WORKSPACE 글자는 뺐다 */
 .brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 6px 18px;
-  font-size: 19px;
-  font-weight: 800;
-  color: inherit;
+  justify-content: center;
+  margin: 14px 0 28px;
   text-decoration: none;
 }
 
-.logo {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
-.navSection {
-  margin: 0 10px 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
+/* 메뉴 사이 12px, 홈 아래만 24px (2026-09-30 사용자가 간격 시안 D 를 고름) */
 .navList {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
 }
 
+.navHome {
+  margin-bottom: 12px;
+}
+
+/* 구분선 위아래도 홈 아래와 같은 24px (위는 .nav 의 칸 사이 4px + 20px) */
 .navGroup {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 20px;
+  padding-top: 24px;
   border-top: 1px solid var(--border);
 }
 
@@ -87,9 +73,11 @@
   background: var(--mine);
 }
 
-.navActive {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+/* 고른 메뉴 — 라이트는 꽉 찬 네이비에 흰 글자, 다크는 한 단계 밝은 네이비 (globals.css --nav-active) */
+.navActive,
+.navActive:hover {
+  background: var(--nav-active);
+  color: var(--nav-active-text);
   font-weight: 700;
 }
 
@@ -107,8 +95,8 @@
   min-width: 22px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   font-size: 12px;
   font-weight: 700;
   text-align: center;
@@ -119,8 +107,29 @@
   color: #fff;
 }
 
-.meCard {
+/* 고른 메뉴 위의 배지는 바탕과 같은 네이비라 안 보이므로 색을 뒤집는다 */
+.navActive .navBadge:not(.navBadgeBad) {
+  background: var(--nav-active-text);
+  color: var(--nav-active);
+}
+
+/* 맨 아래 내 카드 — 누르면 내 메뉴(sidebar/MyMenu)가 카드 바로 위로 열린다 */
+.meBox {
+  position: relative;
   margin-top: auto;
+}
+
+/* 메뉴 칸(.nav)이 넘친 부분을 잘라내므로 폭을 칸에 맞추고, 위 막대 메뉴와 달리 위쪽으로 연다 */
+.meMenu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: auto;
+}
+
+.meCard {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -223,8 +232,7 @@
   }
 
   .brand,
-  .navSection,
-  .meCard,
+  .meBox,
   .navWide {
     display: none;
   }
@@ -240,6 +248,14 @@
 
   .navList > li {
     flex: 1;
+  }
+
+  .navList {
+    gap: 0;
+  }
+
+  .navHome {
+    margin-bottom: 0;
   }
 
   .navItem {

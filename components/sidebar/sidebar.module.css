@@ -385,8 +385,8 @@
 }
 
 .primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   font-weight: 600;
 }

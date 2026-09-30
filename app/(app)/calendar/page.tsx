@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import CalendarView from "@/components/calendar/CalendarView";
 
-export const metadata = { title: "캘린더 · 오피스톡" };
+export const metadata = { title: "캘린더 · WorkOn" };
 
 export default function CalendarPage() {
   // ?e= 를 읽는 useSearchParams 는 Suspense 안에 있어야 한다

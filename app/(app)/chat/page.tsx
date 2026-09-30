@@ -2,7 +2,7 @@
 
 import ChatWorkspace from "@/components/shell/ChatWorkspace";
 
-export const metadata = { title: "메시지 · 오피스톡" };
+export const metadata = { title: "메시지 · WorkOn" };
 
 export default function ChatPage() {
   return <ChatWorkspace />;

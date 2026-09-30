@@ -326,9 +326,9 @@
 }
 
 .primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
   font-weight: 600;
 }
 

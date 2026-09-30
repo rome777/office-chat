@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "오피스톡",
+  title: "WorkOn",
   description: "사내 실시간 메신저",
 };
 
