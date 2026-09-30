@@ -54,7 +54,7 @@
 
 - `develop` 에는 직접 푸시해도 된다. 푸시하기 전에 `git pull` 로 남의 변경을 먼저 받는다.
 - `main` 에도 **직접 푸시해도 된다** (2026-09-30 이호섭 결정. 그전에는 `develop` 에서 PR 로만). PR 로 넣어도 된다.
-- **`main` 에 푸시하거나 머지하면 곧바로 운영 배포된다** (Vercel GitHub 연동, 따로 `vercel deploy` 를 치지 않는다). 그래서 `main` 에는 `develop` 과 같은 커밋만 올린다: `develop` 을 먼저 `git pull` 해서 합치고 `npm run build` 가 통과한 뒤 `git push origin develop:main`. `main` 에서 따로 고치지 않는다 (두 브랜치가 갈라진다).
+- **`main` 에 푸시하거나 머지하면 곧바로 운영 배포된다** (Vercel GitHub 연동, 따로 `vercel deploy` 를 치지 않는다). 그래서 `main` 에는 `develop` 과 같은 커밋만 올린다: `develop` 을 먼저 `git pull` 해서 합치고 `npm run build` 가 통과한 뒤 `main` 에서 `develop` 을 머지해 푸시한다 (`git switch main; git pull; git merge --no-ff develop; git push origin main`). `main` 에는 예전 PR 머지 커밋이 있어 `git push origin develop:main` 은 거부된다 — 강제 푸시하지 않는다. `main` 에서 따로 고치지 않는다 (두 브랜치의 내용이 갈라진다).
 - 개인 브랜치를 쓸 때는 `develop-<이름>-<기능>` (예: `develop-hslee-step1-chat`).
 - 자세한 규칙은 TECH_SPEC 11절.
 
