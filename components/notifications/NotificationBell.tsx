@@ -67,7 +67,7 @@ export default function NotificationBell() {
       };
       if (isLooking()) return toast();
       if (currentPermission() === "granted") {
-        const title = arrival.kind === "one" ? arrival.item.title : "오피스톡";
+        const title = arrival.kind === "one" ? arrival.item.title : "WorkOn";
         const body = arrival.kind === "one" ? `${TYPE_LABEL[arrival.item.type]} · ${arrival.item.preview}` : `새 알림 ${arrival.count}개`;
         try {
           // tag 를 알림 id 로 주면 같은 사람이 탭을 여러 개 열어도 브라우저가 하나로 합친다
@@ -107,7 +107,7 @@ export default function NotificationBell() {
   // 제목이 바뀔 때마다 고치는 방식(MutationObserver)은 Next.js 와 서로 되받아 고치며 무한 반복에 빠져 페이지가 멈췄다 (2026-09-29)
   useEffect(() => {
     const apply = () => {
-      const base = document.title.replace(/^\(\d+\)\s*/, "").trim() || "오피스톡";
+      const base = document.title.replace(/^\(\d+\)\s*/, "").trim() || "WorkOn";
       const wanted = unread > 0 ? `(${unread}) ${base}` : base;
       if (document.title !== wanted) document.title = wanted;
     };

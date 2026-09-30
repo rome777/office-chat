@@ -71,15 +71,23 @@
 }
 
 .card button[type="submit"] {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   border-radius: 8px;
   padding: 10px 16px;
   font-weight: 600;
 }
 
-/* 제목 줄 — 오른쪽에 라이트·다크 버튼 */
+/* 로고 아래 한 줄 — 브랜드 슬로건 */
+.card .slogan {
+  margin: -4px 0 4px;
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* 제목 줄 — 왼쪽에 WorkOn 로고, 오른쪽에 라이트·다크 버튼 */
 .titleRow {
   display: flex;
   align-items: center;

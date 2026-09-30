@@ -171,9 +171,9 @@
 }
 
 .primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border: 1px solid var(--accent);
+  background: var(--primary);
+  color: var(--primary-text);
+  border: 1px solid var(--primary);
 }
 
 .secondary {

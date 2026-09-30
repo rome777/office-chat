@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { getSupabase } from "@/lib/supabase";
+import WorkOnLogo from "@/components/brand/WorkOnLogo";
 import ThemeToggle from "@/components/sidebar/ThemeToggle";
 import { safeNext } from "./safeNext";
 import s from "./auth.module.css";
@@ -102,9 +103,12 @@ export default function LoginForm({
         }}
       >
         <div className={s.titleRow}>
-          <h1>오피스톡</h1>
+          <h1>
+            <WorkOnLogo height={30} />
+          </h1>
           <ThemeToggle />
         </div>
+        <p className={s.slogan}>연결되면, 일이 시작됩니다.</p>
         <div className={s.tabs} role="tablist">
           <button
             type="button"

@@ -173,8 +173,8 @@
 }
 
 .bannerOn {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--primary);
+  color: var(--primary-text);
   border: none;
   border-radius: 6px;
   padding: 5px 10px;

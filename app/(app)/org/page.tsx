@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import OrgPage from "@/components/org/OrgPage";
 
-export const metadata = { title: "조직도 · 오피스톡" };
+export const metadata = { title: "조직도 · WorkOn" };
 
 export default function Page() {
   // ?unit= 을 읽는 useSearchParams 는 Suspense 안에 있어야 한다

@@ -375,6 +375,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - **시각 입력은 `<input type="time">` 을 쓰지 않는다** (2026-09-29): Chrome 의 시간 선택은 12 다음에 1 로 끝없이 도는 바퀴이고 오전·오후가 헷갈린다. `TimeSelect` 가 시(00~23)·분(5분 단위) 목록 두 개로 받는다. 시작을 바꾸면 끝이 원래 간격(없거나 거꾸로면 1시간)만큼 따라가고, 23:55 를 넘지 않는다.
 - **다크 모드에서 브라우저 기본 부품(스크롤바·체크박스·라디오·날짜 칸 아이콘)이 흰색으로 튄다** → 공통 `globals.css` 의 `:root` 에 `color-scheme` 을 둔다 (2026-09-29, 팀에 알리고 공통 파일을 고침). 이것이 없으면 브라우저가 자기 부품을 늘 라이트로 그린다. 화면별 CSS 에 `color-scheme` 을 따로 두지 않는다 — 사용자가 고른 테마와 어긋난다.
 - **라이트·다크 테마 (②, `components/sidebar/theme.ts`·`ThemeToggle.tsx`)**: 헤더·캘린더·로그인의 해·달 스위치(선 아이콘 두 칸, 누른 쪽 적용). 고르면 쿠키 `office-chat-theme` 에 1년 기억하고 `<html data-theme="light|dark">` 를 건다. 고르지 않았으면 컴퓨터 설정(`prefers-color-scheme`)을 따른다. `globals.css` 는 `data-theme` 가 있으면 그것을, 없으면 컴퓨터 설정을 쓴다.
+- **브랜드 색·로고 (②, 2026-09-30)**: 키 색은 딥 네이비 `#0B2D5B` 와 흰색. 라이트는 시안 C "네이비·화이트 단색"(흰 바탕, 강조색 없이 네이비·회색만, 상태색 `--ok`·`--warn`·`--bad` 만 예외), 다크는 시안 A "클래식 네이비". **`--primary`·`--primary-text` 는 꽉 찬 바탕(버튼·배지), `--accent` 는 글자·선·옅은 바탕(링크·멘션·선택 표시·`color-mix`)** — 라이트는 둘 다 네이비지만 다크는 버튼이 흰색, 링크가 `#8eb8ff` 라 나눴다. 예전 `--accent-text` 는 `--primary-text` 로 바뀌었다. 새 화면에서 버튼을 만들면 `background: var(--primary); color: var(--primary-text)` 를 쓴다 (`--accent` 를 바탕에 쓰면 다크에서 하늘색 버튼이 된다). 왼쪽 메뉴 칸은 `--nav`, 고른 메뉴는 `--nav-active`·`--nav-active-text` (라이트는 꽉 찬 네이비라 그 위 배지는 색을 뒤집는다). `--mine` 은 내 메시지 줄·선택·마우스 올림의 옅은 바탕. 대시보드 카드 분류색 넷은 `--accent` 로 통일했다 (`dashboard.module.css`), 조직도 단계 색은 단계 구분용이라 그대로. 로고는 사용자가 준 `workon_logo.svg`(글자 `#001C49`)·`workon_logo_white.svg`(흰색)의 모양이 같아서 모양만 `components/brand/logoPaths.ts` 에 두고 `WorkOnLogo` 가 `--logo-ink`(라이트 `#001c49`·다크 흰색)·`--logo-accent`(`#1975fb`)로 칠한다 — 이미지 두 장을 바꿔 끼우면 쿠키 테마와 컴퓨터 설정 둘 다 맞추기 번거롭다. 파비콘 `app/icon.svg` 는 테마와 상관없이 `#001C49` 칸 + 흰 W
   - **깜빡임 없음**: `app/layout.tsx`(공통, 2026-09-29 팀에 알림)가 쿠키를 읽어 서버에서 `data-theme` 를 붙여 보낸다. `light`·`dark` 가 아닌 값은 무시한다. 그래서 레이아웃이 요청마다 그려진다(`ƒ`).
   - 스위치의 켜진 칸은 CSS 가 `data-theme`·컴퓨터 설정을 보고 정한다 (서버에서 그린 첫 화면부터 맞음). 다른 탭에서 바꾸면 `localStorage` 의 `storage` 이벤트로 따라간다.
 - **Vercel Cron 은 무료(Hobby) 요금제에서 실행 간격이 크게 제한된다** (하루 한 번으로 알고 있음, 적용할 때 확인): 10분 전 알림을 못 맞춘다. 그래서 DB 안의 `pg_cron` 을 쓴다. Supabase 에서 `pg_cron` 확장을 켤 수 있는지 WU-02 에서 먼저 확인한다.
@@ -502,7 +503,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ### 화면 틀·대시보드 (2026-09-30, WU-35)
 
 - **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 캘린더, `/org` = 조직도(2026-09-30). 모두 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다
-- **왼쪽 메뉴**(`NavRail`): 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) · 조직도(`/org` 페이지, 2026-09-30) | 알림(안 읽은 알림 수, 누르면 알림 목록) · 설정(내 프로필 패널) | 내 카드. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
+- **왼쪽 메뉴**(`NavRail`): WorkOn 로고(폭 170px 가운데) · 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) | 구분선 | 조직도(`/org` 페이지) · 알림(안 읽은 알림 수, 누르면 알림 목록) | 내 카드. 메뉴 사이 12px, 홈 아래와 구분선 위아래는 24px. **"설정"은 2026-09-30 뺐다** — 내 카드를 누르면 위 막대 내 이름(`UserMenu`)과 같은 내 메뉴(② `sidebar/MyMenu`: 상태·내 프로필·로그아웃)가 카드 위로 열리고, 내 프로필 패널은 그 메뉴에서 연다 (예전에는 내 카드·설정이 패널을 바로 열었다). 메뉴 칸(`.nav`)이 `overflow-y: auto` 라 넘친 부분이 잘리므로 카드 위 메뉴는 칸 폭에 맞춘다. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
 - **메시지 목록 칸**: 검색(이름으로 거르기) · 즐겨찾기 · 채널 · 다이렉트 메시지. 채널을 즐겨찾기에 넣으면 채널 칸에서는 빠진다. 알림을 끈 채널에는 종 표시
 - **`#일반` 은 목록에서만 숨긴다** (2026-09-30 결정): 채널 목록·채널 찾기·대시보드·메시지 합계에서 뺀다. 채널·멤버십·자동 가입은 그대로라 알림·검색·`?m=` 으로는 열린다. `/chat` 을 처음 열면(기본값이 `#일반`) 즐겨찾기 → 첫 채널 → 첫 DM 을 연다. 보던 채널에서 빠지면 보이는 첫 채널로 간다
 - **주소로 열기**: `/chat?c=<채널 id>`(대시보드·프로필 카드), `/chat?m=<메시지 id>`(알림·검색·요약·할 일), `/calendar?e=<회의 id>`, `/calendar?new=1&with=<사람 id>`(회의 만들기를 그 사람을 참석자로 넣어 연다). 예전 주소 `/?m=`·`/?c=` 는 대시보드가 `/chat` 으로 넘긴다
@@ -568,7 +569,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ DevelopDoc/                    PRD · TECH_SPEC · WORK_UNITS · FINAL_CHECKLIST
 ├─ app/
 │  ├─ (app)/                      로그인한 화면 (2026-09-30) — layout.tsx(공통 틀) · page.tsx(대시보드 /) · chat/(채팅) · calendar/(② 캘린더·회의 예약)
-│  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만
+│  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만 · icon.svg(파비콘, 2026-09-30)
 │  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
 │  └─ api/
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
@@ -576,13 +577,14 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │        ├─ tone/                 ① 말투 변환 (예정)
 │        └─ summarize/ · todos/   ③ AI 요약 · 할 일 (2026-09-29)
 ├─ components/
+│  ├─ brand/                      ② WorkOnLogo · logoPaths(로고 모양, 사용자가 준 SVG 에서 옮김, 2026-09-30) — 왼쪽 메뉴·로그인이 가져다 씀
 │  ├─ workspace/                  공통 틀 — WorkspaceContext(화면 상태). 세 칸 Workspace·Header 는 2026-09-30 shell/ 로 바꾸며 지웠다
 │  ├─ shell/                      공통 틀 (2026-09-30, 이호섭) — AppFrame · AppShell(배치) · NavRail(왼쪽 메뉴) · ChatWorkspace(/chat) · MessageNav(메시지 목록 칸) · ChatHeader · ProfileCard · favorites · channelDetails · cardStore · useUnreadTotals · icons
 │  ├─ org/                        ③ 조직도 페이지 (2026-09-30) — OrgPage · OrgDiagram(다이어그램) · OrgTree(계층 목록) · orgSource(org_units)
 │  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
 │  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
-│  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu
+│  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu · MyMenu(내 메뉴 — 위 막대 내 이름과 왼쪽 메뉴 내 카드가 같이 씀, 2026-09-30)
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀) · PersonAvatar(사람 id 로 사진·상태 점, 채팅·조직도가 씀) · presence(회사 접속자 채널)

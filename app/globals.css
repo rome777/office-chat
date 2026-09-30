@@ -5,14 +5,24 @@
    color-scheme 은 스크롤바·체크박스·날짜 칸 같은 브라우저 기본 부품도 테마에 맞추라는 표시다 (없으면 다크에서 흰색으로 튄다) */
 :root {
   color-scheme: light dark;
-  --bg: #f7f7f8;
+  /* WorkOn 팔레트 (2026-09-30 사용자 선택: 라이트 = 시안 C "네이비·화이트 단색", 다크 = 시안 A "클래식 네이비").
+     키 색은 딥 네이비 #0B2D5B 와 흰색. 라이트는 강조색 없이 네이비·흰색·회색만 쓴다 (오류 빨강 등 상태색만 예외).
+     --primary 는 꽉 찬 바탕(버튼·배지), --accent 는 글자·선·옅은 바탕(링크·멘션·선택 표시)이다.
+     라이트는 둘이 같은 네이비지만 다크는 버튼이 흰색, 링크가 하늘색이라 나눠 둔다 */
+  --bg: #ffffff;
   --surface: #ffffff;
-  --text: #1d1d1f;
-  --muted: #6b6b73;
-  --border: #e3e3e8;
-  --accent: #3b5bdb;
-  --accent-text: #ffffff;
-  --mine: #eef2ff;
+  --nav: #f4f6fa;
+  --nav-active: #0b2d5b;
+  --nav-active-text: #ffffff;
+  --text: #102a4c;
+  --muted: #6b7a90;
+  --border: #e2e7ee;
+  --primary: #0b2d5b;
+  --primary-text: #ffffff;
+  --accent: #0b2d5b;
+  --mine: #e4eaf3;
+  --logo-ink: #001c49;
+  --logo-accent: #1975fb;
   --ok: #2f9e44;
   --warn: #e8a100;
   --bad: #e03131;
@@ -25,28 +35,38 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #161618;
-    --surface: #1f1f23;
-    --text: #ececf1;
-    --muted: #9a9aa5;
-    --border: #33333a;
-    --accent: #6b8afd;
-    --accent-text: #0d0d10;
-    --mine: #262b40;
+    --bg: #071a33;
+    --surface: #0b2346;
+    --nav: #06152b;
+    --nav-active: #133461;
+    --nav-active-text: #ffffff;
+    --text: #f2f5fa;
+    --muted: #94a5bf;
+    --border: #1b3a64;
+    --primary: #ffffff;
+    --primary-text: #0b2d5b;
+    --accent: #8eb8ff;
+    --mine: #173a6b;
+    --logo-ink: #ffffff;
   }
 }
 
 /* 컴퓨터가 라이트여도 다크를 고르면 (위와 같은 값) */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #161618;
-  --surface: #1f1f23;
-  --text: #ececf1;
-  --muted: #9a9aa5;
-  --border: #33333a;
-  --accent: #6b8afd;
-  --accent-text: #0d0d10;
-  --mine: #262b40;
+  --bg: #071a33;
+  --surface: #0b2346;
+  --nav: #06152b;
+  --nav-active: #133461;
+  --nav-active-text: #ffffff;
+  --text: #f2f5fa;
+  --muted: #94a5bf;
+  --border: #1b3a64;
+  --primary: #ffffff;
+  --primary-text: #0b2d5b;
+  --accent: #8eb8ff;
+  --mine: #173a6b;
+  --logo-ink: #ffffff;
 }
 
 * {

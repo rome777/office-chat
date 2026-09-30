@@ -5,12 +5,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useCallback, useId, useRef, useState, type ReactNode } from "react";
+import WorkOnLogo from "@/components/brand/WorkOnLogo";
 import { openNotifications, useBellUnread } from "@/components/notifications/bellStore";
 import PersonAvatar from "@/components/profile/PersonAvatar";
 import { useMyProfile } from "@/components/profile/profileSource";
+import MyMenu, { useMenuDismiss } from "@/components/sidebar/MyMenu";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import { BellIcon, CalendarIcon, ChatIcon, HomeIcon, OrgIcon, RoomIcon, SettingsIcon } from "./icons";
+import { BellIcon, CalendarIcon, ChatIcon, HomeIcon, OrgIcon, RoomIcon } from "./icons";
 import { useUnreadTotals } from "./useUnreadTotals";
 import s from "./shell.module.css";
 
@@ -65,24 +67,29 @@ function Item({
 
 export default function NavRail() {
   const path = usePathname();
-  const { me, panel, openPanel, closePanel } = useWorkspace();
+  const { me } = useWorkspace();
   const { profile } = useMyProfile();
   const unread = useUnreadTotals();
   const bell = useBellUnread();
-  const togglePanel = (kind: "profile") => (panel?.kind === kind ? closePanel() : openPanel({ kind }));
   const name = profile?.display_name ?? me.name;
+
+  // 맨 아래 내 카드를 누르면 위 막대의 내 이름과 같은 내 메뉴가 카드 바로 위에 열린다 (2026-09-30 사용자 요청 —
+  // 예전에는 내 프로필 패널을 바로 열었다. 패널은 메뉴의 "내 프로필"로 연다)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const meBox = useRef<HTMLDivElement>(null);
+  const meButton = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  useMenuDismiss(menuOpen, closeMenu, meBox, meButton);
 
   return (
     <nav className={s.nav} aria-label="메뉴">
-      <Link href="/" className={s.brand}>
-        <span className={s.logo} aria-hidden="true">
-          <ChatIcon size={20} />
-        </span>
-        오피스톡
+      <Link href="/" className={s.brand} aria-label="WorkOn 홈">
+        <WorkOnLogo height={32} />
       </Link>
-      <p className={s.navSection}>WORKSPACE</p>
+      {/* 홈 · 메시지 · 일정 · 회의실 예약 | 구분선 | 조직도 · 알림 (2026-09-30 사용자 결정 — "설정"은 뺐다. 내 프로필은 맨 아래 내 카드 메뉴로) */}
       <ul className={s.navList}>
-        <Item href="/" icon={<HomeIcon />} label="홈" active={path === "/"} />
+        <Item href="/" icon={<HomeIcon />} label="홈" active={path === "/"} className={s.navHome} />
         <Item
           href="/chat"
           icon={<ChatIcon />}
@@ -92,19 +99,29 @@ export default function NavRail() {
         />
         <Item href="/calendar" icon={<CalendarIcon />} label="일정" active={path === "/calendar"} />
         <Item href="/calendar#rooms" icon={<RoomIcon />} label="회의실 예약" className={s.navWide} />
-        <Item href="/org" icon={<OrgIcon />} label="조직도" active={path === "/org"} className={s.navWide} />
       </ul>
       <ul className={`${s.navList} ${s.navGroup}`}>
+        <Item href="/org" icon={<OrgIcon />} label="조직도" active={path === "/org"} className={s.navWide} />
         <Item onClick={openNotifications} icon={<BellIcon />} label="알림" badge={<Badge n={bell} tone="bad" />} />
-        <Item onClick={() => togglePanel("profile")} icon={<SettingsIcon />} label="설정" active={panel?.kind === "profile"} />
       </ul>
-      <button type="button" className={s.meCard} onClick={() => togglePanel("profile")} aria-label={`${name} — 내 프로필`}>
-        <PersonAvatar userId={profile?.id ?? null} name={name} size={40} />
-        <span className={s.meText}>
-          <strong>{name}</strong>
-          <span>{profile?.department ?? "소속 없음"}</span>
-        </span>
-      </button>
+      <div className={s.meBox} ref={meBox}>
+        {menuOpen && <MyMenu id={menuId} onClose={closeMenu} className={s.meMenu} />}
+        <button
+          type="button"
+          ref={meButton}
+          className={s.meCard}
+          aria-expanded={menuOpen}
+          aria-controls={menuId}
+          aria-label={`${name} — 내 메뉴`}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <PersonAvatar userId={profile?.id ?? null} name={name} size={40} />
+          <span className={s.meText}>
+            <strong>{name}</strong>
+            <span>{profile?.department ?? "소속 없음"}</span>
+          </span>
+        </button>
+      </div>
     </nav>
   );
 }
