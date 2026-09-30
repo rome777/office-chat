@@ -1,0 +1,280 @@
+/* 공통 틀 — 왼쪽 메뉴·위 막대·가운데·오른쪽 패널 배치 (2026-09-30 개편) */
+
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr) auto;
+  grid-template-rows: 60px minmax(0, 1fr);
+  grid-template-areas:
+    "nav top   top"
+    "nav main  panel";
+  background: var(--bg);
+}
+
+/* ── 왼쪽 메뉴 ── */
+.nav {
+  grid-area: nav;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 6px 18px;
+  font-size: 19px;
+  font-weight: 800;
+  color: inherit;
+  text-decoration: none;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.navSection {
+  margin: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navGroup {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.navItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font-size: 15px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.navItem:hover {
+  background: var(--mine);
+}
+
+.navActive {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.navIcon {
+  display: flex;
+  flex: none;
+}
+
+.navLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.navBadge {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.navBadgeBad {
+  background: var(--bad);
+  color: #fff;
+}
+
+.meCard {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.meCard:hover {
+  background: var(--mine);
+  border-radius: 10px;
+}
+
+.meText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.meText span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── 위 막대 ── */
+.top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.search {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.topRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── 가운데·오른쪽 ── */
+.main {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.main > * {
+  flex: 1;
+}
+
+.panelSlot {
+  grid-area: panel;
+  min-height: 0;
+  display: flex;
+}
+
+.panelSlot > * {
+  width: 360px;
+}
+
+.panelSlot:empty {
+  display: none;
+}
+
+/* 좁은 화면: 메뉴는 아래 탭 막대, 패널은 화면 전체 */
+@media (max-width: 767px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 56px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top"
+      "main"
+      "nav";
+  }
+
+  .nav {
+    flex-direction: row;
+    padding: 4px;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    overflow: visible;
+  }
+
+  .brand,
+  .navSection,
+  .meCard,
+  .navWide {
+    display: none;
+  }
+
+  .navList,
+  .navGroup {
+    flex-direction: row;
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+
+  .navList > li {
+    flex: 1;
+  }
+
+  .navItem {
+    position: relative;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 2px;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .navBadge {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 22px);
+    min-width: 18px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+
+  .top {
+    padding: 0 12px;
+  }
+
+  .search {
+    justify-content: flex-start;
+  }
+
+  .panelSlot {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  .panelSlot > * {
+    width: 100%;
+  }
+}

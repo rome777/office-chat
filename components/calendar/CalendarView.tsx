@@ -2,14 +2,14 @@
 
 // ② 캘린더 화면 (/calendar). 주간 보기 + 회의 만들기·상세 + 회의실 예약 현황.
 // 회의 하나를 여는 주소는 /calendar?e=<회의 id> — 일정 알림(③)이 이 주소로 보낸다.
+// /calendar?new=1 은 회의 만들기를 바로 열고, &with=<사람 id> 면 그 사람을 참석자로 넣어 둔다 (대시보드·프로필 카드의 "일정 잡기").
+// /calendar#rooms 는 회의실 예약 현황으로 내려간다. 메뉴·테마 버튼은 공통 틀(2026-09-30)에 있다.
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Room } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
 import { getPeople, unknownPerson } from "@/components/people/directory";
-import ThemeToggle from "@/components/sidebar/ThemeToggle";
 import EventDetail from "./EventDetail";
 import EventForm from "./EventForm";
 import RoomBoard from "./RoomBoard";
@@ -18,12 +18,14 @@ import { getEvent, getMyId, listMyEvents, listRooms, type EventWithAttendees } f
 import { addDays, formatKstDay, kstDateKey, startOfKstWeek, toMs } from "./time";
 import s from "./calendar.module.css";
 
-type Dialog = { kind: "create" } | { kind: "edit"; event: EventWithAttendees } | null;
+type Dialog = { kind: "create"; with?: Person[] } | { kind: "edit"; event: EventWithAttendees } | null;
 
 export default function CalendarView() {
   const router = useRouter();
   const params = useSearchParams();
   const openId = params.get("e");
+  const wantNew = params.get("new") === "1";
+  const withId = params.get("with");
 
   const [myId, setMyId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -108,6 +110,27 @@ export default function CalendarView() {
     };
   }, [attendeeIds]);
 
+  // ?new=1 (&with=) 로 왔으면 회의 만들기를 연다. 주소는 원래대로 돌려 둔다 (새로고침해도 다시 열리지 않게)
+  useEffect(() => {
+    if (!wantNew || !myId) return;
+    router.replace(`/calendar${window.location.hash}`, { scroll: false });
+    if (withId && withId !== myId) {
+      void getPeople([withId]).then(
+        (list) => setDialog({ kind: "create", with: list }),
+        () => setDialog({ kind: "create" }),
+      );
+    } else {
+      setDialog({ kind: "create" });
+    }
+  }, [wantNew, withId, myId, router]);
+
+  // #rooms 로 왔으면 회의실 예약 현황으로 내린다 (회의실 목록을 받아 높이가 정해진 뒤)
+  useEffect(() => {
+    if (rooms.length && window.location.hash === "#rooms") {
+      document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [rooms]);
+
   const openEvent = (id: string | null) =>
     router.replace(id ? `/calendar?e=${encodeURIComponent(id)}` : "/calendar", { scroll: false });
 
@@ -115,11 +138,8 @@ export default function CalendarView() {
   const thisWeek = startOfKstWeek(new Date()).getTime() === weekStart.getTime();
 
   return (
-    <main className={s.page}>
+    <div className={s.page}>
       <header className={s.toolbar}>
-        <Link href="/" className={s.back}>
-          ← 채팅
-        </Link>
         <h1>캘린더</h1>
         <div className={s.weekNav}>
           <button type="button" className={s.secondary} onClick={() => setWeekStart((w) => addDays(w, -7))} aria-label="이전 주">
@@ -143,7 +163,6 @@ export default function CalendarView() {
         >
           회의 만들기
         </button>
-        <ThemeToggle />
       </header>
 
       {loadError && (
@@ -154,7 +173,9 @@ export default function CalendarView() {
       {events.length === 0 && !loadError && <p className={s.emptyWeek}>이번 주에 내 회의가 없습니다.</p>}
       <WeekGrid weekStart={weekStart} events={events} myId={myId ?? ""} onSelect={openEvent} />
 
-      <RoomBoard rooms={rooms} date={boardDate} onDateChange={setBoardDate} version={version} />
+      <div id="rooms" className={s.roomsAnchor}>
+        <RoomBoard rooms={rooms} date={boardDate} onDateChange={setBoardDate} version={version} />
+      </div>
 
       {notFound && (
         <div className={s.backdrop} onClick={() => openEvent(null)}>
@@ -193,7 +214,7 @@ export default function CalendarView() {
               ? dialog.event.attendees
                   .filter((a) => a.user_id !== myId)
                   .map((a) => people.get(a.user_id) ?? unknownPerson(a.user_id))
-              : []
+              : (dialog.with ?? [])
           }
           defaultDate={thisWeek ? kstDateKey(new Date()) : kstDateKey(weekStart)}
           onClose={() => setDialog(null)}
@@ -204,6 +225,6 @@ export default function CalendarView() {
           }}
         />
       )}
-    </main>
+    </div>
   );
 }

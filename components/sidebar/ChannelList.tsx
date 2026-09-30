@@ -34,8 +34,9 @@ export default function ChannelList({
     const cur = current.current;
     // type 이 없는 채널(다른 영역이 id·이름만 넘긴 경우)은 무엇인지 모르므로 건드리지 않는다
     if (!cur.type || cur.type === "dm" || channels.some((c) => c.id === cur.id)) return;
-    const general = channels.find((c) => c.id === GENERAL_ID);
-    setChannel({ id: GENERAL_ID, name: general?.name ?? "일반", type: "public" });
+    // #일반 은 목록에서 숨기므로(2026-09-30) 보이는 첫 채널로 간다. 하나도 없을 때만 #일반
+    const next = channels.find((c) => c.id !== GENERAL_ID) ?? channels.find((c) => c.id === GENERAL_ID);
+    setChannel(next ? { id: next.id, name: next.name, type: next.type } : { id: GENERAL_ID, name: "일반", type: "public" });
   }, [channels, guardCurrent, setChannel]);
 
   // 다른 영역이 id·이름만 넘겨 채널을 바꾸면(예: ① 의 메시지로 이동) 종류를 채운다 — 비공개면 헤더에 자물쇠
@@ -56,7 +57,8 @@ export default function ChannelList({
       <ul className={s.list}>
         {error && <li className={`${s.item} ${s.error}`}>채널 목록을 못 불러왔습니다: {error}</li>}
         {channels === null && !error && <li className={`${s.item} ${s.muted}`}>불러오는 중…</li>}
-        {channels?.map((c) => {
+        {/* #일반 은 목록에서만 숨긴다 (2026-09-30 결정). 채널·멤버십은 그대로라 알림·검색으로는 열린다 */}
+        {channels?.filter((c) => c.id !== GENERAL_ID).map((c) => {
           const active = c.id === channel.id;
           return (
             <li key={c.id}>

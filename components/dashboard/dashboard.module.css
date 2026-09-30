@@ -1,0 +1,468 @@
+/* 대시보드 (/) */
+
+.page {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 28px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 4px;
+}
+
+.heroIcon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.hero p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  color: var(--bad);
+  font-size: 14px;
+}
+
+/* 카드 색: 색 토큰에 섞어서 라이트·다크 모두 맞춘다 */
+.blue {
+  --tone: #3b82f6;
+}
+
+.violet {
+  --tone: #7c5cff;
+}
+
+.green {
+  --tone: #22a06b;
+}
+
+.orange {
+  --tone: #f07c3a;
+}
+
+/* ── 요약 카드 ── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "icon title"
+    ". value"
+    ". sub";
+  column-gap: 14px;
+  row-gap: 2px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--border));
+  background: color-mix(in srgb, var(--tone) 7%, var(--surface));
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  font: inherit;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--tone) 50%, var(--border));
+}
+
+.card > svg:last-child {
+  position: absolute;
+  top: 22px;
+  right: 16px;
+  color: var(--muted);
+}
+
+.cardIcon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: var(--tone);
+}
+
+.cardTitle {
+  grid-area: title;
+  align-self: center;
+  font-weight: 700;
+}
+
+.cardValue {
+  grid-area: value;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.cardValue small {
+  margin-left: 2px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cardSub {
+  grid-area: sub;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── 상자 ── */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.box {
+  min-width: 0;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* 회의실 사용현황은 RoomBoard(②) 가 자기 테두리를 그린다 */
+.box > section[aria-label="회의실 예약 현황"] {
+  border: none;
+  padding: 0;
+  background: none;
+}
+
+.boxHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.boxHead h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+
+.more {
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.more:hover {
+  color: var(--accent);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.empty {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* 오늘의 일정 */
+.schedule,
+.todos,
+.recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule li + li,
+.recent li + li,
+.todos li + li {
+  border-top: 1px solid var(--border);
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  color: inherit;
+  text-decoration: none;
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 4px 0;
+}
+
+.event:hover strong {
+  color: var(--accent);
+}
+
+.past {
+  opacity: 0.55;
+}
+
+.eventTime {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eventText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.eventText strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventText span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chipLive {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.chipDone {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+/* 빠른 실행 */
+.quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.quickItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 10px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--tone) 8%, var(--surface));
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  text-decoration: none;
+}
+
+.quickItem:hover {
+  border-color: color-mix(in srgb, var(--tone) 40%, transparent);
+}
+
+.quickItem span:last-child {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.quickIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: var(--tone);
+}
+
+/* 오늘 할 일 */
+.todos li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+}
+
+.todos input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.todoText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.todoText strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.todoText span,
+.todoText a {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.due {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dueToday {
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.dueLate {
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+  color: var(--bad);
+  font-weight: 700;
+}
+
+/* 최근 대화 */
+.recentRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.recentRow:hover strong {
+  color: var(--accent);
+}
+
+.recentIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.recentText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.recentText span {
+  color: var(--muted);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recentText b {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.recentSide {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recentBadge {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 16px;
+  }
+
+  .cards,
+  .quick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .event {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .eventTime {
+    grid-column: 1 / -1;
+  }
+}

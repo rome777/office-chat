@@ -169,14 +169,6 @@
   color: var(--muted);
 }
 
-/* 채널 헤더 "접속 4명 ●2 ●1 ●1" 의 색별 명 수 */
-.presenceCount {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 4px;
-}
-
 @media (max-width: 560px) {
   .peerStatus {
     display: none;

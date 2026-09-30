@@ -1,7 +1,7 @@
 "use client";
 
 // ② 헤더의 검색창. 두 글자 이상 치면 내가 멤버인 대화에서 찾고, 결과를 누르면 그 메시지로 간다
-// (`/?m=<메시지 id>` — ① 이 채널을 바꾸고 강조한다. 답글이면 스레드를 연다).
+// (`/chat?m=<메시지 id>` — ① 이 채널을 바꾸고 강조한다. 답글이면 스레드를 연다).
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -109,7 +109,7 @@ export default function SearchBox() {
 
   function go(hit: SearchHit) {
     setOpen(false);
-    router.push(`/?m=${hit.id}`);
+    router.push(`/chat?m=${hit.id}`);
   }
 
   const hits = found?.hits ?? [];

@@ -67,7 +67,7 @@ export default function SummaryPanel() {
                 <SafeText text={item.text} />
                 <span className={s.sources}>
                   {item.message_ids.map((id) => (
-                    <button key={id} className="link" onClick={() => router.push(`/?m=${id}`)} title={`메시지 #${id} 로 이동`}>
+                    <button key={id} className="link" onClick={() => router.push(`/chat?m=${id}`)} title={`메시지 #${id} 로 이동`}>
                       원문 #{id}
                     </button>
                   ))}
