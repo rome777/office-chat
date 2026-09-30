@@ -39,6 +39,8 @@ async function makeUser(tag) {
   return { id: data.user.id, handle, sb };
 }
 
+const GENERAL = "00000000-0000-0000-0000-000000000001"; // #일반 (부서 채널 — 회사 조직에 걸려 있다)
+
 const send = (who, channelId, body) =>
   who.sb.from("messages").insert({ client_id: randomUUID(), channel_id: channelId, body }).select("id").single();
 
@@ -68,11 +70,14 @@ try {
 
   // ── 채널 설명·이름 ──
   const aDesc = await A.sb.from("channels").update({ description: "검사 채널입니다" }).eq("id", ch).select("id");
-  check("만든 사람은 설명을 고친다", aDesc.data?.length === 1, `(${aDesc.error?.message ?? aDesc.data?.length})`);
+  check("리더(만든 사람)는 설명을 고친다", aDesc.data?.length === 1, `(${aDesc.error?.message ?? aDesc.data?.length})`);
+  // 20260930210000_channel_leaders.sql — 이름·설명은 리더(만든 사람으로 시작)만 고친다
   const bDesc = await B.sb.from("channels").update({ description: "몰래" }).eq("id", ch).select("id");
-  check("만든 사람·관리자가 아니면 설명을 못 고친다 (0건)", !bDesc.error && bDesc.data?.length === 0, `(${bDesc.error?.code ?? bDesc.data?.length})`);
+  check("리더가 아니면 설명을 못 고친다 (0건)", !bDesc.error && bDesc.data?.length === 0, `(${bDesc.error?.code ?? bDesc.data?.length})`);
+  const genDesc = await B.sb.from("channels").update({ description: "몰래" }).eq("id", GENERAL).select("id");
+  check("부서 채널(#일반)은 멤버라도 설명을 못 고친다 (0건)", !genDesc.error && (genDesc.data ?? []).length === 0, `(${genDesc.error?.code ?? genDesc.data?.length})`);
   const aName = await A.sb.from("channels").update({ name: `채팅검사2-${run}` }).eq("id", ch).select("name");
-  check("만든 사람은 이름을 고친다", aName.data?.[0]?.name === `채팅검사2-${run}`, `(${aName.error?.message ?? ""})`);
+  check("리더(만든 사람)는 이름을 고친다", aName.data?.[0]?.name === `채팅검사2-${run}`, `(${aName.error?.message ?? ""})`);
   const tooLong = await A.sb.from("channels").update({ description: "가".repeat(121) }).eq("id", ch).select("id");
   check("설명 121자는 거부", !!tooLong.error, `(${tooLong.error?.code})`);
   const aType = await A.sb.from("channels").update({ type: "public" }).eq("id", ch).select("id");

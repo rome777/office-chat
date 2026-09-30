@@ -97,45 +97,95 @@ try {
   check("공개 채널은 본인이 가입한다", !join.error, `(${join.error?.code ?? "ok"})`);
   const joinP = await B.sb.from("memberships").insert({ channel_id: P.data.id, user_id: B.id }).select();
   check("비공개 채널은 본인이 가입 못 한다", !!joinP.error, `(${joinP.error?.code})`);
-  const addC = await B.sb.from("memberships").insert({ channel_id: X.data.id, user_id: C.id }).select();
-  check("일반 사용자는 남을 채널에 못 넣는다", !!addC.error, `(${addC.error?.code})`);
+  const cAddsB = await C.sb.from("memberships").insert({ channel_id: P.data.id, user_id: B.id }).select();
+  check("멤버가 아니면 남을 채널에 못 넣는다", !!cAddsB.error, `(${cAddsB.error?.code})`);
   const pVisibleToC = await C.sb.from("channels").select("id").eq("id", P.data.id);
   check("비공개 채널은 멤버가 아니면 안 보인다", pVisibleToC.data?.length === 0);
 
-  // ── 초대 권한 (20260929150000_invite_rights.sql) ──
+  // ── 리더·부리더 (20260930210000_channel_leaders.sql) ──
+  // 공개 Q·비공개 R 을 따로 만들어 확인한다 (X·P 는 뒤의 실시간·답글 검사가 쓴다)
   const invite = (u, channel, userId) => u.sb.from("memberships").insert({ channel_id: channel, user_id: userId }).select();
-  const setRight = (u, channel, userId, value) =>
-    u.sb.from("memberships").update({ can_invite: value }).eq("channel_id", channel).eq("user_id", userId).select("user_id");
-  const rightOf = async (channel, userId) =>
-    (await admin.from("memberships").select("can_invite").eq("channel_id", channel).eq("user_id", userId).single()).data?.can_invite;
-  check("채널을 만든 사람은 초대 권한을 갖는다", (await rightOf(P.data.id, A.id)) === true);
+  const roleOf = async (channel, userId) =>
+    (await admin.from("memberships").select("role").eq("channel_id", channel).eq("user_id", userId).maybeSingle()).data?.role ?? null;
+  const kickBy = (u, channel, userId) => u.sb.from("memberships").delete().eq("channel_id", channel).eq("user_id", userId).select();
+  const sub = (u, channel, userId, on) => u.sb.rpc("set_sub_leader", { p_channel: channel, p_user: userId, p_on: on });
+  check("채널을 만든 사람은 리더다", (await roleOf(P.data.id, A.id)) === "leader" && (await roleOf(X.data.id, A.id)) === "leader");
   const aAddsB = await invite(A, P.data.id, B.id);
-  check("만든 사람은 비공개 채널에 남을 넣는다", aAddsB.data?.length === 1, `(${aAddsB.error?.code ?? "ok"})`);
-  check("초대받은 사람은 초대 권한이 없다", (await rightOf(P.data.id, B.id)) === false);
+  check("리더는 비공개 채널에 남을 넣는다", aAddsB.data?.length === 1, `(${aAddsB.error?.code ?? "ok"})`);
+  check("초대받은 사람은 일반 멤버다", (await roleOf(P.data.id, B.id)) === "member");
   const bAddsC = await invite(B, P.data.id, C.id);
-  check("초대 권한이 없는 멤버는 남을 못 넣는다", !!bAddsC.error, `(${bAddsC.error?.code})`);
-  const bSelf = await setRight(B, P.data.id, B.id, true);
-  check("초대 권한은 스스로 못 가진다 (0건)", (bSelf.data ?? []).length === 0 && (await rightOf(P.data.id, B.id)) === false, `(${bSelf.error?.code ?? `${bSelf.data?.length}건`})`);
-  const withRight = await A.sb.from("memberships").insert({ channel_id: P.data.id, user_id: C.id, can_invite: true }).select();
-  check("넣으면서 초대 권한을 같이 줄 수는 없다", !!withRight.error, `(${withRight.error?.code})`);
-  const aGrantsB = await setRight(A, P.data.id, B.id, true);
-  check("권한 있는 사람은 다른 멤버에게 초대 권한을 준다", aGrantsB.data?.length === 1 && (await rightOf(P.data.id, B.id)) === true, `(${aGrantsB.error?.code ?? "ok"})`);
-  const bAddsC2 = await invite(B, P.data.id, C.id);
-  check("권한을 받은 멤버는 남을 넣는다", bAddsC2.data?.length === 1, `(${bAddsC2.error?.code ?? "ok"})`);
-  const cGrantsC = await setRight(C, P.data.id, C.id, true);
-  check("권한 없는 C 는 스스로 권한을 못 준다 (0건)", (cGrantsC.data ?? []).length === 0 && (await rightOf(P.data.id, C.id)) === false);
-  const bRevokesA = await setRight(B, P.data.id, A.id, false);
-  check("관리자가 아니면 초대 권한을 못 뺀다", (!!bRevokesA.error || (bRevokesA.data ?? []).length === 0) && (await rightOf(P.data.id, A.id)) === true, `(${bRevokesA.error?.code ?? `${bRevokesA.data?.length}건`})`);
-  const bKicksC = await B.sb.from("memberships").delete().eq("channel_id", P.data.id).eq("user_id", C.id).select();
-  check("초대 권한이 있어도 내보내기는 못 한다 (0건)", (bKicksC.data ?? []).length === 0, `(${bKicksC.error?.code ?? `${bKicksC.data?.length}건`})`);
-  const mRevokesB = await setRight(M, P.data.id, B.id, false);
-  check("관리자는 초대 권한을 뺀다", mRevokesB.data?.length === 1 && (await rightOf(P.data.id, B.id)) === false, `(${mRevokesB.error?.code ?? "ok"})`);
-  const { data: rightLogs } = await admin.from("admin_logs").select("actor_id, action, target").in("actor_id", [A.id, M.id]);
+  check("비공개 채널은 일반 멤버가 남을 못 넣는다", !!bAddsC.error, `(${bAddsC.error?.code})`);
+  const withRight = await A.sb.from("memberships").insert({ channel_id: P.data.id, user_id: M.id, role: "leader" }).select();
+  check("넣으면서 역할을 같이 쓸 수는 없다 (컬럼 권한)", !!withRight.error, `(${withRight.error?.code})`);
+  const selfRole = await B.sb.from("memberships").update({ role: "leader" }).eq("channel_id", P.data.id).eq("user_id", B.id).select("user_id");
+  const oldRight = await A.sb.from("memberships").update({ can_invite: true }).eq("channel_id", P.data.id).eq("user_id", B.id).select("user_id");
+  check("역할·예전 초대 권한은 직접 못 고친다 (컬럼 권한)", !!selfRole.error && !!oldRight.error, `(${selfRole.error?.code}·${oldRight.error?.code})`);
+
+  const Q = await A.sb.from("channels").insert({ name: `검사Q-${run}`, type: "public" }).select().single();
+  if (Q.error) throw Q.error;
+  made.channels.push(Q.data.id);
+  await B.sb.from("memberships").insert({ channel_id: Q.data.id, user_id: B.id });
+  const bAddsCQ = await invite(B, Q.data.id, C.id);
+  check("공개 채널은 일반 멤버도 남을 넣는다", bAddsCQ.data?.length === 1, `(${bAddsCQ.error?.code ?? "ok"})`);
+  const bNameQ = await B.sb.from("channels").update({ description: "몰래" }).eq("id", Q.data.id).select("id");
+  check("공개 채널이라도 이름·설명은 리더만 고친다 (0건)", !bNameQ.error && (bNameQ.data ?? []).length === 0, `(${bNameQ.error?.code ?? bNameQ.data?.length})`);
+
+  const R = await A.sb.from("channels").insert({ name: `검사R-${run}`, type: "private" }).select().single();
+  if (R.error) throw R.error;
+  made.channels.push(R.data.id);
+  const r = R.data.id;
+  await invite(A, r, B.id);
+  await invite(A, r, C.id);
+  const bSubsC = await sub(B, r, C.id, true);
+  check("리더가 아니면 부리더를 못 정한다", bSubsC.error?.code === "42501", `(${bSubsC.error?.code ?? "ok"})`);
+  const aSubsB = await sub(A, r, B.id, true);
+  check("리더는 부리더를 정한다", !aSubsB.error && (await roleOf(r, B.id)) === "sub", `(${aSubsB.error?.message ?? "ok"})`);
+  const aSubsC = await sub(A, r, C.id, true);
+  check("부리더는 멤버 10명당 1명까지 (3명 → 1명)", aSubsC.error?.code === "23514" && (await roleOf(r, C.id)) === "member", `(${aSubsC.error?.code ?? "ok"})`);
+  const bAddsM = await invite(B, r, M.id);
+  check("부리더는 비공개 채널에 남을 넣는다", bAddsM.data?.length === 1, `(${bAddsM.error?.code ?? "ok"})`);
+  const cKicksM = await kickBy(C, r, M.id);
+  check("일반 멤버는 남을 못 내보낸다 (0건)", (cKicksM.data ?? []).length === 0);
+  const subKicksLeader = await kickBy(B, r, A.id);
+  check("부리더는 리더를 못 내보낸다 (0건)", (subKicksLeader.data ?? []).length === 0 && (await roleOf(r, A.id)) === "leader");
+  const bKicksM = await kickBy(B, r, M.id);
+  check("부리더는 일반 멤버를 내보낸다", bKicksM.data?.length === 1, `(${bKicksM.error?.code ?? bKicksM.data?.length})`);
+  const bDescR = await B.sb.from("channels").update({ description: "부리더가 고침" }).eq("id", r).select("id");
+  check("부리더는 이름·설명을 못 고친다 (0건)", !bDescR.error && (bDescR.data ?? []).length === 0);
+  const aDescR = await A.sb.from("channels").update({ description: "리더가 고침" }).eq("id", r).select("id");
+  check("리더는 이름·설명을 고친다", aDescR.data?.length === 1, `(${aDescR.error?.code ?? aDescR.data?.length})`);
+  const cTakes = await C.sb.rpc("transfer_leader", { p_channel: r, p_user: C.id });
+  check("리더가 아니면 리더를 못 넘긴다", cTakes.error?.code === "42501", `(${cTakes.error?.code ?? "ok"})`);
+  const hand = await A.sb.rpc("transfer_leader", { p_channel: r, p_user: C.id });
   check(
-    "초대·권한 주기·빼기가 admin_logs 에 남는다",
-    ["add_member", "grant_invite"].every((a) => rightLogs?.some((l) => l.actor_id === A.id && l.action === a && l.target.channel_id === P.data.id)) &&
-      rightLogs?.some((l) => l.actor_id === M.id && l.action === "revoke_invite" && l.target.user_id === B.id),
+    "리더를 넘기면 받은 사람이 리더, 원래 리더는 부리더 (한도를 넘어도)",
+    !hand.error && (await roleOf(r, C.id)) === "leader" && (await roleOf(r, A.id)) === "sub" && (await roleOf(r, B.id)) === "sub",
+    `(${hand.error?.message ?? "ok"})`,
   );
+  const cKicksB = await kickBy(C, r, B.id);
+  check("새 리더는 부리더를 내보낸다", cKicksB.data?.length === 1, `(${cKicksB.error?.code ?? cKicksB.data?.length})`);
+  await invite(C, r, B.id);
+  const reSub = await sub(C, r, B.id, true);
+  check("부리더가 찼으면(넘긴 뒤 A 1명) 더 못 정한다", reSub.error?.code === "23514", `(${reSub.error?.code ?? "ok"})`);
+  const cLeaves = await C.sb.from("memberships").delete().eq("channel_id", r).eq("user_id", C.id).select();
+  check("리더가 나가면 부리더가 리더가 된다", cLeaves.data?.length === 1 && (await roleOf(r, A.id)) === "leader");
+  const aLeaves = await A.sb.from("memberships").delete().eq("channel_id", r).eq("user_id", A.id).select();
+  check("부리더가 없으면 남은 멤버 중 먼저 들어온 사람이 리더", aLeaves.data?.length === 1 && (await roleOf(r, B.id)) === "leader");
+  await B.sb.from("memberships").delete().eq("channel_id", r).eq("user_id", B.id);
+  const refill = await invite(M, r, A.id);
+  check("비어 있던 채널에 처음 들어온 사람이 리더가 된다", refill.data?.length === 1 && (await roleOf(r, A.id)) === "leader", `(${refill.error?.code ?? "ok"})`);
+  const { data: roleLogs } = await admin.from("admin_logs").select("actor_id, action, target").eq("target->>channel_id", r);
+  check(
+    "부리더 지정·리더 넘기기·자동 위임이 admin_logs 에 남는다",
+    ["grant_sub", "transfer_leader"].every((a) => roleLogs?.some((l) => l.action === a && l.actor_id)) &&
+      (roleLogs?.filter((l) => l.action === "auto_leader" && l.actor_id === null).length ?? 0) === 3,
+    `(${roleLogs?.map((l) => l.action).join(",")})`,
+  );
+  const genRight = await C.sb.rpc("has_invite_right", { p_channel: GENERAL });
+  const genAdd = await invite(C, GENERAL, M.id);
+  check("부서 채널(#일반)은 관리자만 초대한다", genRight.data === false && !!genAdd.error, `(${genAdd.error?.code})`);
+  const genRole = await roleOf(GENERAL, C.id);
+  check("부서 채널에는 리더가 없다", genRole === "member", `(${genRole})`);
 
   // ── 실시간 (구독을 먼저 연다) ──
   const rtB = await listen(B.sb, "B");
@@ -199,9 +249,9 @@ try {
   check("A→B DM 을 C 가 조회하면 0건", cDm.data?.length === 0 && cDmCh.data?.length === 0);
   const mDm = await M.sb.from("messages").select("id").eq("channel_id", dm1.data);
   check("관리자도 남의 DM 은 못 본다", mDm.data?.length === 0);
-  const dmRight = await A.sb.from("memberships").update({ can_invite: true }).eq("channel_id", dm1.data).eq("user_id", A.id).select("user_id");
+  const dmRole = await A.sb.rpc("set_sub_leader", { p_channel: dm1.data, p_user: B.id, p_on: true });
   const dmAdd = await A.sb.from("memberships").insert({ channel_id: dm1.data, user_id: C.id }).select();
-  check("DM 에는 초대 권한도 초대도 없다", (dmRight.data ?? []).length === 0 && !!dmAdd.error, `(${dmAdd.error?.code})`);
+  check("DM 에는 리더·부리더도 초대도 없다", !!dmRole.error && !!dmAdd.error, `(${dmRole.error?.code}·${dmAdd.error?.code})`);
 
   // ── 관리자·멤버 제거 ──
   const bKicksA = await B.sb.from("memberships").delete().eq("channel_id", X.data.id).eq("user_id", A.id).select();
@@ -278,6 +328,8 @@ try {
     admin.from("rooms").delete().in("id", made.rooms),
     admin.from("channels").delete().in("id", made.channels),
     admin.from("admin_logs").delete().in("actor_id", made.users),
+    // 리더 자동 위임 기록은 작성자가 없다 → 검사 채널 것으로 지운다
+    admin.from("admin_logs").delete().is("actor_id", null).in("target->>channel_id", made.channels),
   ];
   const errors = (await Promise.all(steps)).map((r) => r.error?.message).filter(Boolean);
   for (const id of made.users) {

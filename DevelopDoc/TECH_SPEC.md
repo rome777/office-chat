@@ -99,7 +99,7 @@ erDiagram
 | `profile_contacts` | `user_id`(기본 키, = profiles.id), `phone`, `is_public`, `updated_at` | 연락처 (2026-09-30). 공개면 로그인한 누구나, 비공개면 본인·관리자만 읽는다. 쓰기는 본인 행만 |
 | `org_units` | `id`, `name`, `kind`(`company`·`division`·`hq`·`team` = 회사·사업부·본부·팀), `parent_id`, `leader_id`(조직의 장), `channel_id`(유일), `sort_order` | 조직도 (2026-09-29 추가, 아래 "조직도·부서 채널"). 조직마다 대화방이 하나. 회사는 `#일반` |
 | `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at` | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값 |
-| `memberships` | `channel_id`, `user_id`, `joined_at`, `can_invite` | 기본 키 (channel_id, user_id). `can_invite` = 이 채널에 남을 넣고 초대 권한을 줄 수 있음 (만든 사람은 처음부터 true, 2026-09-29) |
+| `memberships` | `channel_id`, `user_id`, `joined_at`, `role`, `role_at`, `can_invite` | 기본 키 (channel_id, user_id). `role` = `leader`·`sub`(부리더)·`member` — 일반 채널에만 리더 1명(유일 인덱스)·부리더를 둔다, `role_at` = 리더·부리더가 된 시각 (2026-09-30 WU-39). `can_invite` 는 2026-09-29 초대 권한 칸인데 2026-09-30 부터 쓰지 않는다 (고치지 못하게 막음) |
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
 | `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
@@ -187,7 +187,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 2026-09-30 원격 적용, `npm run check:chat` 27개 통과.
 
 - `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별
-- `channels.description`(120자까지): 채널 설명. **이름·설명은 만든 사람·관리자만** 고친다. **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
+- `channels.description`(120자까지): 채널 설명. **이름·설명은 그 채널의 리더와 관리자만** 고친다 (2026-09-30 WU-39, 처음엔 만든 사람·관리자). **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
 - `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다
 - `message_reactions(message_id, user_id, emoji, channel_id, removed_at)`: 리액션. 이모지는 정해진 10개. `toggle_reaction(message_id, emoji)` 로만 단다. **떼도 행을 지우지 않고 `removed_at` 을 채운다** — Realtime 의 DELETE 이벤트는 필터(`channel_id=eq.`)가 안 되고 RLS 도 안 거쳐서, 지우면 떼는 것을 채널 멤버에게만 보낼 방법이 없다. INSERT·UPDATE 만 채널로 걸러 받는다
 - `channel_mutes(user_id, channel_id)`: 채널별 알림 끄기. `notifications` BEFORE INSERT 트리거 `notifications_skip_muted` 가 끈 채널의 메시지 알림(멘션·답글·DM)을 **아예 만들지 않는다**. 미읽음 배지는 그대로다. 일정 알림(`channel_id` 없음)은 상관없다
@@ -201,9 +201,9 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | 테이블 | 읽기 | 쓰기 |
 |---|---|---|
 | `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만 |
-| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 초대 권한이 있는 사람(관리자·만든 사람·권한 받은 멤버). 초대 권한 주기도 같은 사람, 빼기와 멤버 제거는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
+| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 `has_invite_right` — 관리자, 일반 채널에서 공개면 멤버 누구나·비공개면 리더·부리더 (부서 채널은 관리자만). 내보내기는 관리자(누구나)·리더(부리더·멤버)·부리더(멤버만), 역할(`role`)은 `set_sub_leader`·`transfer_leader` 함수로만 바꾼다 (2026-09-30 WU-39). 예전: 초대 권한 주기·빼기는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
 | `org_units` | 로그인 사용자 모두 | 서버·시드만 (클라이언트 쓰기 권한 없음). 소속(`profiles.org_unit_id`)도 update 컬럼 권한이 없어 서버만 바꾼다 — 소속이 곧 부서 채널 멤버십이라서 |
-| `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에). `name`·`description` 수정은 만든 사람·관리자만, DM 제외, 부서 채널 이름은 거부 (2026-09-30) |
+| `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에). `name`·`description` 수정은 일반 채널의 리더·관리자만, DM 제외 (2026-09-30 WU-39), 부서 채널 이름은 거부 (2026-09-30) |
 | `channel_favorites` · `channel_mutes` | 본인 행만 | 본인이 멤버인 채널만 넣고, 본인 것만 지운다 (2026-09-30) |
 | `pinned_messages` | 그 채널의 멤버 | `toggle_pin()` 으로만 (멤버) |
 | `message_reactions` | 그 채널의 멤버 | `toggle_reaction()` 으로만 (멤버, 정해진 이모지) |
@@ -235,9 +235,30 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - update 정책은 `using` 과 `with check` 모두 `has_invite_right` 라 권한이 없으면 자기 행도 못 바꾼다 (0건). `with check` 에 `can_invite or is_admin()` 이 있어 **관리자가 아니면 true 로만** 바꾼다 (빼기는 관리자만, 관리자 아닌 사람이 빼면 42501).
 - 멤버 제거(delete) 정책은 그대로 관리자만이다. 권한을 주고 빼면 트리거 `memberships_log_invite_right` 가 `admin_logs` 에 `grant_invite`·`revoke_invite` 로 남긴다.
 - 이미 있던 채널은 마이그레이션이 만든 사람에게 권한을 채웠다. `created_by` 가 null 인 `#일반` 은 관리자만 넣는다.
+- **2026-09-30 부터 초대 권한 대신 리더·부리더를 쓴다 (아래)**. `can_invite` 칸과 기록 트리거는 남았지만 update 권한·정책을 거뒀다.
+
+**리더·부리더** (2026-09-30, `20260930210000_channel_leaders.sql`, WU-39, 사용자 결정): "일반 채널" = 부서 채널이 아닌 공개·비공개 채널 (`is_team_channel()`). 부서 채널(#일반 포함)·DM 에는 리더가 없다.
+
+| 할 일 | 공개 일반 채널 | 비공개 일반 채널 |
+|---|---|---|
+| 이름·설명 수정 | 리더 | 리더 |
+| 초대 | 멤버 누구나 | 리더·부리더 |
+| 내보내기 | 리더(부리더·멤버), 부리더(일반 멤버만) | 같음 |
+| 부리더 지정·해제, 리더 넘기기 | 리더 | 리더 |
+
+- 회사 관리자는 모든 채널에서 다 한다 (리더를 내보내는 것 포함). 나가기는 누구나 (부서 채널 제외).
+- 리더는 처음에 만든 사람이다 (`channels_add_creator`). 마이그레이션이 이미 있던 채널에 만든 사람(없으면 먼저 들어온 멤버)을 리더로 채웠다.
+- **부리더 한도** `sub_leader_limit()` = 멤버 10명당 1명, 최대 5명. `set_sub_leader` 가 찼으면 23514 로 거부한다. **리더를 넘기면 원래 리더가 부리더가 되므로 이때만 한도를 넘을 수 있다** (그 뒤 새로 지정은 막힌다). 멤버가 줄어 한도보다 많아져도 이미 있는 부리더는 그대로다.
+- **리더가 나가거나 내보내지면** 트리거 `memberships_next_leader` 가 먼저 부리더가 된 사람(`role_at`) → 없으면 가장 먼저 들어온 멤버(`joined_at`)를 리더로 올린다. 마지막 멤버까지 나가면 비어 남고, **다음에 들어오는 사람이 리더가 된다** (트리거 `memberships_first_leader`). 채널을 통째로 지울 때는 채널이 먼저 사라져 건너뛴다.
+- **동시에 일어나도 리더가 비지 않게**: 역할을 바꾸는 함수·트리거는 모두 채널 행을 `for update` 로 잠가 차례로 처리한다. 자동 위임은 나가는 중인(잠긴) 후보를 건너뛰고(`skip locked`), 실제로 올렸을 때만 기록한다. 넘기기는 받는 사람 행도 잠근다. 부리더 한도 함수 `sub_leader_limit()` 은 로그인 사용자가 부르지 못한다 (화면은 인원을 직접 센다).
+- 새 화면은 `memberships.role` 을 읽는다. **원격 적용 전에 배포되면** `useChannelMembers` 가 역할 없이 다시 읽어 멤버 목록은 보이고 왕관·⋯ 만 없다 (2026-09-30 검토 반영).
+- **역할은 함수로만 바꾼다**: `role`·`role_at` 에는 insert·update 컬럼 권한이 없다 (넣으면 늘 `member`). `set_sub_leader(channel, user, on)`·`transfer_leader(channel, user)` 는 security definer 로 호출한 사람이 리더(또는 관리자)인지 본다 (아니면 42501).
+- 내보내기 정책은 **지워지는 행의 `role`** 과 내 역할(`my_channel_role()`)을 비교한다.
+- `admin_logs` 에 `grant_sub`·`revoke_sub`·`transfer_leader`(호출한 사람), `auto_leader`(작성자 없음, `target.from` = 나간 리더) 로 남는다.
+- 화면(③ `ChannelInfoPanel`): 이름 옆 채운 왕관 "리더"·테두리 왕관 "부리더", 멤버 옆 `⋯` 에 내가 할 수 있는 것만, 리더에게 "부리더 n / m명", 리더 넘기기 확인 창. 멤버 목록의 역할은 `useChannelMembers` 가 `memberships` UPDATE 를 받아 바로 바꾼다.
 정책끼리 서로를 조회하는 곳(`memberships`, `events`↔`event_attendees`)은 `is_member()`·`is_event_participant()` 같은 security definer 함수로 끊었다.
 
-모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과). 초대 권한 항목 14개를 더해 **62개, 2026-09-29 전부 통과** (WU-27).
+모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과). 초대 권한 항목 14개를 더해 **62개, 2026-09-29 전부 통과** (WU-27). 2026-09-30 초대 권한 항목을 리더·부리더 항목으로 바꿔 **76개 전부 통과** (WU-39, 원격 적용 뒤).
 
 **관리자 권한 상승 방지**: `profiles.role` 은 사용자가 수정할 수 없게 컬럼 권한이나 트리거로 막는다.
 
@@ -697,6 +718,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `components/auth/` | 이메일 로그인 화면, 가입 처리(`signUp.ts`, 화면에서 뺌), 입장 관문 (②) |
 | `components/shell/` | 공통 틀 (2026-09-30 개편: 대시보드 `/`·채팅 `/chat`·캘린더가 같은 메뉴·위 막대·오른쪽 패널을 쓴다) — 7절 "화면 틀·대시보드" |
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
+| `supabase/migrations/20260930210000_channel_leaders.sql` | 일반 채널 리더·부리더 `memberships.role`, 수정·초대·내보내기 정책, `set_sub_leader`·`transfer_leader`, 리더 자동 위임 트리거 (5절 "리더·부리더", WU-39) |
 
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
