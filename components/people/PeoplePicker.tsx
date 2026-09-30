@@ -5,6 +5,7 @@
 
 import { useEffect, useId, useState } from "react";
 import type { Person } from "@/lib/types/people";
+import PersonAvatar from "@/components/profile/PersonAvatar"; // 사진·상태 점 (2026-09-30)
 import { searchPeople } from "./directory";
 import s from "./people.module.css";
 
@@ -113,6 +114,7 @@ export default function PeoplePicker({
             results.map((p) => (
               <li key={p.id} role="option" aria-selected={false}>
                 <button type="button" onClick={() => add(p)}>
+                  <PersonAvatar userId={p.id} name={p.display_name} size={26} />
                   <span className={s.name}>{p.display_name}</span>
                   <span className={s.meta}>
                     {[p.department, p.title].filter(Boolean).join(" · ")}

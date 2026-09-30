@@ -167,7 +167,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - 사진 버킷 `avatars`: **공개 읽기**(주소만 알면 열림, 파일 이름은 임의 24자), 2MB, WEBP·JPEG·PNG. 쓰기·지우기는 `storage.objects` 정책으로 **본인 폴더(`<내 id>/`)만**. 화면은 브라우저에서 가운데를 256px 정사각형으로 잘라 WEBP(안 되면 JPEG)로 다시 그려 올리고, 새 사진이나 캐릭터로 바꾸면 옛 사진을 지운다
 - 비밀번호 바꾸기는 **지금 비밀번호로 다시 로그인해 본 뒤** `auth.updateUser` 로 바꾼다 (탭을 열어 둔 채 자리를 비운 사이 남이 바꾸지 못하게)
 - 모두 `npm run check:profile` 이 가상 사용자 A·B·관리자로 확인한다 (33개, 2026-09-30 전부 통과)
-- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)·DM 목록(② `DmList`)이 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
+- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)·DM 목록·헤더 DM 제목·사람 찾기(② `DmList`·`ChannelTitle`·`PeoplePicker`)가 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
   - 들어가는 키는 내 id (탭이 여럿이어도 한 사람, 가장 최근 `at` 의 상태를 쓴다). 보내는 것은 `{ status, at }` 뿐. 헤더(`UserMenu`)가 내 상태가 정해지거나 바뀔 때 보낸다
   - **"오프라인으로 표시"면 채널에서 나간다**(untrack) → 남에게는 접속을 끊은 사람과 똑같이 회색 "오프라인". ① 채널 접속자 수(`room:<채널>`)에서도 빠진다. 같은 사람의 다른 탭에는 `BroadcastChannel` 로 바뀐 값을 알린다 (다른 탭이 계속 온라인을 보내지 않게)
   - 한계: presence 는 보내는 쪽이 키와 `at` 을 정하므로 **로그인한 사람이 남의 id 로, `at` 을 아주 큰 값으로 들어가 그 사람의 점을 바꿀 수 있다** (① 접속자 수도 같은 방식). 화면 표시일 뿐 권한과는 관계없다. 채널이 공개라 공개 키만 있으면 누가 접속했는지(id)를 볼 수 있다. 서버가 확인하게 하려면 private 채널 + `realtime.messages` RLS 가 필요하다
