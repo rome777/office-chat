@@ -237,6 +237,7 @@
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  container-type: inline-size; /* 헤더 폭에 따라 멤버 버튼 글자를 줄인다 (② profile.module.css .presenceWords, 2026-09-30) */
 }
 
 .mobileTitle {

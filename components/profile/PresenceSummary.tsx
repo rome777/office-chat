@@ -33,8 +33,12 @@ export function useChannelPresence(channelId: string) {
 export function ChannelPresenceText({ p, fallbackTotal }: { p: ChannelPresence; fallbackTotal: number | null }) {
   if (!p.loaded) return <>{fallbackTotal ?? ""}</>;
   return (
-    <span className={s.presenceText} title={p.detail}>
-      총인원 {p.total}명 · 접속 {p.here}명
+    <span className={s.presenceText} title={`총인원 ${p.total}명 · 접속 ${p.here}명 — ${p.detail}`}>
+      {/* 헤더가 좁으면(오른쪽 패널을 열었을 때 등) 글자 대신 총인원 숫자만 */}
+      <span className={s.presenceWords}>
+        총인원 {p.total}명 · 접속 {p.here}명
+      </span>
+      <span className={s.presenceShort}>{p.total}</span>
       {COUNTED.map((st) => (
         <span key={st} className={s.presenceCount} aria-hidden="true">
           <span className={`${s.swatch} ${s[st]}`} />
