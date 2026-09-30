@@ -4,11 +4,12 @@
 // 띄우기 규칙은 useNotifications 가 정하고, 여기서는 어떻게 띄울지만 정한다.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { useSelf } from "@/components/chat/useSelf";
 import SafeText from "@/components/chat/SafeText";
 import { TYPE_LABEL, isLooking, notificationHref, useNotifications, type Arrival, type NotificationView } from "./useNotifications";
+import { onOpenRequest, publishUnread } from "./bellStore";
 import s from "./notifications.module.css";
 
 const TOAST_MS = 6000;
@@ -30,6 +31,7 @@ function formatTime(iso: string) {
 
 export default function NotificationBell() {
   const router = useRouter();
+  const pathname = usePathname();
   const { channel, panel } = useWorkspace();
   const self = useSelf();
   const [open, setOpen] = useState(false);
@@ -87,12 +89,18 @@ export default function NotificationBell() {
     [go],
   );
 
+  // 대시보드·캘린더에 있을 때는 대화를 보고 있지 않다 (화면 상태의 channel 은 채팅으로 돌아갈 때를 위해 남아 있다)
+  const onChat = pathname === "/chat";
   const { items, unread, markRead, markAllRead } = useNotifications({
     selfId: self?.id ?? null,
-    currentChannelId: channel.id,
-    openThreadId: panel?.kind === "thread" ? panel.messageId : null,
+    currentChannelId: onChat ? channel.id : "",
+    openThreadId: onChat && panel?.kind === "thread" ? panel.messageId : null,
     onArrive,
   });
+
+  // 왼쪽 메뉴의 "알림"·대시보드 카드가 같은 숫자를 보이고 이 목록을 연다 (구독은 여기 하나)
+  useEffect(() => publishUnread(unread), [unread]);
+  useEffect(() => onOpenRequest(() => setOpen(true)), []);
 
   // 안 읽은 알림 수는 상황과 관계없이 탭 제목에도 보인다.
   // Next.js 는 페이지를 이동할 때(router.push) 제목을 다시 씌운다 → 1초마다 확인해서 숫자가 빠졌으면 다시 붙인다.

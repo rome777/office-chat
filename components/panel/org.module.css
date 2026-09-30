@@ -136,3 +136,16 @@
   margin-left: auto;
   font-size: 12px;
 }
+
+/* 사람 사진을 누르면 프로필 카드 (2026-09-30) */
+.cardButton {
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+}
+
+.who {
+  cursor: pointer;
+}

@@ -178,6 +178,17 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
   2. "지금 비밀번호 확인"은 화면에서만 한다. 세션을 가로챈 사람은 `auth.updateUser` 를 바로 부를 수 있다. 서버에서도 막으려면 Supabase 대시보드 → Authentication → **Secure password change** 를 켠다 (계정 주인이 켠다)
 - 처음 적는 연락처는 화면에서 **비공개가 기본**이다 (DB 기본값은 `true` 지만 화면이 늘 `is_public` 을 보낸다). 연락처를 못 읽으면 빈 값으로 두지 않고 오류를 보인다 (그대로 저장해 덮어쓰지 않게)
 
+### 채팅 개편 (2026-09-30, `20260930170000_chat_extras.sql`, WU-35)
+
+화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 모두 `npm run check:chat` 으로 확인한다 (원격 적용 뒤).
+
+- `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별
+- `channels.description`(120자까지): 채널 설명. **이름·설명은 만든 사람·관리자만** 고친다. **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
+- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다
+- `message_reactions(message_id, user_id, emoji, channel_id, removed_at)`: 리액션. 이모지는 정해진 10개. `toggle_reaction(message_id, emoji)` 로만 단다. **떼도 행을 지우지 않고 `removed_at` 을 채운다** — Realtime 의 DELETE 이벤트는 필터(`channel_id=eq.`)가 안 되고 RLS 도 안 거쳐서, 지우면 떼는 것을 채널 멤버에게만 보낼 방법이 없다. INSERT·UPDATE 만 채널로 걸러 받는다
+- `channel_mutes(user_id, channel_id)`: 채널별 알림 끄기. `notifications` BEFORE INSERT 트리거 `notifications_skip_muted` 가 끈 채널의 메시지 알림(멘션·답글·DM)을 **아예 만들지 않는다**. 미읽음 배지는 그대로다. 일정 알림(`channel_id` 없음)은 상관없다
+- 채널에서 나가면(memberships 삭제) 그 채널의 즐겨찾기·알림 끄기를 트리거가 지운다
+
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
 권한 테스트가 전부 RLS 에 달려 있으므로, 이후 변경도 정책 전체를 함께 보고 반영한다.
 
@@ -188,7 +199,10 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만 |
 | `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 초대 권한이 있는 사람(관리자·만든 사람·권한 받은 멤버). 초대 권한 주기도 같은 사람, 빼기와 멤버 제거는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
 | `org_units` | 로그인 사용자 모두 | 서버·시드만 (클라이언트 쓰기 권한 없음). 소속(`profiles.org_unit_id`)도 update 컬럼 권한이 없어 서버만 바꾼다 — 소속이 곧 부서 채널 멤버십이라서 |
-| `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에) |
+| `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에). `name`·`description` 수정은 만든 사람·관리자만, DM 제외, 부서 채널 이름은 거부 (2026-09-30) |
+| `channel_favorites` · `channel_mutes` | 본인 행만 | 본인이 멤버인 채널만 넣고, 본인 것만 지운다 (2026-09-30) |
+| `pinned_messages` | 그 채널의 멤버 | `toggle_pin()` 으로만 (멤버) |
+| `message_reactions` | 그 채널의 멤버 | `toggle_reaction()` 으로만 (멤버, 정해진 이모지) |
 | `attachments` | 그 채널의 멤버 | 서버 API 만 |
 | `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
 | `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
@@ -475,6 +489,20 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - `updated_at`·`updated_by` 는 트리거가 채운다 (컬럼 권한이 없어 클라이언트는 못 보낸다). 기록을 고치면 목록의 "마지막 수정"도 바뀐다 (`chore_entries_touch_list`, security definer).
 - 실시간 구독은 하지 않는다: 패널을 열 때와 내가 고친 뒤에 다시 불러온다. 두 사람이 동시에 같은 기록을 고치면 나중 것이 남는다.
 
+### 화면 틀·대시보드 (2026-09-30, WU-35)
+
+- **주소**: `/` = 대시보드(로그인 뒤 첫 화면), `/chat` = 채팅, `/calendar` = 캘린더. 셋 다 `app/(app)/layout.tsx` 의 공통 틀(`components/shell/AppFrame`) 안에 뜬다 — 입장 관문 → 화면 상태(`WorkspaceContext`) → 왼쪽 메뉴·위 막대·오른쪽 패널. 페이지를 옮겨도 화면 상태와 알림 구독이 이어진다
+- **왼쪽 메뉴**(`NavRail`): 홈 · 메시지(안 읽은 합계) · 일정 · 회의실 예약(`/calendar#rooms`) | 알림(안 읽은 알림 수, 누르면 알림 목록) · 조직도(오른쪽 패널) · 설정(내 프로필 패널) | 내 카드. 채널·DM 목록은 여기 두지 않고 `/chat` 의 메시지 목록 칸(`MessageNav`)에만 둔다 (같은 목록이 두 번 보이지 않게). 좁은 화면(768px 미만)에서는 아래 탭 막대가 된다
+- **메시지 목록 칸**: 검색(이름으로 거르기) · 즐겨찾기 · 채널 · 다이렉트 메시지. 채널을 즐겨찾기에 넣으면 채널 칸에서는 빠진다. 알림을 끈 채널에는 종 표시
+- **`#일반` 은 목록에서만 숨긴다** (2026-09-30 결정): 채널 목록·채널 찾기·대시보드·메시지 합계에서 뺀다. 채널·멤버십·자동 가입은 그대로라 알림·검색·`?m=` 으로는 열린다. `/chat` 을 처음 열면(기본값이 `#일반`) 즐겨찾기 → 첫 채널 → 첫 DM 을 연다. 보던 채널에서 빠지면 보이는 첫 채널로 간다
+- **주소로 열기**: `/chat?c=<채널 id>`(대시보드·프로필 카드), `/chat?m=<메시지 id>`(알림·검색·요약·할 일), `/calendar?e=<회의 id>`, `/calendar?new=1&with=<사람 id>`(회의 만들기를 그 사람을 참석자로 넣어 연다). 예전 주소 `/?m=`·`/?c=` 는 대시보드가 `/chat` 으로 넘긴다
+- **알림 구독은 알림 버튼 하나만 연다**: 왼쪽 메뉴·대시보드 카드는 `notifications/bellStore` 로 숫자를 받고 목록을 연다 (훅을 두 번 쓰면 토스트가 두 번 뜬다). 알림 버튼은 `/chat` 에 있을 때만 "그 대화를 보고 있다"로 친다
+- **대시보드**: 요약 카드(오늘의 일정·안 읽은 메시지·내 회의실 예약·새 알림) → 오늘의 일정 | 빠른 실행(새 DM·회의 만들기·회의실) → 오늘 할 일(담당이 나인 안 끝난 `todos`, 기한 지난 것·오늘 것부터, 체크하면 `done_at`) | 회의실 사용현황(② `RoomBoard`) → 최근 대화(대화마다 가장 최근 최상위 메시지, 대화 수만큼 조회). 새 표는 없다
+- **프로필 카드**(`shell/ProfileCard`): 메시지 작성자·채널 멤버·조직도 사람을 누르면 뜬다. 사진·소속·상태 메시지는 `profiles`, 상태는 접속자 채널, 연락처는 공개한 것만(RLS), **이메일은 본인 것만** (남의 로그인 메일은 DB 가 주지 않는다). "메시지"는 DM 을 열고 `/chat` 으로, "일정 잡기"는 `/calendar?new=1&with=`
+- **채널 정보 패널**: 이름·설명(만든 사람·관리자는 연필로 수정) → 멤버(사진 8개, "모두 보기"에 관리 버튼) → 고정된 메시지 → 채널 설정(이름·설명 수정·알림 켜기/끄기·채널 초대·나가기) → 관리 기록(관리자). 채팅 머리의 멤버 수를 눌러도 열린다
+- **메시지**: 마우스를 올리면 오른쪽 위에 😀(리액션)·💬(답글)·📌(고정). 날짜가 바뀌는 곳에 구분선(한국 시각). 고정된 메시지는 왼쪽에 노란 줄
+- **내 프로필 패널**(②): 1. 현재 상태(활동 상태 고르기·상태 메시지) 2. 기본 정보(아이디·이름·부서·직급·이메일, 수정 불가) 3. 연락처(공개 여부) 4. 계정 관리. 상태·연락처는 [변경사항 저장] 한 번에, 사진은 창에서 고르면 바로
+
 ## 8. AI
 
 모든 AI 호출은 서버 API 에서만 한다.
@@ -529,26 +557,27 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ README.md
 ├─ DevelopDoc/                    PRD · TECH_SPEC · WORK_UNITS · FINAL_CHECKLIST
 ├─ app/
-│  ├─ page.tsx                    공통 틀 — 입장 관문(②) → 화면 상태 → 세 칸 배치
+│  ├─ (app)/                      로그인한 화면 (2026-09-30) — layout.tsx(공통 틀) · page.tsx(대시보드 /) · chat/(채팅) · calendar/(② 캘린더·회의 예약)
 │  ├─ layout.tsx · globals.css    공통 — globals.css 에는 색·글꼴·기본 모양만
 │  ├─ login/                      ② 로그인 · auth/callback/ 가입 확인 메일 링크
-│  ├─ calendar/                   ② 캘린더·회의 예약
 │  └─ api/
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
 │        ├─ tone/                 ① 말투 변환 (예정)
 │        └─ summarize/ · todos/   ③ AI 요약 · 할 일 (2026-09-29)
 ├─ components/
-│  ├─ workspace/                  공통 틀 — Workspace(세 칸) · Header(헤더 칸) · WorkspaceContext(화면 상태)
-│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수)
+│  ├─ workspace/                  공통 틀 — WorkspaceContext(화면 상태). 세 칸 Workspace·Header 는 2026-09-30 shell/ 로 바꾸며 지웠다
+│  ├─ shell/                      공통 틀 (2026-09-30, 이호섭) — AppFrame · AppShell(배치) · NavRail(왼쪽 메뉴) · ChatWorkspace(/chat) · MessageNav(메시지 목록 칸) · ChatHeader · ProfileCard · favorites · channelDetails · cardStore · useUnreadTotals · icons
+│  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인·가입)
-│  ├─ sidebar/                    ② Sidebar(채널 목록) · ChannelTitle · UserMenu
+│  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu
 │  ├─ search/                     ② SearchBox
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀) · PersonAvatar(사람 id 로 사진·상태 점, 채팅·조직도가 씀) · presence(회사 접속자 채널)
 │  ├─ calendar/                   ② 캘린더 화면 부품 · source.ts(DB 창구)
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기) · OrgChartPanel(조직도) · orgSource(org_units)
-│  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙)
+│  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙) · bellStore(메뉴·대시보드와 숫자 나누기) · mutes(채널별 알림 끄기)
 ├─ lib/
 │  ├─ supabase.ts                 공통 — 로그인 작업에서 ② 가 브라우저용·서버용으로 나눈다 (`@supabase/ssr`)
 │  ├─ attachments.ts              ① 첨부 규칙 — 크기 상한·허용 형식·시그니처 판별 (입력창과 서버가 같이 씀)
@@ -558,7 +587,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · profile-check.mjs(내 프로필 권한) · seed-10k · seed-company(시연 회사)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · profile-check.mjs(내 프로필 권한) · chat-extras-check.mjs(즐겨찾기·고정·리액션·알림 끄기 권한) · seed-10k · seed-company(시연 회사)
 └─ .env.example
 ```
 
@@ -595,12 +624,12 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 2026-09-29 틀 나누기에서 정했다. 셋이 한 파일을 고치면 머지 때마다 충돌이 나서 이렇게 나눴다.
 
 - **남의 폴더 파일은 가져다 쓰기만 한다** (주인은 9절). 고칠 것이 있으면 주인에게 요청한다.
-- **공통 틀은 고치지 않는다**: `components/workspace/`, `app/page.tsx`, `app/layout.tsx`, `app/globals.css`. 꼭 필요하면 팀에 알리고 한 사람이 고친다.
-- **헤더에 무엇을 넣을 때는 자기 컴포넌트 안에 넣는다**: 연결 상태 ①, 채널 이름·검색·내 이름 ②, 패널 버튼·알림 ③ 은 이미 헤더 칸에 들어 있다.
+- **공통 틀은 고치지 않는다**: `components/workspace/WorkspaceContext.tsx`, `app/(app)/layout.tsx`, `components/shell/AppFrame.tsx`·`AppShell.tsx`, `app/layout.tsx`, `app/globals.css`. 꼭 필요하면 팀에 알리고 한 사람이 고친다. (2026-09-30 틀 개편 — 예전 `app/page.tsx`·`components/workspace/Workspace.tsx`·`Header.tsx` 는 지웠다)
+- **위 막대·채팅 머리에 무엇을 넣을 때는 자기 컴포넌트 안에 넣는다**: 위 막대에는 검색·내 이름 ②·알림 ③, 채팅 머리에는 연결 상태 ①·채널 전환(좁은 화면) ②·패널 버튼 ③("⋯" 안) 이 들어 있다.
 - **스타일은 컴포넌트 옆 `*.module.css`** 에 쓴다. `globals.css` 에 덧붙이지 않는다.
 - **타입은 `lib/types/<영역>.ts`** 에 둔다.
 - **실시간 구독은 영역마다 따로 연다**: 메시지 ①, 미읽음 ②, 알림 ③. 하나의 구독을 셋이 고치지 않는다.
-- **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `?m=<메시지 id>`(① 이 이동·강조), 회의는 `/calendar?e=<회의 id>`(②).
+- **남의 화면으로 가는 것은 주소로 한다**: 메시지는 `/chat?m=<메시지 id>`(① 이 이동·강조), 대화는 `/chat?c=<채널 id>`, 회의는 `/calendar?e=<회의 id>`·새 회의는 `/calendar?new=1&with=<사람 id>`(②). 2026-09-30 까지는 `/?m=` 이었다 (대시보드가 넘겨 준다).
   `?m=` 은 새로고침 없이 `router.push` 로 붙여도 동작하고, ① 이 처리한 뒤 주소에서 `m` 만 지운다 (같은 메시지로 다시 이동할 수 있게). 없는 메시지면 가운데 칸에 안내가 뜬다.
 - **패키지 추가는 팀에 알리고 한 번에 한다** (`package-lock.json` 충돌은 손으로 풀기 어렵다). `@supabase/ssr` 은 틀 나누기 때 미리 넣었다 (0.12.7 고정). LLM 은 SDK 를 넣지 않고 REST API 를 `fetch` 로 부른다 (`lib/ai/openai.ts`, 2026-09-29).
 - **줄바꿈은 LF 로 고정한다** (`.gitattributes`, 2026-09-29): 윈도우에서 저장해도 저장소에는 LF 로 들어간다. 없을 때는 README 가 통째로 CRLF 로 바뀌어 모든 줄이 바뀐 것처럼 보이고 머지 충돌이 났다 (PR #16). 이미지·PDF 는 바이너리로 둔다.
@@ -651,7 +680,8 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `components/chat/useMessages.ts` | 실시간 구독(postgres_changes), 접속자 수(presence), 전송·재전송·동기화 |
 | `components/chat/` 나머지 | 메시지 목록·스크롤, 메시지 한 건, 입력창, 헤더의 연결 상태 |
 | `components/auth/` | 이메일 로그인·가입 화면, 입장 관문 (②) |
-| `components/workspace/` 외 | 세 칸 배치와 자리만 있는 화면(채널 목록 `# 일반` 하나, 검색·알림은 비활성, 요약·할 일·채널 정보 패널은 "준비 중") — 9절 |
+| `components/shell/` | 공통 틀 (2026-09-30 개편: 대시보드 `/`·채팅 `/chat`·캘린더가 같은 메뉴·위 막대·오른쪽 패널을 쓴다) — 7절 "화면 틀·대시보드" |
+| `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
 
 2026-09-29 틀 나누기에서 `components/ChatRoom.tsx`(304줄 한 파일)를 위처럼 나눴다. 동작은 그대로다.
 | `scripts/step1-check.mjs` | Step 1 통과 테스트 자동 확인 (`npm run check:step1`). 지금은 익명 임시 호환 경로를 시험한다. 끝나면 테스트 메시지를 지운다 |
@@ -720,6 +750,9 @@ npx supabase db push --db-url $env:DBURL
 - **새 테이블은 `enable row level security` 를 꼭 같이 쓴다**: 정책(`create policy`)만 만들고 RLS 를 안 켜면 정책은 무시되고 컬럼 권한만 남아, 로그인한 누구나 모든 행을 읽고 고치고 지운다. 오류도 경고도 없다. 2026-09-29 잡무 수첩(`20260929160000_chore_notes.sql`)에서 빠뜨렸고, `check:chores` 의 "멤버가 아니면 …" 검사가 전부 실패해 알았다 (테이블이 비어 있고 화면도 배포 전이라 샌 데이터는 없음, `20260929160100_chore_notes_rls.sql` 로 켬). 새 테이블을 만들면 비회원 거부 검사를 먼저 돌린다.
 - **뒤에 가려진 탭은 scroll 이벤트가 오지 않는다**: 자동화 도구로 탭 두 개를 띄워 "위를 보고 있을 때 새 메시지 버튼" 을 시험하면, 뒤쪽 탭은 위로 올린 것을 앱이 모르고 맨 아래로 내려 버린다 (2026-09-29 확인). 앱 문제가 아니다. 시험하는 탭을 앞으로 가져와서 한다.
 - **`supabase db push` 는 올리지 않은 마이그레이션을 전부 올린다**: 다른 사람이 아직 작업 중인 파일이 폴더에 있으면 그것까지 원격에 들어간다. 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 으로 무엇이 올라갈지 본다. 파일 이름의 시각이 이미 적용된 것보다 앞서면 `db push` 가 거부한다 (`--include-all` 필요) (2026-09-29: 조직 마이그레이션을 `20260929145000` 으로 만들었는데, 그사이 `20260929150000_invite_rights` 가 먼저 적용돼 `20260929160000` 으로 바꿨는데, 그 번호도 다른 작업(`20260929160000_chore_notes`)이 먼저 적용해 `20260929170000` 으로 다시 바꿨다. **같은 번호가 원격에 있으면 CLI 는 내 파일을 적용된 것으로 보고 건너뛴다** — 이름이 달라도 번호만 비교한다. 또 다른 사람의 작업 파일이 내 폴더에 없으면 `db push` 가 "원격에 있는데 로컬에 없는 마이그레이션"으로 거부한다)
+- **윈도우에서는 파일 이름의 대소문자만 다른 두 파일을 한 폴더에 둘 수 없다**: `shell/profileCard.ts`(저장소)와 `shell/ProfileCard.tsx`(화면)를 같이 두자 `tsc` 가 `TS1149 ... differs only in casing` 으로 멈췄다 (2026-09-30). 저장소를 `cardStore.ts` 로 바꿨다. 리눅스(Vercel)는 둘을 다른 파일로 보므로 윈도우에서만 드러난다
+- **같은 그림에서 두 effect 가 모두 `setChannel` 하면 뒤의 것이 이긴다**: `/chat` 을 처음 열 때 "첫 채널 열기"와 "종류 채우기"를 따로 두었더니 뒤의 것이 기본값 `#일반` 에 종류를 채워 숨긴 `#일반` 이 열렸다 (2026-09-30). 한 effect 로 합쳤다 (`MessageNav`)
+- **페이지 파일을 옮기면 `.next/types` 에 옛 경로가 남아 `tsc` 가 실패한다**: `app/page.tsx` 를 `app/(app)/page.tsx` 로 옮긴 뒤 `Cannot find module '../../app/page.js'`. `.next/types` 를 지우면 된다. 개발 서버도 다시 띄운다 (옮기는 동안 열려 있던 탭은 `Router action dispatched before initialization` 을 쏟아낸다)
 - **supabase-js 로 여러 행을 한 번에 넣을 때 어떤 행에만 없는 컬럼은 기본값이 아니라 null 이 들어간다**: 행마다 키가 다르면 모든 키를 합친 컬럼 목록으로 insert 하기 때문이다. `event_attendees` 에 만든 사람만 `response` 를 주고 나머지는 빼서 `23502 null value in column "response"` 가 났다 (2026-09-29 회사 시드). 모든 행에 같은 키를 적는다
 - **시드 비밀번호를 파일에 안 남기면 아무도 로그인 못 한다**: 2026-09-29 회사 시드를 터미널의 `$env:SEED_PASSWORD` 로 돌려서 값이 어디에도 남지 않았다. 시드는 기존 계정 비밀번호를 다시 바꾸지 않으므로, 다시 돌려도 소용없다. 2026-09-30 에 service role(`auth.admin.updateUserById`)로 37명을 새 값으로 바꿨다. 값은 `.env.local` 의 `SEED_PASSWORD` 에 적어 두고 팀원에게 따로 전달한다.
 - **비밀번호는 6자 미만이면 거부된다**: Supabase 기본 최소 길이가 6자라 관리자 API 로 바꿔도 `422 weak_password` 가 난다 (2026-09-30, `1234` 시도). 대시보드 Authentication → Sign In / Providers → Email 의 **Minimum password length** 가 이 값이다. Supabase 대시보드는 Vercel → Storage → `office-chat-db` → **Open in Supabase** 로 들어간다.

@@ -21,9 +21,9 @@
   font-size: 22px;
 }
 
-.back {
-  color: var(--muted);
-  text-decoration: none;
+/* /calendar#rooms 로 내려올 때 위 막대에 가리지 않게 */
+.roomsAnchor {
+  scroll-margin-top: 16px;
 }
 
 .weekNav {

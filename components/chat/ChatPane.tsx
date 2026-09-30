@@ -10,6 +10,8 @@ import { useReadStatus } from "./useReadStatus";
 import { useChannelMembers } from "./useChannelMembers";
 import { useSelf } from "./useSelf";
 import { focusReply } from "./threadFocus";
+import { useReactions } from "./useReactions";
+import { togglePin, usePins } from "./pins";
 import MessageList, { type Focus } from "./MessageList";
 import Composer from "./Composer";
 import JumpToMessage from "./JumpToMessage";
@@ -43,6 +45,9 @@ export default function ChatPane() {
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
   const handles = useMemo(() => new Set(members.map((m) => m.handle.toLowerCase())), [members]);
   const { markRead, unreadCount } = useReadStatus(channel.id, self?.id ?? null, memberIds);
+  const { reactions, toggle: toggleReaction } = useReactions(channel.id, messages[0]?.id ?? null);
+  const pins = usePins(channel.id);
+  const pinned = useMemo(() => new Set(pins.map((p) => p.message_id)), [pins]);
   const [sendTick, setSendTick] = useState(0);
   // 주소로 받은 이동 요청. 그 채널의 처음 불러오기가 끝난 뒤에 처리한다.
   // 답글이면 부모 메시지로 이동하고 스레드를 연다
@@ -107,6 +112,12 @@ export default function ChatPane() {
     return () => clearTimeout(timer);
   }, [jumpNotice]);
 
+  // 리액션·고정은 DB 가 멤버인지 확인한다. 실패하면(마이그레이션 전, 권한) 위쪽 알림 줄에 잠깐 보인다
+  const react = (id: number, emoji: string) =>
+    void toggleReaction(id, emoji).catch((e: unknown) => setJumpNotice(`리액션을 달지 못했습니다: ${e instanceof Error ? e.message : String(e)}`));
+  const pin = (id: number) =>
+    void togglePin(channel.id, id).catch((e: unknown) => setJumpNotice(`고정하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`));
+
   function sendNow(body: string, clientId?: string, file?: File) {
     setSendTick((t) => t + 1);
     void send(body, clientId, file);
@@ -144,9 +155,13 @@ export default function ChatPane() {
         onFocusMissing={() => setJumpNotice(MISSING)}
         onRetry={(p) => sendNow(p.body, p.clientId, p.file)}
         onDiscard={discard}
+        reactions={reactions}
+        pinned={pinned}
+        onReact={react}
+        onPin={pin}
       />
       <Composer
-        placeholder={`${where} 에 메시지 보내기 (Enter 전송, Shift+Enter 줄바꿈, @ 로 멘션)`}
+        placeholder={`${where} 에 메시지 입력…`}
         members={members}
         selfId={self?.id ?? null}
         onSend={(body, file) => sendNow(body, undefined, file)}
