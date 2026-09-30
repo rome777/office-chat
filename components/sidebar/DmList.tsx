@@ -3,6 +3,10 @@
 // ② 다이렉트 메시지 목록 + "새 메시지". 왼쪽 칸과 헤더의 채널 전환(좁은 화면)이 함께 쓴다.
 
 import { useEffect, useRef, useState } from "react";
+import type { DmSummary } from "@/lib/types/channel";
+import PersonAvatar from "@/components/profile/PersonAvatar";
+import { usePresenceStatus } from "@/components/profile/presence";
+import { STATUS_LABEL, useMyProfile } from "@/components/profile/profileSource";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { GENERAL_ID } from "./channelSource";
 import NewDmDialog from "./NewDmDialog";
@@ -58,27 +62,9 @@ export default function DmList({
         {error && <li className={`${s.item} ${s.error}`}>DM 목록을 못 불러왔습니다: {error}</li>}
         {dms === null && !error && <li className={`${s.item} ${s.muted}`}>불러오는 중…</li>}
         {dms?.length === 0 && <li className={`${s.item} ${s.muted}`}>아직 DM 이 없습니다</li>}
-        {dms?.map((d) => {
-          const active = d.id === channel.id;
-          return (
-            <li key={d.id}>
-              <ChannelRowButton
-                channelId={d.id}
-                label={`${d.other.display_name} 님과 DM`}
-                active={active}
-                onClick={() => go(d.id, d.other.display_name)}
-              >
-                <span aria-hidden="true">@</span>
-                <span className={s.channelName}>{d.other.display_name}</span>
-                {d.other.department && (
-                  <span className={s.dmMeta} aria-hidden="true">
-                    {d.other.department}
-                  </span>
-                )}
-              </ChannelRowButton>
-            </li>
-          );
-        })}
+        {dms?.map((d) => (
+          <DmRow key={d.id} dm={d} active={d.id === channel.id} onClick={() => go(d.id, d.other.display_name)} />
+        ))}
       </ul>
       <div className={s.channelActions}>
         <button type="button" className={`${s.textButton} ${s.iconText}`} onClick={() => setOpen(true)}>
@@ -88,5 +74,30 @@ export default function DmList({
       </div>
       {open && <NewDmDialog onClose={() => setOpen(false)} onStarted={go} />}
     </>
+  );
+}
+
+// DM 한 줄: 상대 사진·상태 점 · 이름 · 부서. 화면 읽기에는 "이름 님과 DM, 자리 비움" 처럼 상태도 읽힌다
+function DmRow({ dm, active, onClick }: { dm: DmSummary; active: boolean; onClick: () => void }) {
+  const status = usePresenceStatus(dm.other.id);
+  const { profile } = useMyProfile();
+  const shown = profile?.id === dm.other.id ? profile.status : status; // 나와의 DM 은 없지만 혹시 있으면 내 상태
+  return (
+    <li>
+      <ChannelRowButton
+        channelId={dm.id}
+        label={`${dm.other.display_name} 님과 DM, ${STATUS_LABEL[shown]}`}
+        active={active}
+        onClick={onClick}
+      >
+        <PersonAvatar userId={dm.other.id} name={dm.other.display_name} size={20} />
+        <span className={s.channelName}>{dm.other.display_name}</span>
+        {dm.other.department && (
+          <span className={s.dmMeta} aria-hidden="true">
+            {dm.other.department}
+          </span>
+        )}
+      </ChannelRowButton>
+    </li>
   );
 }

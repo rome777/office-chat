@@ -2,10 +2,17 @@
 
 // ② 헤더 왼쪽의 채널 이름. 누르면 채널 목록이 열린다 —
 // 좁은 화면(768px 미만)에서는 왼쪽 칸이 숨으므로 여기가 채널을 바꾸는 유일한 곳이다.
+// DM 이면 상대 사진·상태 점과, 이름 옆에 상태·상태 메시지("자리 비움 · 외근 중")를 보인다 (2026-09-30)
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import { usePeopleLooks } from "@/components/people/directory";
+import PersonAvatar from "@/components/profile/PersonAvatar";
+import { usePresenceStatus } from "@/components/profile/presence";
+import { STATUS_LABEL } from "@/components/profile/profileSource";
+import pf from "@/components/profile/profile.module.css";
+import { useMyDms } from "./useChannels";
 import { LockIcon } from "./ActionIcons";
 import ChannelList from "./ChannelList";
 import DmList from "./DmList";
@@ -13,6 +20,8 @@ import s from "./sidebar.module.css";
 
 export default function ChannelTitle() {
   const { channel } = useWorkspace();
+  const { dms } = useMyDms();
+  const peer = channel.type === "dm" ? (dms?.find((d) => d.id === channel.id)?.other ?? null) : null;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const switcherId = useId();
@@ -52,7 +61,14 @@ export default function ChannelTitle() {
           }
           onClick={() => setOpen((v) => !v)}
         >
-          <span aria-hidden="true">{channel.type === "dm" ? "@" : "#"}</span> {channel.name}
+          {peer ? (
+            <span className={s.titleAvatar} aria-hidden="true">
+              <PersonAvatar userId={peer.id} name={peer.display_name} size={24} />
+            </span>
+          ) : (
+            <span aria-hidden="true">{channel.type === "dm" ? "@" : "#"}</span>
+          )}{" "}
+          {channel.name}
           {channel.type === "private" && (
             <span className={s.lock}>
               <LockIcon size={14} />
@@ -63,6 +79,7 @@ export default function ChannelTitle() {
           </span>
         </button>
       </h1>
+      {peer && <PeerStatus userId={peer.id} />}
       {open && (
         <div id={switcherId} className={s.switcher} role="region" aria-label="채널 바꾸기">
           <ChannelList onPicked={() => setOpen(false)} />
@@ -74,5 +91,18 @@ export default function ChannelTitle() {
         </div>
       )}
     </div>
+  );
+}
+
+// DM 상대의 상태·상태 메시지 한 줄. 오프라인이면 상태 메시지는 보이지 않는다
+function PeerStatus({ userId }: { userId: string }) {
+  const status = usePresenceStatus(userId);
+  const message = usePeopleLooks().get(userId)?.status_message;
+  return (
+    <span className={s.peerStatus}>
+      <span className={`${pf.swatch} ${pf[status]}`} aria-hidden="true" />
+      {STATUS_LABEL[status]}
+      {status !== "offline" && message ? ` · ${message}` : ""}
+    </span>
   );
 }

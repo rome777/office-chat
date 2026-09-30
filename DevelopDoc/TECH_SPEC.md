@@ -167,15 +167,15 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - 사진 버킷 `avatars`: **공개 읽기**(주소만 알면 열림, 파일 이름은 임의 24자), 2MB, WEBP·JPEG·PNG. 쓰기·지우기는 `storage.objects` 정책으로 **본인 폴더(`<내 id>/`)만**. 화면은 브라우저에서 가운데를 256px 정사각형으로 잘라 WEBP(안 되면 JPEG)로 다시 그려 올리고, 새 사진이나 캐릭터로 바꾸면 옛 사진을 지운다
 - 비밀번호 바꾸기는 **지금 비밀번호로 다시 로그인해 본 뒤** `auth.updateUser` 로 바꾼다 (탭을 열어 둔 채 자리를 비운 사이 남이 바꾸지 못하게)
 - 모두 `npm run check:profile` 이 가상 사용자 A·B·관리자로 확인한다 (33개, 2026-09-30 전부 통과)
-- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)가 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
+- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)·DM 목록·헤더 DM 제목·사람 찾기(② `DmList`·`ChannelTitle`·`PeoplePicker`)가 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
   - 들어가는 키는 내 id (탭이 여럿이어도 한 사람, 가장 최근 `at` 의 상태를 쓴다). 보내는 것은 `{ status, at }` 뿐. 헤더(`UserMenu`)가 내 상태가 정해지거나 바뀔 때 보낸다
   - **"오프라인으로 표시"면 채널에서 나간다**(untrack) → 남에게는 접속을 끊은 사람과 똑같이 회색 "오프라인". ① 채널 접속자 수(`room:<채널>`)에서도 빠진다. 같은 사람의 다른 탭에는 `BroadcastChannel` 로 바뀐 값을 알린다 (다른 탭이 계속 온라인을 보내지 않게)
   - 한계: presence 는 보내는 쪽이 키와 `at` 을 정하므로 **로그인한 사람이 남의 id 로, `at` 을 아주 큰 값으로 들어가 그 사람의 점을 바꿀 수 있다** (① 접속자 수도 같은 방식). 화면 표시일 뿐 권한과는 관계없다. 채널이 공개라 공개 키만 있으면 누가 접속했는지(id)를 볼 수 있다. 서버가 확인하게 하려면 private 채널 + `realtime.messages` RLS 가 필요하다
   - 다른 기기(폰 등)에서 바꾼 상태는 `BroadcastChannel` 로 오지 않아, 창에 초점이 돌아올 때 `my_status()` 로 다시 읽는다. 서버가 채널을 닫으면(`CLOSED`, 토큰 만료 등) 버리고 3초 뒤 새로 들어가고, 다른 계정으로 바뀌면 새 id 로 다시 들어간다
   - ① 채널 접속자 수는 **내 상태를 읽은 뒤에** 들어간다 (먼저 들어갔다 나가면 그 잠깐 사이 "오프라인으로 표시"가 드러난다)
+- **`profiles.status` 는 본인만 읽는다** (2026-09-30 `20260930150000_status_privacy.sql`, WU-34): 그 칸의 읽기 권한만 거두고 본인은 `my_status()` 로 읽는다 → "오프라인으로 표시"가 API 로 드러나지 않는다. **`profiles` 를 `select("*")`·`.select()`(= *) 로 읽으면 42501 이다** — 칸을 적는다 (update 뒤 돌려받는 칸도). 적용 순서는 WU-34 코드 운영 배포(12:30) → 원격 적용이었다 (WU-33 코드는 `status` 를 직접 읽어서 먼저 넣으면 깨진다). `profileSource` 는 `my_status()` 가 없으면(PGRST202) 예전처럼 칸을 읽는다
 - **남은 구멍**:
-  1. `profiles.status` 는 아직 누구나 읽는다 → API 로 부르면 `invisible` 이 보인다. 막는 마이그레이션 `20260930150000_status_privacy.sql`(status 칸 읽기 권한을 거두고 본인은 `my_status()`)은 **운영 배포 뒤에 적용한다** — 운영에 있는 WU-33 코드는 `status` 를 직접 읽어서, 먼저 넣으면 운영의 내 프로필이 42501 로 깨진다. WU-34 코드는 `my_status()` 가 없으면(PGRST202) 예전처럼 칸을 읽어 적용 전후 모두 돈다. 파일은 브랜치 `develop-songyee-status-privacy` 에 있다. **적용하면 `profiles` 를 `select("*")`·`.select()`(= *) 로 읽는 곳은 모두 42501 이다** — 칸을 적는다
-  2. "지금 비밀번호 확인"은 화면에서만 한다. 세션을 가로챈 사람은 `auth.updateUser` 를 바로 부를 수 있다. 서버에서도 막으려면 Supabase 대시보드 → Authentication → **Secure password change** 를 켠다 (계정 주인이 켠다)
+  1. "지금 비밀번호 확인"은 화면에서만 한다. 세션을 가로챈 사람은 `auth.updateUser` 를 바로 부를 수 있다. 서버에서도 막으려면 Supabase 대시보드 → Authentication → **Secure password change** 를 켠다 (계정 주인이 켠다)
 - 처음 적는 연락처는 화면에서 **비공개가 기본**이다 (DB 기본값은 `true` 지만 화면이 늘 `is_public` 을 보낸다). 연락처를 못 읽으면 빈 값으로 두지 않고 오류를 보인다 (그대로 저장해 덮어쓰지 않게)
 
 **DB 는 1일차에 테이블 전부를 한 번에 설계한다.** 기능마다 따로 테이블을 추가하면 마이그레이션이 충돌한다.
@@ -198,7 +198,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 | `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response` 만 수정 |
 | `chore_lists` | 그 채널의 멤버 | 만들기·고치기(`title`·`place`·`memo`)는 멤버. 삭제는 만든 사람·관리자만 |
 | `chore_entries` | 목록을 볼 수 있는 사람 (= 그 채널 멤버) | 추가·고치기(`person_name`·`detail`)·삭제 모두 멤버. 다른 목록으로 옮길 수 없다 (`list_id` 수정 권한 없음) |
-| `profiles` | 로그인 사용자 모두 (`status` 칸은 `20260930150000` 적용 뒤 본인만, `my_status()`) | 본인 행의 `avatar`·`status`·`status_message` 만 (2026-09-30. 이름·아이디·부서·직급은 서버·시드만) |
+| `profiles` | 로그인 사용자 모두 (`status` 칸만 본인, `my_status()` — 2026-09-30) | 본인 행의 `avatar`·`status`·`status_message` 만 (2026-09-30. 이름·아이디·부서·직급은 서버·시드만) |
 | `profile_contacts` | 본인, 공개한 사람의 것, 관리자 | 본인 행만 (`phone`·`is_public`) |
 | 보관함 `avatars` | 누구나 (공개 버킷) | 본인 폴더 `<내 id>/` 에만 올리고 지운다 |
 
