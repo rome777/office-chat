@@ -65,6 +65,12 @@ async function ensure() {
     const { data } = await supabase.auth.getSession();
     const id = data.session?.user.id;
     if (!id) return;
+    // 같은 이름의 채널이 남아 있으면 supabase.channel() 이 새로 만들지 않고 그것을 돌려주고, 거기에 .on() 을 붙이면
+    // "cannot add presence callbacks after subscribe()" 로 멈춘다 (TECH_SPEC 13절). 계정을 바꾼 직후·개발 서버 코드 반영(HMR) 뒤에
+    // 옛 채널이 남는다 → 먼저 지운다 (HMR 로 남은 옛 채널이 계속 "온라인"을 보내던 것도 같이 없어진다)
+    for (const old of supabase.getChannels()) {
+      if (old.topic === `realtime:${CHANNEL}`) await supabase.removeChannel(old);
+    }
     const ch = supabase.channel(CHANNEL, { config: { presence: { key: id } } });
     channelUser = id;
     ch.on("presence", { event: "sync" }, () => recompute(ch)).subscribe((s) => {
