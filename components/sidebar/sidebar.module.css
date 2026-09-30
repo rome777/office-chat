@@ -58,6 +58,7 @@
 }
 
 .userMenu {
+  position: relative; /* 내 메뉴(profile.module.css .menu)가 여기 붙어 열린다 */
   display: inline-flex;
   align-items: center;
   gap: 12px;
