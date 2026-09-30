@@ -1,9 +1,8 @@
 "use client";
 
-// ③ 채팅 머리 "⋯" 안의 패널 버튼 (요약·할 일·잡무·채널 정보) + 조직도.
-// 조직도는 2026-09-30 부터 패널이 아니라 페이지(/org)다 — 이 채널의 부서를 고른 채 연다.
+// ③ 채팅 머리 "⋯" 안의 패널 버튼 (요약·할 일·잡무·채널 정보).
+// 조직도는 2026-09-30 부터 왼쪽 메뉴의 페이지(/org)로만 연다 — 메시지 화면에는 두지 않는다 (사용자 결정).
 
-import { useRouter } from "next/navigation";
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import s from "./panel.module.css";
 
@@ -15,8 +14,7 @@ const BUTTONS: { kind: Exclude<PanelState["kind"], "thread">; label: string }[] 
 ];
 
 export default function HeaderActions() {
-  const { channel, panel, openPanel, closePanel } = useWorkspace();
-  const router = useRouter();
+  const { panel, openPanel, closePanel } = useWorkspace();
   return (
     <span className={s.actions}>
       {BUTTONS.map((b) => {
@@ -32,9 +30,6 @@ export default function HeaderActions() {
           </button>
         );
       })}
-      <button className={s.action} onClick={() => router.push(`/org?channel=${encodeURIComponent(channel.id)}`)}>
-        조직도
-      </button>
     </span>
   );
 }

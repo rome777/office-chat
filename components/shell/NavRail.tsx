@@ -1,6 +1,6 @@
 "use client";
 
-// 공통 틀의 왼쪽 메뉴: 홈 · 메시지 · 일정 · 회의실 예약 | 알림 · 조직도(/org 페이지) · 설정 | 내 카드.
+// 공통 틀의 왼쪽 메뉴: 홈 · 메시지 · 일정 · 회의실 예약 · 조직도(/org 페이지) | 알림 · 설정 | 내 카드.
 // 채널·DM 목록은 여기 두지 않는다 — 채팅 화면의 메시지 목록 칸(MessageNav)에만 있다 (목록이 두 번 보이지 않게).
 
 import Link from "next/link";
@@ -92,10 +92,10 @@ export default function NavRail() {
         />
         <Item href="/calendar" icon={<CalendarIcon />} label="일정" active={path === "/calendar"} />
         <Item href="/calendar#rooms" icon={<RoomIcon />} label="회의실 예약" className={s.navWide} />
+        <Item href="/org" icon={<OrgIcon />} label="조직도" active={path === "/org"} className={s.navWide} />
       </ul>
       <ul className={`${s.navList} ${s.navGroup}`}>
         <Item onClick={openNotifications} icon={<BellIcon />} label="알림" badge={<Badge n={bell} tone="bad" />} />
-        <Item href="/org" icon={<OrgIcon />} label="조직도" active={path === "/org"} className={s.navWide} />
         <Item onClick={() => togglePanel("profile")} icon={<SettingsIcon />} label="설정" active={panel?.kind === "profile"} />
       </ul>
       <button type="button" className={s.meCard} onClick={() => togglePanel("profile")} aria-label={`${name} — 내 프로필`}>

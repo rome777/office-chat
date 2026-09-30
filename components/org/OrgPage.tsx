@@ -1,10 +1,10 @@
 "use client";
 
 // ③ 조직도 페이지 (/org, 2026-09-30 WU-36). 왼쪽 넓은 칸 = 다이어그램, 오른쪽 = 계층 목록. 선택은 양쪽이 같이 쓴다.
-// ?unit=<조직 id> 로 그 조직을 고른 채 열고, ?channel=<채널 id> 면 그 채널의 부서를 고른다 (채팅 "⋯ → 조직도").
-// 둘 다 없으면 내 소속 조직. 좁은 화면(900px 미만)에서는 두 칸을 나란히 못 두어 위의 버튼으로 하나씩 본다.
+// ?unit=<조직 id> 로 그 조직을 고른 채 열고, ?channel=<채널 id> 면 그 채널의 부서를 고른다 (주소로만 — 메시지 화면에는 조직도 버튼이 없다).
+// 둘 다 없으면 내 소속 조직. 1180px 미만에서는 두 칸을 나란히 두면 다이어그램이 너무 작아져 위의 버튼으로 하나씩 본다.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMyProfile } from "@/components/profile/profileSource";
 import { useMyChannels } from "@/components/sidebar/useChannels";
@@ -12,6 +12,7 @@ import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import OrgDiagram from "./OrgDiagram";
 import OrgTree from "./OrgTree";
+import { TREE_MIN, usePaneLayout } from "./usePaneLayout";
 import { headcount, loadOrg, pathTo, type OrgData } from "./orgSource";
 import s from "./org.module.css";
 
@@ -30,6 +31,9 @@ export default function OrgPage() {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<"diagram" | "tree">("diagram");
+  const userPicked = useRef(false);
+  const pane = usePaneLayout();
+  const splitRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -53,11 +57,13 @@ export default function OrgPage() {
       byChannel ??
       (profile?.org_unit_id && org.units.has(profile.org_unit_id) ? profile.org_unit_id : undefined) ??
       org.root.id;
-    setSelected((cur) => (unitParam || channelParam || !cur ? pick : cur));
+    // 사용자가 아직 고르지 않았으면, 내 프로필이 늦게 와도(새로 열었을 때) 내 소속으로 다시 고른다
+    if (unitParam || channelParam || !userPicked.current) setSelected(pick);
   }, [org, unitParam, channelParam, profile?.org_unit_id]);
 
   const select = useCallback(
     (id: string) => {
+      userPicked.current = true;
       setSelected(id);
       // 고른 조직이 목록에서 접힌 곳 안에 있으면 펼친다
       if (org) {
@@ -73,8 +79,6 @@ export default function OrgPage() {
     },
     [org, pathname, router],
   );
-
-  const path = useMemo(() => new Set(org && selected ? pathTo(org, selected).map((u) => u.id) : []), [org, selected]);
 
   // 찾기: 이름·직급·조직 이름. 맞는 사람의 조직과 맞는 조직, 그 위 조직을 보인다
   const search = useMemo(() => {
@@ -168,8 +172,25 @@ export default function OrgPage() {
         </div>
       )}
 
-      <div className={`${s.split} ${mobileView === "tree" ? s.showTree : s.showDiagram}`}>
-        <OrgDiagram org={org} selected={selected} path={path} dimmed={search?.dimmed ?? null} onSelect={select} />
+      <div
+        ref={splitRef}
+        className={`${s.split} ${pane.open ? "" : s.treeClosed} ${mobileView === "tree" ? s.showTree : s.showDiagram}`}
+        style={{ "--tree-w": `${pane.width}px` } as React.CSSProperties}
+      >
+        <OrgDiagram org={org} selected={selected} dimmed={search?.dimmed ?? null} onSelect={select} />
+        {pane.open ? (
+          <Splitter
+            box={splitRef}
+            width={pane.width}
+            onResize={pane.resize}
+            onReset={pane.reset}
+          />
+        ) : (
+          <button type="button" className={s.treeTab} onClick={pane.toggle} aria-label="목록 펼치기" title="목록 펼치기">
+            <span aria-hidden="true">◂</span>
+            <span className={s.treeTabText}>목록</span>
+          </button>
+        )}
         <OrgTree
           org={org}
           me={profile?.id ?? null}
@@ -188,8 +209,60 @@ export default function OrgPage() {
           }
           onExpandAll={() => setCollapsed(new Set())}
           onCollapseAll={() => setCollapsed(new Set([...org.units.keys()].filter((id) => id !== org.root!.id)))}
+          onClosePane={pane.toggle}
         />
       </div>
+    </div>
+  );
+}
+
+/** 다이어그램과 목록 사이 손잡이. 끌어서 목록 폭을 바꾼다 (260px ~ 칸의 절반). 더블클릭하면 기본 폭, ←/→ 로도 */
+function Splitter({
+  box,
+  width,
+  onResize,
+  onReset,
+}: {
+  box: React.RefObject<HTMLDivElement | null>;
+  width: number;
+  onResize: (w: number, max: number) => void;
+  onReset: () => void;
+}) {
+  const max = () => Math.max(TREE_MIN, (box.current?.clientWidth ?? 1200) * 0.5);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="목록 폭 조절"
+      aria-valuenow={width}
+      aria-valuemin={TREE_MIN}
+      tabIndex={0}
+      className={s.splitter}
+      title="끌어서 폭 조절 · 더블클릭하면 처음 폭"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        const right = box.current?.getBoundingClientRect().right ?? window.innerWidth;
+        const move = (ev: PointerEvent) => onResize(right - ev.clientX - 6, max());
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+          document.body.style.cursor = "";
+        };
+        document.body.style.cursor = "col-resize";
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+      }}
+      onDoubleClick={onReset}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") onResize(width + 20, max());
+        if (e.key === "ArrowRight") onResize(width - 20, max());
+      }}
+    >
+      <span className={s.grip} aria-hidden="true" />
     </div>
   );
 }
