@@ -65,6 +65,8 @@ async function readMyStatus(id: string): Promise<{ data: Status | null; error: {
   if (!rpc.error) return { data: rpc.data as Status | null, error: null };
   if (rpc.error.code !== "PGRST202") return { data: null, error: rpc.error };
   const old = await supabase.from("profiles").select("status").eq("id", id).maybeSingle();
+  // 적용 직후 PostgREST 가 새 함수를 아직 모르는 잠깐 동안은 칸도 42501 이다 → 오류로 막지 않고 온라인으로 둔다
+  if (old.error?.code === "42501") return { data: null, error: null };
   return { data: (old.data?.status as Status | undefined) ?? null, error: old.error };
 }
 
@@ -85,6 +87,15 @@ let watching = false;
 function watchAuth() {
   if (watching) return;
   watching = true;
+  // 다른 기기(폰 등)에서 바꾼 상태는 BroadcastChannel 로 오지 않는다 → 이 창에 초점이 돌아오면 다시 읽는다
+  window.addEventListener("focus", () => {
+    const me = state.profile;
+    if (!me) return;
+    void readMyStatus(me.id).then(({ data }) => {
+      const now = state.profile;
+      if (data && now && now.id === me.id && now.status !== data) set({ profile: { ...now, status: data } });
+    });
+  });
   if (typeof BroadcastChannel !== "undefined") {
     tabs = new BroadcastChannel("office-chat:my-profile");
     tabs.onmessage = (e: MessageEvent<TabPatch>) => {

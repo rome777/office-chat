@@ -67,9 +67,11 @@ export function useMessages(channelId: string, myName: string) {
   const lastIdRef = useRef(0);
   const oldestIdRef = useRef(0);
   const loadingOlderRef = useRef(false);
-  // "오프라인으로 표시"(② 내 프로필)면 접속자 수에 넣지 않는다 — 넣으면 숨긴 사람이 접속해 있다는 것이 드러난다
-  const invisible = useMyProfile().profile?.status === "invisible";
-  const invisibleRef = useRef(invisible);
+  // "오프라인으로 표시"(② 내 프로필)면 접속자 수에 넣지 않는다 — 넣으면 숨긴 사람이 접속해 있다는 것이 드러난다.
+  // 내 상태를 읽기 전에는 들어가지 않는다 (먼저 들어갔다 나가면 그 잠깐 사이 접속이 드러난다). 못 읽으면 예전처럼 들어간다
+  const mySelf = useMyProfile();
+  const hidden = !(mySelf.profile ? mySelf.profile.status !== "invisible" : !!mySelf.error);
+  const invisibleRef = useRef(hidden);
   const roomRef = useRef<RealtimeChannel | null>(null);
 
   const resolveNames = useCallback(async (list: ChatMessage[]) => {
@@ -296,14 +298,14 @@ export function useMessages(channelId: string, myName: string) {
     };
   }, [channelId, myName, merge, sync, addAttachments]);
 
-  // 보고 있는 중에 "오프라인으로 표시"를 켜고 끄면 접속자 수에서 빼고 넣는다
+  // 내 상태를 읽었을 때, 보고 있는 중에 "오프라인으로 표시"를 켜고 끌 때 접속자 수에 넣고 뺀다
   useEffect(() => {
-    invisibleRef.current = invisible;
+    invisibleRef.current = hidden;
     const room = roomRef.current;
     if (!room || room.state !== "joined") return;
-    if (invisible) void room.untrack();
+    if (hidden) void room.untrack();
     else void room.track({ name: myName });
-  }, [invisible, myName]);
+  }, [hidden, myName]);
 
 
   async function send(body: string, clientId = newClientId(), file?: File) {

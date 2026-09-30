@@ -30,7 +30,7 @@ export default function Avatar({
     <span className={s.avatar} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }} title={label}>
       {photo ? (
         // 보관함의 공개 주소를 그대로 쓴다 (next/image 는 외부 주소 설정이 필요해 쓰지 않는다)
-        <img src={photo} alt="" width={size} height={size} className={s.avatarImg} />
+        <img src={photo} alt="" width={size} height={size} className={s.avatarImg} loading="lazy" decoding="async" />
       ) : character ? (
         <CharacterArt id={character} size={size} />
       ) : (

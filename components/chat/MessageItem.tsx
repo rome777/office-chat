@@ -49,7 +49,10 @@ export function MessageItem({
       data-message-id={message.id}
       className={`${s.msg} ${mine ? s.mine : ""} ${highlighted ? s.highlight : ""}`}
     >
-      <PersonAvatar userId={message.user_id} name={authorName} size={AVATAR} />
+      {/* 화면 읽기는 작성자 이름부터 읽게 사진·상태는 뺀다 (상태는 조직도에서 읽는다) */}
+      <span className={s.avatarCol} aria-hidden="true">
+        <PersonAvatar userId={message.user_id} name={authorName} size={AVATAR} />
+      </span>
       <div className={s.msgMain}>
         <div className={s.meta}>
           <strong>{authorName}</strong>
@@ -96,7 +99,9 @@ export function PendingItem({
   const { profile } = useMyProfile(); // 보내는 중인 메시지는 늘 내 것
   return (
     <article className={`${s.msg} ${s.mine} ${s[message.status]}`}>
-      <PersonAvatar userId={profile?.id ?? null} name={message.author} size={AVATAR} />
+      <span className={s.avatarCol} aria-hidden="true">
+        <PersonAvatar userId={profile?.id ?? null} name={message.author} size={AVATAR} />
+      </span>
       <div className={s.msgMain}>
         <div className={s.meta}>
           <strong>{message.author}</strong>
