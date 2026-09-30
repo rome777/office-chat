@@ -1,4 +1,5 @@
 // 내 프로필 권한·제약 자동 확인 (WU-33, 원격 Supabase, 마이그레이션 20260930130000_my_profile.sql)
+// 20260930150000_status_privacy.sql (status 는 남이 못 읽고 본인은 my_status() 로) 도 여기서 확인한다
 // 실행: npm run check:profile  (.env.local 의 Supabase 값과 service role 키를 쓴다)
 //
 // 가상 사용자 A·B·관리자를 service role 로 만들고 일회용 로그인 토큰(magic link)으로 접속한다 (db-v1-check 와 같은 방식).
@@ -52,7 +53,9 @@ try {
   const B = await makeUser("B");
   const M = await makeUser("M", "admin");
   const anon = createClient(url, anonKey, noSession);
-  const mine = (sb, id, patch) => sb.from("profiles").update(patch).eq("id", id).select();
+  // status 칸은 읽기 권한이 없어 돌려받을 칸에서 뺀다 (select() 만 쓰면 * 라서 42501)
+  const mine = (sb, id, patch) => sb.from("profiles").update(patch).eq("id", id).select("id, avatar, status_message");
+  const myStatus = async (sb) => (await sb.rpc("my_status")).data;
 
   // ── 기본 정보 잠금 ──
   for (const [col, value] of [["display_name", "대표이사"], ["handle", `x${run}`], ["department", "경영진"], ["title", "대표"]]) {
@@ -62,9 +65,18 @@ try {
 
   // ── 상태·상태 메시지·사진 ──
   const st = await mine(A.sb, A.id, { status: "dnd", status_message: "회의 준비 중" });
-  check("본인 상태·상태 메시지는 고친다", st.data?.[0]?.status === "dnd" && st.data?.[0]?.status_message === "회의 준비 중", code(st));
+  check("본인 상태·상태 메시지는 고친다", st.data?.[0]?.status_message === "회의 준비 중" && (await myStatus(A.sb)) === "dnd", code(st));
   const inv = await mine(A.sb, A.id, { status: "invisible" });
-  check("오프라인으로 표시(invisible)를 고를 수 있다", inv.data?.[0]?.status === "invisible", code(inv));
+  check("오프라인으로 표시(invisible)를 고를 수 있다", inv.data?.length === 1 && (await myStatus(A.sb)) === "invisible", code(inv));
+  const peek = await B.sb.from("profiles").select("status").eq("id", A.id);
+  check("남의 상태(status)는 읽을 수 없다", peek.error?.code === "42501", code(peek));
+  const peekAll = await B.sb.from("profiles").select("*").eq("id", A.id);
+  check("select * 로도 못 읽는다", peekAll.error?.code === "42501", code(peekAll));
+  const others = await B.sb.from("profiles").select("id, display_name, avatar, status_message").eq("id", A.id);
+  check("상태 말고 다른 칸(이름·사진·상태 메시지)은 읽힌다", others.data?.[0]?.status_message === "회의 준비 중", code(others));
+  check("my_status() 는 부른 사람 자기 상태만 준다", (await myStatus(B.sb)) === "online");
+  const anonStatus = await anon.rpc("my_status");
+  check("로그인 안 하면 my_status() 를 못 부른다", !!anonStatus.error, code(anonStatus));
   const badSt = await mine(A.sb, A.id, { status: "offline" });
   check("정해진 것 밖의 상태는 거부", badSt.error?.code === "23514", code(badSt));
   const longMsg = await mine(A.sb, A.id, { status_message: "가".repeat(61) });

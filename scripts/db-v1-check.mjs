@@ -78,9 +78,9 @@ try {
   // ── 가입·프로필 ──
   const { data: profs } = await admin.from("profiles").select("id, handle, role").in("id", made.users);
   check("가입하면 profiles 행이 생긴다", profs?.length === 4, `(${profs?.length}건)`);
-  const roleUp = await A.sb.from("profiles").update({ role: "admin" }).eq("id", A.id).select();
+  const roleUp = await A.sb.from("profiles").update({ role: "admin" }).eq("id", A.id).select("id"); // select() 는 * 라 status 권한 때문에 42501 이 난다
   check("본인 role 을 admin 으로 못 바꾼다", !!roleUp.error, `(${roleUp.error?.code})`);
-  const nameUp = await A.sb.from("profiles").update({ display_name: "검사A2" }).eq("id", A.id).select();
+  const nameUp = await A.sb.from("profiles").update({ display_name: "검사A2" }).eq("id", A.id).select("id");
   check("본인 이름은 고칠 수 없다 (인사 정보, 20260930130000_my_profile)", nameUp.error?.code === "42501", `(${nameUp.error?.code ?? "ok"})`);
 
   // ── 채널·멤버십 ──
