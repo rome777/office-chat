@@ -3,19 +3,21 @@
 // 본인이 고칠 수 있는 것은 avatar·status·status_message 와 연락처뿐이다 (이름·부서·직급은 DB 가 막는다).
 
 import { useSyncExternalStore } from "react";
-import type { AvatarValue, Contact, MyProfile, Status } from "@/lib/types/profile";
+import type { AvatarValue, Contact, DisplayStatus, MyProfile, Status } from "@/lib/types/profile";
 import { getSupabase } from "@/lib/supabase";
 
-const COLUMNS = "id, handle, display_name, department, title, org_unit_id, avatar, status, status_message";
+// status 는 남이 못 읽는 칸이라 여기 넣으면 42501 이다 → my_status() 로 따로 읽는다 (20260930150000_status_privacy)
+const COLUMNS = "id, handle, display_name, department, title, org_unit_id, avatar, status_message";
 const BUCKET = "avatars";
 export const STATUS_MESSAGE_MAX = 60;
 export const PHONE_PATTERN = /^[0-9+() -]{0,20}$/; // DB 제약 profile_contacts_phone 과 같다
 
-export const STATUS_LABEL: Record<Status, string> = {
+export const STATUS_LABEL: Record<DisplayStatus, string> = {
   online: "온라인",
   away: "자리 비움",
   dnd: "방해 금지",
   invisible: "오프라인으로 표시",
+  offline: "오프라인",
 };
 
 type State = { profile: MyProfile | null; contact: Contact | null; error: string | null };
@@ -34,12 +36,13 @@ async function load() {
   const { data: session } = await supabase.auth.getSession();
   const user = session.session?.user;
   if (!user) return;
-  const [profile, contact] = await Promise.all([
+  const [profile, status, contact] = await Promise.all([
     supabase.from("profiles").select(COLUMNS).eq("id", user.id).maybeSingle(),
+    readMyStatus(user.id),
     supabase.from("profile_contacts").select("phone, is_public").eq("user_id", user.id).maybeSingle(),
   ]);
-  if (profile.error || !profile.data) {
-    set({ error: profile.error?.message ?? "내 프로필을 찾지 못했습니다" });
+  if (profile.error || !profile.data || status.error) {
+    set({ error: profile.error?.message ?? status.error?.message ?? "내 프로필을 찾지 못했습니다" });
     return;
   }
   // 연락처를 못 읽었는데 빈 값으로 두면, 그대로 저장할 때 원래 값을 덮어쓴다 → 오류로 보인다
@@ -48,11 +51,23 @@ async function load() {
     return;
   }
   set({
-    profile: { ...(profile.data as Omit<MyProfile, "email">), email: user.email ?? null },
+    profile: { ...(profile.data as Omit<MyProfile, "email" | "status">), status: (status.data as Status | null) ?? "online", email: user.email ?? null },
     // 처음 적는 연락처는 비공개가 기본이다 (개인정보)
     contact: (contact.data as Contact | null) ?? { phone: "", is_public: false },
     error: null,
   });
+}
+
+// my_status() 가 아직 없는 DB(마이그레이션 적용 전, PGRST202)면 예전처럼 칸을 직접 읽는다 — 코드를 먼저 배포해도 끊기지 않게
+async function readMyStatus(id: string): Promise<{ data: Status | null; error: { message: string } | null }> {
+  const supabase = getSupabase();
+  const rpc = await supabase.rpc("my_status");
+  if (!rpc.error) return { data: rpc.data as Status | null, error: null };
+  if (rpc.error.code !== "PGRST202") return { data: null, error: rpc.error };
+  const old = await supabase.from("profiles").select("status").eq("id", id).maybeSingle();
+  // 적용 직후 PostgREST 가 새 함수를 아직 모르는 잠깐 동안은 칸도 42501 이다 → 오류로 막지 않고 온라인으로 둔다
+  if (old.error?.code === "42501") return { data: null, error: null };
+  return { data: (old.data?.status as Status | undefined) ?? null, error: old.error };
 }
 
 function startLoad() {
@@ -63,11 +78,30 @@ function startLoad() {
     });
 }
 
+// 같은 사람의 다른 탭에 바뀐 값을 알린다 — 한 탭에서 "오프라인으로 표시"를 골랐는데 다른 탭이 계속 온라인을 보내면 숨겨지지 않는다
+type TabPatch = { id: string; patch: Partial<Pick<MyProfile, "avatar" | "status" | "status_message">> };
+let tabs: BroadcastChannel | null = null;
+
 // 다른 탭에서 다른 계정으로 로그인하면 이 탭도 세션이 바뀐다 (AuthGate 는 새로고침하지 않는다) → 새 사람으로 다시 불러온다
 let watching = false;
 function watchAuth() {
   if (watching) return;
   watching = true;
+  // 다른 기기(폰 등)에서 바꾼 상태는 BroadcastChannel 로 오지 않는다 → 이 창에 초점이 돌아오면 다시 읽는다
+  window.addEventListener("focus", () => {
+    const me = state.profile;
+    if (!me) return;
+    void readMyStatus(me.id).then(({ data }) => {
+      const now = state.profile;
+      if (data && now && now.id === me.id && now.status !== data) set({ profile: { ...now, status: data } });
+    });
+  });
+  if (typeof BroadcastChannel !== "undefined") {
+    tabs = new BroadcastChannel("office-chat:my-profile");
+    tabs.onmessage = (e: MessageEvent<TabPatch>) => {
+      if (state.profile && state.profile.id === e.data.id) set({ profile: { ...state.profile, ...e.data.patch } });
+    };
+  }
   getSupabase().auth.onAuthStateChange((_event, session) => {
     const id = session?.user.id ?? null;
     if (state.profile && state.profile.id !== id) {
@@ -109,6 +143,7 @@ export async function updateMyProfile(patch: Partial<Pick<MyProfile, "avatar" | 
     }
     throw new Error(error?.message ?? "저장되지 않았습니다. 새로고침해 보세요");
   }
+  tabs?.postMessage({ id: before.id, patch } satisfies TabPatch);
 }
 
 export async function saveContact(next: Contact) {

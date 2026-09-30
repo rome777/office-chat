@@ -9,7 +9,7 @@ import { getSupabase } from "@/lib/supabase";
 
 export const MAX_RESULTS = 20;
 
-const COLUMNS = "id, handle, display_name, department, title";
+const COLUMNS = "id, handle, display_name, department, title, avatar, status_message";
 
 // 사내 인원은 많지 않으므로 명단을 한 번 받아 두고 브라우저에서 거른다.
 // (PostgREST 의 or·ilike 는 쉼표·괄호·* 를 특수 문자로 봐서, 검색어를 안전하게 넣기 어렵다)
@@ -76,7 +76,15 @@ function orgUnits(): Promise<MentionUnit[]> {
   return unitCache.units;
 }
 
-type MentionData = { labels: ReadonlyMap<string, string>; units: readonly MentionUnit[]; unitOf: ReadonlyMap<string, string | null> };
+/** 사람 id → 사진·상태 메시지 (② PersonAvatar 가 채팅·조직도에서 쓴다) */
+export type PersonLook = { avatar: string | null; status_message: string };
+
+type MentionData = {
+  labels: ReadonlyMap<string, string>;
+  units: readonly MentionUnit[];
+  unitOf: ReadonlyMap<string, string | null>;
+  looks: ReadonlyMap<string, PersonLook>;
+};
 
 async function mentionData(): Promise<MentionData> {
   const [people, units, unitRows] = await Promise.all([
@@ -85,7 +93,8 @@ async function mentionData(): Promise<MentionData> {
     getSupabase().from("profiles").select("handle, org_unit_id").limit(1000),
   ]);
   const unitOf = new Map((unitRows.data ?? []).map((r) => [String(r.handle).toLowerCase(), r.org_unit_id as string | null]));
-  return { labels: new Map([...mentionLabels(people), ...groupLabels(units)]), units, unitOf };
+  const looks = new Map(people.map((p) => [p.id, { avatar: p.avatar ?? null, status_message: p.status_message ?? "" }]));
+  return { labels: new Map([...mentionLabels(people), ...groupLabels(units)]), units, unitOf, looks };
 }
 
 /** 멘션 표시용 글자 → 이름 (lib/mentions): 사람 handle(소문자) → 이름, 모두 → "모두", 부서 → 부서명. 회사 전체라 채널을 나간 사람도 이름으로 보인다 */
@@ -94,7 +103,7 @@ export async function getMentionLabels(): Promise<Map<string, string>> {
 }
 
 // 화면 전체가 이름표 하나를 나눠 쓴다 (메시지마다 따로 받지 않는다). 명단 캐시와 같은 주기로 새로 받는다
-const EMPTY_DATA: MentionData = { labels: new Map(), units: [], unitOf: new Map() };
+const EMPTY_DATA: MentionData = { labels: new Map(), units: [], unitOf: new Map(), looks: new Map() };
 let dataNow: MentionData = EMPTY_DATA;
 let dataAt = 0;
 const dataListeners = new Set<() => void>();
@@ -124,6 +133,11 @@ const useMentionData = () => useSyncExternalStore(subscribeData, () => dataNow, 
 /** getMentionLabels 의 React 판. 명단을 받기 전에는 빈 Map (그동안은 저장된 글자 그대로 보인다) */
 export function useMentionLabels(): ReadonlyMap<string, string> {
   return useMentionData().labels;
+}
+
+/** 사람 id → 사진·상태 메시지. 명단과 같은 주기(1분)로 새로 받는다 */
+export function usePeopleLooks(): ReadonlyMap<string, PersonLook> {
+  return useMentionData().looks;
 }
 
 /** 부서 목록 (@ 자동완성에서 부서를 보일 때) */

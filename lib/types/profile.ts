@@ -3,6 +3,9 @@
 /** 본인이 고르는 상태. invisible = 접속해 있지만 남에게 오프라인으로 보이기 */
 export type Status = "online" | "away" | "dnd" | "invisible";
 
+/** 화면에 그리는 상태. 남은 접속자 채널에 없으면 offline (invisible 도 남에게는 offline) */
+export type DisplayStatus = Status | "offline";
+
 /** avatar 칸: null = 이름 첫 글자, "char:<캐릭터 id>" = 캐릭터, "photo:<내 id>/<파일>" = 올린 사진 */
 export type AvatarValue = string | null;
 
