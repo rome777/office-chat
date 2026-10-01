@@ -6,7 +6,7 @@
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
 > **현재 구현 (2026-09-29)**: **DB v1(4·5절)이 원격 Supabase 에 적용돼 있고, 운영 배포(https://office-chat-two.vercel.app)도 로그인 버전이다** (2026-09-29 16:01, PR #14).
-> 운영 URL 에서 `check:attach` 20개·`check:ai` 19개 통과. 익명으로 `#일반` 을 쓰던 **Step 1 임시 호환**은 2026-10-01 `20261001200000_close_step1_anon` 으로 닫았다 (익명 읽기·쓰기 불가, `user_id` 필수). `author` 칸·`messages_step1_anon` 제약은 아직 남아 있다 (13절).
+> 운영 URL 에서 `check:attach` 20개·`check:ai` 19개 통과. 익명으로 `#일반` 을 쓰던 **Step 1 임시 호환**은 2026-10-01 `20261001200000_close_step1_anon`(익명 읽기·쓰기 불가, `user_id` 필수)과 `20261001210000_drop_step1_author`(`author` 칸·`messages_step1_anon` 제약 지움)로 모두 없앴다 (13절).
 > 지금 돌아가는 구조와 배포 방법은 13절에 적었다.
 
 ---
@@ -810,6 +810,8 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260929170000_org_units.sql` | 조직도 `org_units`·`profiles.org_unit_id`, 부서 채널 자동 생성·자동 가입 트리거, 부서 채널 나가기 금지 (4절 "조직도·부서 채널") |
 | `supabase/migrations/20261001170000_rooms_v2.sql` | 회의실 시설·설명·순서, `room_policy()`, 정책 트리거 `events_room_policy`, `room_board()` (4절 "회의실 예약 개편", 2026-10-01 원격 적용) |
 | `supabase/migrations/20261001180000_rooms_data.sql` | 원격 회의실 8개(C1~M4)의 층·시설·설명 나누기, 잘못 들어간 회의실 5개 정리 (2026-10-01 원격 적용) |
+| `supabase/migrations/20261001200000_close_step1_anon.sql` | Step 1 임시 호환 1단계 — 익명 정책·권한 없앰, `user_id` not null (이호섭 작성, 2026-10-01 원격 적용) |
+| `supabase/migrations/20261001210000_drop_step1_author.sql` | Step 1 임시 호환 2단계 — `author` 칸·`messages_step1_anon` 제약 지움 (화면 배포 뒤 적용) |
 | `supabase/migrations/20261001190000_rooms_policy_fix.sql` | 정책 트리거 고침 — 시작한 예약에서 회의실 빼기·종일 바꾸기 거부, 종료만 바꾸는 고치기는 시작 쪽 검사 안 함, 두 곳 확인 잠금 (별도 검토 반영, 2026-10-01 원격 적용) |
 | `lib/mentions.ts` | 멘션 규칙: 저장은 `@아이디`, 보이는 것은 `@이름` (이름표·표시·저장 변환). 채팅·알림·검색·AI 가 같이 쓴다 (7절 "멘션") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
@@ -852,7 +854,7 @@ DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도�
 - 이 동안 `messages.user_id` 는 비어 있을 수 있고(익명 메시지), 익명 메시지의 작성자는 `author` 컬럼(닉네임 1~20자)에 있다. 화면은 `author` 가 있으면 그것을, 없으면 profiles 의 이름을 쓴다.
 - **누구나 `#일반` 에 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
 - **없애는 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤 — **2026-09-29 16:01 에 바뀌었다 (PR #14). 이제 없애도 된다.** 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌린다 (할 일 목록은 호환 파일 머리말). 그때 `check:step1` 도 로그인 기준으로 바꾸거나 지운다.
-- **1단계 적용 (2026-10-01)**: `20261001200000_close_step1_anon.sql`(이호섭 작성, 번호는 `190000` 과 겹쳐 바꿈) — anon 정책 두 개·권한을 없애고 `user_id` not null, `channel_id` 기본값 제거. 작성자 없는 메시지는 0건이라 지운 것이 없다. 원격 적용 첫 시도는 실시간 연결과 잠금이 겹쳐 `deadlock detected` 로 되돌려졌고 `lock_timeout 10s` 로 다시 적용. `check:step1` 을 로그인 기준으로 바꿈(12개 통과). **남은 2단계**: 화면이 `author` 를 더 읽지 않게 한 뒤 `author` 칸과 `messages_step1_anon` 제약을 지운다
+- **1단계 적용 (2026-10-01)**: `20261001200000_close_step1_anon.sql`(이호섭 작성, 번호는 `190000` 과 겹쳐 바꿈) — anon 정책 두 개·권한을 없애고 `user_id` not null, `channel_id` 기본값 제거. 작성자 없는 메시지는 0건이라 지운 것이 없다. 원격 적용 첫 시도는 실시간 연결과 잠금이 겹쳐 `deadlock detected` 로 되돌려졌고 `lock_timeout 10s` 로 다시 적용. `check:step1` 을 로그인 기준으로 바꿈(12개 통과). **2단계 (2026-10-01)**: 화면(채팅·스레드·알림·검색·대시보드·AI 요약/할 일)이 `author` 를 읽지 않게 바꾸고(작성자 이름은 `user_id` → profiles 에서만) 운영에 배포한 뒤 `20261001210000_drop_step1_author.sql` 로 `author` 칸과 `messages_step1_anon` 제약을 지운다 (트랜잭션 시험: author 있는 메시지 0건, author 를 쓰는 DB 함수 0개). 보내는 중인 메시지의 `PendingMessage.author` 는 화면 안의 내 이름이라 그대로 둔다
 
 ### 배포 방법
 

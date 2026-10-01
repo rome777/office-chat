@@ -311,9 +311,9 @@ try {
   // ── Step 1 임시 호환 (익명) ──
   const anonRead = await anon.from("messages").select("channel_id");
   check("익명은 #일반 만 읽는다", (anonRead.data ?? []).every((m) => m.channel_id === GENERAL), `(${anonRead.data?.length}건)`);
-  const anonToX = await anon.from("messages").insert({ client_id: randomUUID(), author: "익명", body: "X 로", channel_id: X.data.id });
+  const anonToX = await anon.from("messages").insert({ client_id: randomUUID(), body: "X 로", channel_id: X.data.id });
   check("익명은 다른 채널에 못 쓴다", !!anonToX.error, `(${anonToX.error?.code})`);
-  const anonAsUser = await anon.from("messages").insert({ client_id: randomUUID(), author: "익명", body: "A 인 척", user_id: A.id });
+  const anonAsUser = await anon.from("messages").insert({ client_id: randomUUID(), body: "A 인 척", user_id: A.id });
   check("익명은 user_id 를 못 넣는다", !!anonAsUser.error, `(${anonAsUser.error?.code})`);
   const anonCh = await anon.from("channels").select("id");
   check("익명은 채널 목록을 못 본다", !!anonCh.error || anonCh.data?.length === 0, `(${anonCh.error?.code ?? anonCh.data?.length})`);

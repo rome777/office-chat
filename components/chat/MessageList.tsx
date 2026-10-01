@@ -202,7 +202,7 @@ export default function MessageList({
           )}
           <MessageItem
             message={m}
-            authorName={m.author ?? (m.user_id ? names[m.user_id] : undefined) ?? "…"}
+            authorName={(m.user_id ? names[m.user_id] : undefined) ?? "…"}
             mine={!!self && m.user_id === self.id}
             myHandle={self?.handle ?? undefined}
             highlighted={m.id === highlightId}

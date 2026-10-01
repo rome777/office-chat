@@ -52,7 +52,7 @@ ${days.join(" ")}
 - 잡담·이미 끝난 일은 뽑지 않는다. 최대 ${MAX_ITEMS}개.
 - JSON 으로만 답한다: {"items":[{"task":"...","assignee":"이름 또는 null","due":"YYYY-MM-DD 또는 null","due_quote":"원문 표현 또는 null","evidence_message_id":123}]}`;
 
-type Row = { id: number; user_id: string | null; author: string | null; body: string; created_at: string };
+type Row = { id: number; user_id: string | null; body: string; created_at: string };
 type Member = { id: string; handle: string; display_name: string };
 
 const squash = (t: string) => t.replace(/\s+/g, "");
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     after = Number(pos?.last_read_message_id ?? 0);
   }
-  const query = supabase.from("messages").select("id, user_id, author, body, created_at").eq("channel_id", channelId).is("deleted_at", null);
+  const query = supabase.from("messages").select("id, user_id, body, created_at").eq("channel_id", channelId).is("deleted_at", null);
   const { data: rows, error } =
     range === "unread"
       ? await query.gt("id", after).order("id", { ascending: true }).limit(MAX_MESSAGES)
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
   const labels = new Map([...mentionLabels(everyone ?? []), ...groupLabels((units ?? []) as MentionUnit[])]); // @모두·@부서도 이름으로
   const shown = (body: string) => showMentions(body, labels);
   const lines = messages.map((m) => {
-    const who = m.author ?? (m.user_id ? nameOf.get(m.user_id) : undefined) ?? "알 수 없음";
+    const who = (m.user_id ? nameOf.get(m.user_id) : undefined) ?? "알 수 없음";
     const when = seoul(new Date(m.created_at), { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
     return `[${m.id}] ${who} ${when}: ${shown(m.body).replace(/\s+/g, " ").slice(0, 500)}`;
   });

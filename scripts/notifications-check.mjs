@@ -115,10 +115,10 @@ try {
   n = await notesFor(d2.id);
   check("DM 안의 멘션은 mention 하나만 (dm 과 겹치지 않음)", n[B.id] === "mention" && Object.keys(n).length === 1, `(${JSON.stringify(n)})`);
 
-  // ── 익명(Step 1) ──
+  // ── 익명(Step 1) — 2026-10-01 익명 쓰기를 닫아 메시지 자체가 들어가지 않는다 ──
   const anon = createClient(url, anonKey, noSession);
-  const { data: an } = await anon.from("messages").insert({ client_id: randomUUID(), author: "익명", body: `@${B.handle} 익명이 부름` }).select("id");
-  check("익명 메시지는 알림을 만들지 않는다", Object.keys(await notesFor(an?.[0]?.id)).length === 0);
+  const { data: an, error: anErr } = await anon.from("messages").insert({ client_id: randomUUID(), body: `@${B.handle} 익명이 부름` }).select("id");
+  check("익명은 메시지를 못 써서 알림도 없다", !!anErr && !an?.length, `(${anErr?.code})`);
   if (an?.[0]?.id) await admin.from("messages").delete().eq("id", an[0].id);
 
   // ── 실시간·권한 ──
