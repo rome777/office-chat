@@ -37,7 +37,10 @@ export function newClientId(): string {
 }
 
 export function sendErrorMessage(error: { code?: string; message?: string; name?: string }) {
-  if (error.name === "AbortError" || error.code === "20") return "서버 응답이 없습니다";
+  // 시간 초과는 postgrest-js 가 { message: "TimeoutError: signal timed out", code: "" } 로 돌려준다 (name 이 없다)
+  if (error.name === "AbortError" || error.name === "TimeoutError" || error.code === "20" || /abort|timed out|timeout/i.test(error.message ?? "")) {
+    return "서버 응답이 없습니다";
+  }
   if (error.code === "23514") return "빈 메시지이거나 너무 깁니다";
   if (error.code === "42501") return "이 대화에 보낼 권한이 없습니다";
   if (/exceeded|too large|payload/i.test(error.message ?? "")) return "5MB 이하만 올릴 수 있습니다";
@@ -67,6 +70,10 @@ export function useMessages(channelId: string, myName: string) {
   const lastIdRef = useRef(0);
   const oldestIdRef = useRef(0);
   const loadingOlderRef = useRef(false);
+  /** 처음 50건을 불러왔는지. lastIdRef 로 따지면, 구독 전에 보낸 내 메시지가 먼저 합쳐질 때 처음 불러오기를 건너뛴다 */
+  const loadedRef = useRef(false);
+  /** 이 채널에서 저장된 것을 확인한 client_id. 실시간 이벤트가 시간 초과보다 먼저 오면 "전송 실패"를 다시 붙이지 않게 */
+  const savedClientIdsRef = useRef(new Set<string>());
   // "오프라인으로 표시"(② 내 프로필)면 접속자 수에 넣지 않는다 — 넣으면 숨긴 사람이 접속해 있다는 것이 드러난다.
   // 내 상태를 읽기 전에는 들어가지 않는다 (먼저 들어갔다 나가면 그 잠깐 사이 접속이 드러난다). 못 읽으면 예전처럼 들어간다
   const mySelf = useMyProfile();
@@ -118,6 +125,7 @@ export function useMessages(channelId: string, myName: string) {
       return next;
     });
     const saved = new Set(incoming.map((m) => m.client_id));
+    saved.forEach((id) => savedClientIdsRef.current.add(id));
     setPending((prev) => prev.filter((p) => !saved.has(p.clientId)));
   }, [resolveNames, addAttachments]);
 
@@ -136,11 +144,12 @@ export function useMessages(channelId: string, myName: string) {
   const sync = useCallback(async () => {
     const supabase = supabaseRef.current;
     if (!supabase) return;
-    if (lastIdRef.current === 0) {
+    if (!loadedRef.current) {
       const { data, error } = await query(supabase)
         .order("id", { ascending: false })
         .limit(PAGE_SIZE);
       if (error || !data) return;
+      loadedRef.current = true;
       merge(data as ChatMessage[]);
       setHasOlder(data.length === PAGE_SIZE);
       setReadyFor(channelRef.current);
@@ -235,6 +244,8 @@ export function useMessages(channelId: string, myName: string) {
     channelRef.current = channelId;
     lastIdRef.current = 0;
     oldestIdRef.current = 0;
+    loadedRef.current = false;
+    savedClientIdsRef.current = new Set();
     setMessages([]);
     setPending([]);
     setAttachments({});
@@ -259,7 +270,13 @@ export function useMessages(channelId: string, myName: string) {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
-        (payload) => merge([payload.new as ChatMessage]),
+        (payload) => {
+          // 받아 둔 범위보다 오래된 메시지가 바뀐 것(옛 메시지에 달린 답글 수 등)은 넣지 않는다. 넣으면 목록 맨 위에
+          // 그 메시지만 끼어 사이가 비고, 위로 올려도(id < 가장 오래된 것) 채워지지 않는다 (2026-10-01 전체 통과 테스트)
+          const row = payload.new as ChatMessage;
+          if (oldestIdRef.current === 0 || row.id < oldestIdRef.current) return;
+          merge([row]);
+        },
       )
       .on(
         "postgres_changes",
@@ -284,7 +301,16 @@ export function useMessages(channelId: string, myName: string) {
       });
 
     const goOffline = () => setConn("disconnected");
-    const goOnline = () => setConn("reconnecting");
+    // 소켓이 끊기지 않고 신호만 왔다 갔으면(짧은 와이파이 끊김, 개발자 도구의 오프라인 전환) SUBSCRIBED 가 다시 오지 않아
+    // "재연결 중" 에 멈춘다 (2026-10-01 전체 통과 테스트). 구독이 살아 있으면 바로 연결됨으로 돌리고, 끊긴 동안 것을 채운다
+    const goOnline = () => {
+      if (channel.state === "joined" && supabase.realtime.isConnected()) {
+        setConn("connected");
+        void sync();
+      } else {
+        setConn("reconnecting");
+      }
+    };
     window.addEventListener("offline", goOffline);
     window.addEventListener("online", goOnline);
 
@@ -313,11 +339,16 @@ export function useMessages(channelId: string, myName: string) {
     const supabase = supabaseRef.current;
     if ((!text && !file) || !supabase) return;
 
-    const mark = (status: PendingMessage["status"], error?: string) =>
+    // 보내는 동안 채널을 바꿨으면 결과를 새 채널 목록에 붙이지 않는다 (붙으면 "다시 보내기"가 지금 채널로 저장한다).
+    // 실시간 이벤트로 이미 저장이 확인된 메시지에는 늦게 온 실패를 붙이지 않는다
+    const target = channelId;
+    const mark = (status: PendingMessage["status"], error?: string) => {
+      if (channelRef.current !== target || savedClientIdsRef.current.has(clientId)) return;
       setPending((prev) => {
         const rest = prev.filter((p) => p.clientId !== clientId);
         return [...rest, { clientId, author: myName, body: text, status, error, file }];
       });
+    };
 
     if (!navigator.onLine) {
       mark("failed", "연결이 끊겨 보내지 못했습니다");

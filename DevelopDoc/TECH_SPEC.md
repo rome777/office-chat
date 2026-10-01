@@ -1,7 +1,7 @@
 # TECH_SPEC — 기술 명세
 
 - 작성일: 2026-09-28
-- 상태: **초안** — 스택(Supabase)과 LLM 제공자는 1일차 오전 팀 회의에서 확정한다
+- 상태: **확정** (2026-10-01) — 스택은 Supabase, LLM 제공자는 OpenAI 로 2026-09-29 확정했다. 제출물인 구조도(4절)·권한표(5절)·실시간 동기화(6절)·유실·중복 조건(12절)은 2026-10-01 실제 소스·운영 DB 와 대조해 다시 썼다
 
 요구 사항 번호(F1-1 등)는 [PRD.md](PRD.md) 를 따른다.
 
@@ -39,95 +39,416 @@
 
 ## 3. 구조
 
+> **쉽게 말하면** — 화면(브라우저)이 DB 와 **직접** 이야기한다. 그 대신 DB 앞의 문지기(RLS)가 "이 사람이 볼 수 있는 줄인가"를 매번 확인한다. 비밀 키가 필요한 일 두 가지만 서버(Vercel)를 거친다. 하나는 AI 를 부르는 일, 다른 하나는 첨부 파일을 검사하는 일이다.
+
+노드 색은 사는 곳이다.
+
+| 색 | 사는 곳 |
+|---|---|
+| 🟦 파랑 | 브라우저 |
+| 🟪 보라 | Vercel 서버 |
+| 🟩 초록 | Supabase |
+| 🟧 주황 | 바깥 서비스 |
+
+선 색은 흐름이다.
+
+| 색 | 흐름 |
+|---|---|
+| 회색 | 로그인 |
+| 초록 | 데이터 읽기·쓰기 |
+| 하늘 | 실시간 |
+| 보라 | AI |
+| 주황 | 첨부 |
+
+점선은 사람이 누르지 않아도 저절로 일어나는 일이다.
+
 ```mermaid
 flowchart LR
-  subgraph Browser[브라우저]
-    UI[Next.js 화면]
+  subgraph B["브라우저"]
+    UI["Next.js 화면<br/>사용자 토큰 (쿠키)"]
   end
-  subgraph Vercel
-    API[서버 API<br/>/api/ai/*<br/>/api/attachments/*]
+  subgraph V["Vercel"]
+    PAGE["화면·proxy.ts<br/>로그인 안 하면 /login"]
+    AIAPI["/api/ai/*<br/>요약·할 일·말투"]
+    FILEAPI["/api/attachments/*<br/>주소·확정·내려받기"]
   end
-  subgraph Supabase
-    AUTH[Auth]
-    DB[(Postgres + RLS)]
-    RT[Realtime]
-    ST[(Storage 비공개 버킷)]
+  subgraph S["Supabase (서울)"]
+    AUTH["Auth<br/>이메일 로그인"]
+    DB[("Postgres<br/>표 21개 · RLS · 트리거")]
+    CRON["pg_cron<br/>1분마다 일정 알림"]
+    RT["Realtime<br/>구독자마다 RLS"]
+    ST[("Storage<br/>attachments 비공개<br/>avatars 공개")]
   end
-  LLM[LLM API]
+  LLM["OpenAI<br/>gpt-4o-mini"]
 
-  UI -- 로그인 --> AUTH
-  UI -- 메시지 읽기·쓰기<br/>사용자 토큰 --> DB
-  DB -- 변경 이벤트 --> RT -- 구독 --> UI
-  UI -- 요약·할 일·말투 --> API
-  API -- 사용자 토큰으로 조회<br/>RLS 적용 --> DB
-  API --> LLM
-  UI -- 첨부 업로드·다운로드 --> API
-  API -- 서명 URL --> ST
+  UI -- 페이지 요청 --> PAGE
+  UI -- 로그인·세션 --> AUTH
+  UI -- 메시지·채널·일정 읽기·쓰기<br/>사용자 토큰 --> DB
+  DB -. 바뀐 줄 .-> RT
+  RT -. 볼 수 있는 이벤트만 .-> UI
+  CRON -. 시작 전 알림 넣기 .-> DB
+  UI -- 요약·할 일·말투 --> AIAPI
+  AIAPI -- 사용자 토큰으로 조회<br/>RLS 적용 --> DB
+  AIAPI -- 볼 수 있는 메시지만 --> LLM
+  UI -- 첨부 주소·확정·내려받기 --> FILEAPI
+  FILEAPI -- 멤버 확인 뒤 서명 URL<br/>service role --> ST
+  UI -. 서명 URL 로 바로 올리기·받기 .-> ST
+
+  classDef browser fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  classDef vercel fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+  classDef supa fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef outside fill:#FFEDD5,stroke:#EA580C,color:#7C2D12
+  class UI browser
+  class PAGE,AIAPI,FILEAPI vercel
+  class AUTH,DB,CRON,RT,ST supa
+  class LLM outside
+  style B fill:none,stroke:#2563EB,stroke-dasharray:4 3
+  style V fill:none,stroke:#7C3AED,stroke-dasharray:4 3
+  style S fill:none,stroke:#16A34A,stroke-dasharray:4 3
+  linkStyle 0,1 stroke:#6B7280,stroke-width:2px
+  linkStyle 2 stroke:#16A34A,stroke-width:2px
+  linkStyle 3,4 stroke:#0284C7,stroke-width:2px
+  linkStyle 5 stroke:#6B7280,stroke-width:2px
+  linkStyle 6,7,8 stroke:#7C3AED,stroke-width:2px
+  linkStyle 9,10,11 stroke:#EA580C,stroke-width:2px
 ```
 
-- 메시지 읽기·쓰기는 브라우저가 **사용자 토큰으로** DB 에 직접 한다. 권한은 RLS 가 막는다.
-- AI 와 첨부 검사는 서버 API 를 거친다. 서버도 **사용자 토큰으로** 조회해서, 그 사람이 볼 수 있는 것만 다룬다.
-- `SUPABASE_SERVICE_ROLE_KEY`(RLS 를 건너뛰는 키)는 시드 스크립트와 첨부 파일 검사에만 쓴다.
+- **메시지 읽기·쓰기**: 브라우저가 **사용자 토큰으로** DB 에 직접 한다. 권한은 RLS 가 막는다(5절).
+- **AI 와 첨부 검사**: 서버 API 를 거친다. 서버도 먼저 **사용자 토큰으로** 조회해서, 그 사람이 볼 수 있는 것만 다룬다.
+  - AI 키(`OPENAI_API_KEY`)는 서버에만 있다.
+- **첨부 파일 자체**: 서버를 거치지 않는다. 브라우저가 서명 URL 로 Storage 에 바로 올리고 받는다. 서명 URL 은 서버가 멤버인지 확인한 뒤에만 준다. 내려받기 주소는 60초 동안만 쓸 수 있다.
+- **`SUPABASE_SERVICE_ROLE_KEY`**(RLS 를 건너뛰는 키): 첨부 API(서명 URL·확정)와 시드·검사 스크립트에만 쓴다. 2026-10-01 배포 JS 에 없는 것을 확인했다.
 
 ## 4. 데이터 모델
 
+> **쉽게 말하면** — 이 앱의 DB 는 **회사 건물**과 같다. 사람(`profiles`)은 부서(`org_units`)에 속하고, 대화방(`channels`)마다 **출입 명부**(`memberships`)가 있다. 명부에 이름이 있는 사람만 그 방의 **쪽지**(`messages`)를 읽고 쓴다. 쪽지에는 들어온 순서대로 **번호표**(`id`)가 붙는다. 그래서 "몇 번까지 읽었나"(`read_positions`)와 "몇 번부터 놓쳤나"를 번호 하나로 안다. 일정(`events`)은 **초대장**(`event_attendees`)을 받은 사람만 본다. 알림(`notifications`)은 사람이 쓰지 않고 **DB 가 스스로** 만든다.
+
+- 2026-10-01 기준 **표 21개**이고, 모두 RLS(줄마다 권한 검사)가 켜져 있다. 마이그레이션은 29개다.
+- 그림과 표는 아래 두 가지를 맞춰 보고 그렸다.
+  - 운영 DB 카탈로그(`pg_class`·`information_schema`·`pg_constraint`, 2026-10-01 12시 무렵 읽기 전용으로 뽑음)
+  - 그 뒤에 적용한 `20261001190000`~`20261001210000` 마이그레이션 원본
+- 같은 날 Step 1 임시 호환을 없앴다.
+  - `messages.author` 칸과 `messages_step1_anon` 제약은 이제 없다.
+  - `messages.user_id` 는 꼭 있어야 한다(필수).
+
+### 4-1. 한눈에 보기 — 무엇이 무엇에 붙어 있나
+
+색은 묶음을 뜻한다. 선 색도 같은 뜻이다.
+
+| 색 | 묶음 |
+|---|---|
+| 🟦 파랑 | 사람·조직 |
+| 🟩 초록 | 대화방 |
+| 🟢 청록 | 메시지 |
+| 🟧 주황 | 읽음·알림 |
+| 🟪 보라 | 일정·회의실 |
+| 🟨 노랑 | 내 설정 |
+| ⬜ 회색 | 기록·AI·잡무 |
+
+**점선은 사람이 아니라 DB 트리거가 만드는 것**이다.
+
 ```mermaid
-erDiagram
-  profiles ||--o{ memberships : ""
-  channels ||--o{ memberships : ""
-  channels ||--o{ messages : ""
-  profiles ||--o{ messages : "작성"
-  messages ||--o{ messages : "스레드 답글"
-  messages ||--o{ attachments : ""
-  profiles ||--o{ read_positions : ""
-  channels ||--o{ read_positions : ""
-  profiles ||--o{ notifications : "받는 사람"
-  messages ||--o{ notifications : ""
-  rooms ||--o{ events : "회의실"
-  profiles ||--o{ events : "만든 사람"
-  events ||--o{ event_attendees : ""
-  profiles ||--o{ event_attendees : "참석자"
-  events ||--o{ notifications : ""
-  org_units ||--o{ org_units : "상위 조직"
-  org_units ||--o{ profiles : "소속"
-  org_units ||--|| channels : "부서 채널"
+flowchart LR
+  subgraph G1["사람·조직"]
+    direction TB
+    org["org_units<br/>조직 (회사·사업부·본부·팀)"]
+    prof["profiles<br/>사람"]
+    contact["profile_contacts<br/>연락처"]
+  end
+  subgraph G2["대화방"]
+    direction TB
+    ch["channels<br/>대화방 (공개·비공개·DM)"]
+    mem["memberships<br/>출입 명부 + 리더·부리더"]
+  end
+  subgraph G3["메시지"]
+    direction TB
+    msg["messages<br/>쪽지 · 번호표 id"]
+    att["attachments<br/>첨부 파일"]
+    react["message_reactions<br/>리액션"]
+    pin["pinned_messages<br/>고정"]
+  end
+  subgraph G4["읽음·알림"]
+    direction TB
+    rp["read_positions<br/>몇 번까지 읽었나"]
+    noti["notifications<br/>알림"]
+  end
+  subgraph G5["일정·회의실"]
+    direction TB
+    rooms["rooms<br/>회의실 8개"]
+    ev["events<br/>일정·회의"]
+    ea["event_attendees<br/>초대장·응답"]
+  end
+  subgraph G6["내 설정"]
+    direction TB
+    fav["channel_favorites<br/>즐겨찾기"]
+    mute["channel_mutes<br/>채널 알림 끄기"]
+  end
+  subgraph G7["기록·AI·잡무"]
+    direction TB
+    todo["todos<br/>승인한 할 일"]
+    ai["ai_usage_logs<br/>AI 사용 기록"]
+    adm["admin_logs<br/>관리 기록"]
+    cl["chore_lists<br/>잡무 목록"]
+    ce["chore_entries<br/>사람별 주문"]
+  end
+
+  org -- 소속 --> prof
+  org -- 부서마다 방 하나 --> ch
+  prof --- contact
+  prof -- 이름이 오름 --> mem
+  ch -- 명부 --> mem
+  ch -- 방 안의 쪽지 --> msg
+  prof -- 쓴 사람 --> msg
+  msg -- 답글 --> msg
+  msg --> att
+  msg --> react
+  msg --> pin
+  prof -- 읽은 번호 --> rp
+  ch --> rp
+  msg -. 멘션·DM·답글 .-> noti
+  ev -. 초대·변경·취소·불참·시작 전 .-> noti
+  rooms -- 예약 --> ev
+  prof -- 만든 사람 --> ev
+  ev -- 초대 --> ea
+  prof -- 참석자 --> ea
+  ch --> fav
+  ch --> mute
+  ch --> todo
+  msg -- 근거 메시지 --> todo
+  ch --> cl
+  cl --> ce
+  mem -. 넣기·빼기·역할 .-> adm
+  prof --> ai
+
+  classDef people fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  classDef room fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef message fill:#CCFBF1,stroke:#0D9488,color:#134E4A
+  classDef read fill:#FFEDD5,stroke:#EA580C,color:#7C2D12
+  classDef cal fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+  classDef mine fill:#FEF9C3,stroke:#CA8A04,color:#713F12
+  classDef etc fill:#F3F4F6,stroke:#6B7280,color:#1F2937
+  class org,prof,contact people
+  class ch,mem room
+  class msg,att,react,pin message
+  class rp,noti read
+  class rooms,ev,ea cal
+  class fav,mute mine
+  class todo,ai,adm,cl,ce etc
+  style G1 fill:none,stroke:#2563EB,stroke-dasharray:4 3
+  style G2 fill:none,stroke:#16A34A,stroke-dasharray:4 3
+  style G3 fill:none,stroke:#0D9488,stroke-dasharray:4 3
+  style G4 fill:none,stroke:#EA580C,stroke-dasharray:4 3
+  style G5 fill:none,stroke:#7C3AED,stroke-dasharray:4 3
+  style G6 fill:none,stroke:#CA8A04,stroke-dasharray:4 3
+  style G7 fill:none,stroke:#6B7280,stroke-dasharray:4 3
+  linkStyle 0,1,2 stroke:#2563EB,stroke-width:2px
+  linkStyle 3,4 stroke:#16A34A,stroke-width:2px
+  linkStyle 5,6,7,8,9,10 stroke:#0D9488,stroke-width:2px
+  linkStyle 11,12,13,14 stroke:#EA580C,stroke-width:2px
+  linkStyle 15,16,17,18 stroke:#7C3AED,stroke-width:2px
+  linkStyle 19,20 stroke:#CA8A04,stroke-width:2px
+  linkStyle 21,22,23,24,25,26 stroke:#6B7280,stroke-width:2px
 ```
 
-| 테이블 | 주요 컬럼 | 비고 |
-|---|---|---|
-| `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`(직급), `role`(`admin`·`member`), `org_unit_id`(소속, 2026-09-29), `avatar`·`status`·`status_message`(내 프로필, 2026-09-30) | 로그인한 사람은 모두 조회 가능 (조직도 검색). **본인이 고칠 수 있는 것은 `avatar`·`status`·`status_message` 뿐** — 이름·아이디·부서·직급·`role`·`org_unit_id` 는 서버·시드만 (아래 "내 프로필") |
-| `profile_contacts` | `user_id`(기본 키, = profiles.id), `phone`, `is_public`, `updated_at` | 연락처 (2026-09-30). 공개면 로그인한 누구나, 비공개면 본인·관리자만 읽는다. 쓰기는 본인 행만 |
-| `org_units` | `id`, `name`, `kind`(`company`·`division`·`hq`·`team` = 회사·사업부·본부·팀), `parent_id`, `leader_id`(조직의 장), `channel_id`(유일), `sort_order` | 조직도 (2026-09-29 추가, 아래 "조직도·부서 채널"). 조직마다 대화방이 하나. 회사는 `#일반` |
-| `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at`, `notice_unit_id`(공지 담당 부서, 2026-10-01) | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값. `notice_unit_id` 가 있으면 공지 채널 (5절 "공지 채널") |
-| `memberships` | `channel_id`, `user_id`, `joined_at`, `role`, `role_at`, `can_invite` | 기본 키 (channel_id, user_id). `role` = `leader`·`sub`(부리더)·`member` — 일반 채널에만 리더 1명(유일 인덱스)·부리더를 둔다, `role_at` = 리더·부리더가 된 시각 (2026-09-30 WU-39). `can_invite` 는 2026-09-29 초대 권한 칸인데 2026-09-30 부터 쓰지 않는다 (고치지 못하게 막음) |
-| `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
-| `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
-| `read_positions` | `channel_id`, `user_id`, `last_read_message_id`, `updated_at` | 기본 키 (channel_id, user_id) |
-| `notifications` | `id`(bigint identity), `user_id`, `type`(`dm`·`mention`·`thread_reply`·`event_invite`·`event_update`·`event_cancel`·`event_reminder`·`event_decline`), `channel_id`, `message_id`, `event_id`, `actor_id`, `created_at`, `read_at` | 메시지 알림은 `message_id`, 일정 알림은 `event_id` 를 채운다 (나머지는 null). `actor_id` 는 알림을 일으킨 사람 — 지금은 회의 불참(`event_decline`)의 불참한 사람만 채운다 (2026-09-29 추가). 유일 (user_id, message_id) → **한 메시지로 한 사람에게 하나**. `remind_minutes` 는 시작 전 알림이 몇 분 전인지 (2026-10-01). 유일 (user_id, event_id) where 초대 → 초대는 한 번만, 유일 (user_id, event_id, remind_minutes) where 시작 전 알림 → 알림 시각마다 한 번만. 본문은 저장하지 않는다 |
-| `todos` | `id`, `channel_id`, `created_by`, `task`, `assignee`, `due`, `evidence_message_id` | AI 할 일을 사용자가 승인했을 때만 저장 |
-| `admin_logs` | `id`, `actor_id`, `action`, `target`, `created_at` | 멤버 제거 등 관리 작업 기록 |
-| `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
-| `chore_lists` | `id`, `channel_id`, `title`, `place`, `memo`, `created_by`, `updated_by`, `created_at`, `updated_at` | 잡무 수첩의 목록 (예: 커피 — 1층 카페). 2026-09-29 추가 (`20260929160000_chore_notes.sql`, WU-28). 만든 사람이 탈퇴해도 남는다 (`on delete set null`) |
-| `chore_entries` | `id`, `list_id`, `person_name`, `detail`, `updated_by`, `created_at`, `updated_at` | 목록 아래 사람별 기록 (예: 이부장님 — 아아 얼음 많이). 사람은 **글자로** 적는다 (호칭으로 부르고, 계정 없는 사람도 있어서) |
-| `rooms` | `id`, `name`(유일), `capacity`, `location`(층), `facilities`(monitor·video·whiteboard·projector·mic), `description`, `sort_order` | 회의실 8개 — `C1 상생`·`C2 신뢰`·`C3 열정`·`C4 이끔`(큰 방)·`M1 확산`·`M2 공유`·`M3 가치`·`M4 연구`(작은 방, 2~8명). 관리자·시드만 넣는다. 2026-10-01 시설·설명·순서 칸 추가 (아래 "회의실 예약 개편") — 그전에는 옵션(층·장비·용도)을 `location` 글자에 적었다 |
-| `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at`, `kind`, `subtype`, `all_day`, `location`, `visibility`, `channel_id`, `category`, `team_unit_id` | 일정 (2026-10-01 개편 — 아래 "일정 개편"). `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
-| `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at`, `remind_minutes` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다. `remind_minutes` 는 사람마다 시작 전 알림 (5·10·30·60·1440분 전, 기본 `{10}`) |
+**세 가지만 기억하면 된다**
 
-회의실 이중 예약은 DB 가 막는다 (`btree_gist` 확장 필요). 화면에서 검사하면 두 사람이 동시에 누를 때 둘 다 통과한다.
+1. **방에 들어가는 열쇠는 `memberships` 한 줄이다.** 메시지·첨부·리액션·고정·읽음·할 일·잡무를 읽거나 쓸 때 모두 "이 방 명부에 내 이름이 있나"(`is_member`)를 본다.
+2. **순서는 시각이 아니라 `messages.id`(번호표)로 정한다.** 같은 시각에 두 개가 와도 번호는 다르다. 화면 정렬, 읽음 위치, 놓친 것 채우기가 모두 이 번호를 쓴다.
+3. **알림과 관리 기록은 사람이 못 쓴다.** 메시지·일정·명부가 바뀌면 트리거가 만든다. 그래서 "알림을 위조"하거나 "기록을 지우는" 길이 없다.
+
+### 4-2. 표 21개
+
+칸 표시는 다음과 같다.
+
+- `PK` = 기본 키
+- `FK` = 다른 표를 가리킴
+- `유일` = 같은 값이 두 번 못 들어감
+- **굵은 글씨** = 그 표에서 가장 중요한 규칙
+
+| 묶음 | 표 | 쉬운 말 | 주요 칸 | 지키는 규칙 |
+|---|---|---|---|---|
+| 사람·조직 | `profiles` | 사람 한 명 | `id` PK(= `auth.users.id`)<br/>`handle` 유일(멘션 열쇠, 대소문자 무시)<br/>`display_name`·`department`·`title`(직급)<br/>`role`(`admin`·`member`)<br/>`org_unit_id` FK<br/>`avatar`·`status`·`status_message` | 가입하면 트리거가 만든다.<br/>**본인이 고칠 수 있는 것은 사진·상태·상태 메시지뿐**이다. 이름·아이디·부서·직급·역할·소속은 서버·시드만 바꾼다.<br/>`status` 칸은 본인만 읽는다(`my_status()`). |
+| | `profile_contacts` | 연락처 | `user_id` PK·FK<br/>`phone`·`is_public` | 공개한 것만 남이 본다. 비공개는 본인·관리자만 본다. |
+| | `org_units` | 조직도 한 칸 | `kind`(회사·사업부·본부·팀)<br/>`parent_id` FK(상위 조직)<br/>`leader_id` FK<br/>`channel_id` FK 유일 | **조직마다 대화방이 하나**다(트리거가 만든다). 소속이 바뀌면 트리거가 부서 채널 명부를 맞춘다. |
+| 대화방 | `channels` | 대화방 | `type`(`public`·`private`·`dm`)<br/>`dm_key` 유일<br/>`created_by` FK<br/>`description`<br/>`notice_unit_id` FK(공지 담당 부서) | DM 은 두 사람 id 를 정렬해 이은 `dm_key` 로 **한 쌍에 하나**만 생긴다. `notice_unit_id` 가 있으면 공지 채널이다. |
+| | `memberships` | 출입 명부 | (`channel_id`, `user_id`) PK<br/>`role`(`leader`·`sub`·`member`)·`role_at`<br/>`joined_at`<br/>`can_invite`(2026-09-30부터 안 씀) | 일반 채널에는 리더가 한 명(유일 인덱스)이다. 역할은 함수로만 바꾼다. 부서 채널·공지 채널은 본인이 나갈 수 없다. |
+| 메시지 | `messages` | 쪽지 | `id` bigint PK(번호표)<br/>`client_id` 유일(보낸 쪽이 만든 송장 번호)<br/>`channel_id` FK<br/>`user_id` FK 필수<br/>`parent_id` FK(답글)<br/>`body`(2000자까지)<br/>`reply_count`·`last_reply_at`<br/>`edited_at`·`deleted_at` | **같은 `client_id` 는 한 번만 저장**된다. 답글은 같은 방의 최상위 메시지에만, 한 단계만 단다(트리거). 행을 지우지 않고 `deleted_at` 으로 숨긴다. |
+| | `attachments` | 첨부 파일 정보 | `message_id` FK<br/>`channel_id` FK<br/>`storage_path` 유일<br/>`mime`·`size`·`file_name` | 서버 API 가 파일 앞부분(시그니처)을 검사한 뒤에만 넣는다. |
+| | `message_reactions` | 리액션 | (`message_id`, `user_id`, `emoji`) PK<br/>`channel_id`<br/>`removed_at` | 정해진 이모지 10개만 쓴다. 떼면 행을 지우지 않고 `removed_at` 을 채운다(실시간 거르기 때문, 4절 "채팅 개편"). |
+| | `pinned_messages` | 고정 | `message_id` PK<br/>`channel_id`<br/>`pinned_by` | 메시지 하나는 한 번만 고정된다. |
+| 읽음·알림 | `read_positions` | 몇 번까지 읽었나 | (`channel_id`, `user_id`) PK<br/>`last_read_message_id` | **뒤로 가지 않는다**(트리거가 큰 값을 남긴다). |
+| | `notifications` | 알림 | `id` bigint PK<br/>`user_id` FK<br/>`type` 8종<br/>`channel_id`·`message_id`·`event_id`·`actor_id`<br/>`remind_minutes`<br/>`read_at` | (`user_id`, `message_id`) 유일이라 **한 메시지로 한 사람에게 하나**만 간다. 일정 초대는 한 번, 시작 전 알림은 알림 시각마다 한 번이다(부분 유일 인덱스). 본문은 저장하지 않는다. |
+| 일정·회의실 | `rooms` | 회의실 | `name` 유일<br/>`capacity`·`location`·`facilities`·`description`·`sort_order` | 관리자만 바꾼다. |
+| | `events` | 일정·회의 | `id` uuid PK<br/>`starts_at`·`ends_at`<br/>`room_id` FK<br/>`created_by` FK<br/>`kind`·`subtype`·`all_day`·`visibility`<br/>`channel_id`·`chat_channel_id` FK<br/>`category`·`team_unit_id`<br/>`series_id`·`recurrence`<br/>`canceled_at` | **같은 회의실·겹치는 시간은 DB 가 거부**한다(아래 제약). 지우지 않고 `canceled_at` 으로 취소한다. 회의실 정책(30분 단위·08~21시 등)은 트리거가 지킨다(4절 "회의실 예약 개편"). |
+| | `event_attendees` | 초대장·응답 | (`event_id`, `user_id`) PK<br/>`response`(`pending`·`accepted`·`declined`)<br/>`responded_at`<br/>`remind_minutes` | 만든 사람도 `accepted` 로 들어간다. |
+| 내 설정 | `channel_favorites` | 즐겨찾기 | (`user_id`, `channel_id`) PK | 본인 것만 다룬다. 방에서 나가면 트리거가 지운다. |
+| | `channel_mutes` | 채널 알림 끄기 | (`user_id`, `channel_id`) PK | 끈 방의 메시지 알림은 **아예 만들어지지 않는다**(트리거). |
+| 기록·AI·잡무 | `todos` | 승인한 할 일 | `channel_id`·`created_by`·`assignee` FK<br/>`task`·`due`<br/>`evidence_message_id` FK<br/>`done_at` | AI 제안을 사람이 승인해야 들어간다. 근거 메시지는 같은 방 것이어야 한다. |
+| | `ai_usage_logs` | AI 사용 기록 | `user_id`·`feature`·`input_tokens`·`output_tokens`·`cost_usd`·`status` | 사용자당 분당 5회·하루 100회 상한을 이 기록으로 센다(8절). |
+| | `admin_logs` | 관리 기록 | `actor_id`·`action`·`target`(jsonb) | 넣기·내보내기·역할 바꾸기를 트리거가 남긴다. |
+| | `chore_lists` | 잡무 목록 | `channel_id`·`title`·`place`·`memo`·`created_by` | 커피·점심 같은 반복 주문 목록이다. |
+| | `chore_entries` | 사람별 주문 | `list_id` FK<br/>`person_name`(글자)<br/>`detail` | 계정 없는 사람도 적을 수 있게 사람은 글자로 적는다. |
+
+**회의실 이중 예약은 DB 가 막는다** (`btree_gist` 확장). 화면에서 검사하면 두 사람이 동시에 누를 때 둘 다 통과한다.
 
 ```sql
 exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
   where (room_id is not null and canceled_at is null)
 ```
 
-`'[)'` 라서 10:00~11:00 과 11:00~12:00 은 겹치지 않는다. 취소한 회의는 자리를 비운다.
+`'[)'` 는 끝 시각을 포함하지 않는다는 뜻이다. 그래서 10:00~11:00 과 11:00~12:00 은 겹치지 않는다. 취소한 회의는 자리를 비운다.
 
-인덱스: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages` 의 `body` 에 `pg_trgm` GIN 인덱스, `notifications (user_id, id desc)`, `event_attendees (user_id)`, `events (starts_at)`.
+**지울 때 같이 지워지는 것** (외래 키 `on delete`)
 
-확장: `pg_trgm`(검색), `btree_gist`(회의실 제약), `pg_cron`(10분 전 알림).
+- **같이 지워진다(`cascade`)**
+  - 채널을 지우면: 그 방의 메시지·첨부·리액션·고정·명부·읽음 위치·알림·할 일·잡무
+  - 메시지를 지우면: 답글·첨부·리액션·알림
+  - 일정을 지우면: 초대장·알림
+- **비운다(`set null`)**: 만든 사람·한 사람 같은 기록용 칸. 사람이 사라져도 기록은 남는다.
+- **예외**: `messages.user_id` 만 규칙이 없다(`no action`). 그래서 **메시지를 쓴 계정은 바로 지워지지 않는다**. 메시지를 먼저 지운다(13절 함정).
+- `org_units` 의 `parent_id`·`channel_id` 는 `restrict` 다. 아래 조직이나 부서 채널이 남아 있으면 그 조직은 못 지운다.
 
-마이그레이션은 `supabase/migrations/*.sql` 로 관리하고, SQL 편집기에서 손으로 고친 내용도 반드시 파일로 옮긴다.
-**이미 적용한 파일은 고치지 않는다.** 바꿀 것이 있으면 새 파일을 만든다 (원격 적용 기록과 어긋나면 `db push` 가 꼬인다).
+**인덱스**: `messages (channel_id, id desc)`, `messages (parent_id)`, `messages.body` 에 `pg_trgm` GIN, `notifications (user_id, id desc)`, `event_attendees (user_id)`, `events (starts_at)`
+
+**확장**: `pg_trgm`(한글 부분 검색), `btree_gist`(회의실 겹침 제약), `pg_cron`(1분마다 일정 알림 `send_event_reminders()`)
+
+### 4-3. 자세한 관계도 (전문가용)
+
+선 끝 모양으로 개수를 읽는다.
+
+| 선 끝 | 뜻 |
+|---|---|
+| `\|\|` | 꼭 하나 |
+| `o\|` | 없거나 하나 |
+| `o{` | 없거나 여럿 |
+
+칸은 관계에 필요한 것과 규칙이 걸린 것만 적었다. 전체 칸은 4-2 표와 `supabase/migrations/` 에 있다.
+
+```mermaid
+erDiagram
+  org_units |o--o{ org_units : "상위 조직"
+  org_units |o--o{ profiles : "소속"
+  org_units |o--|| channels : "부서 채널"
+  org_units |o--o{ channels : "공지 담당"
+  profiles ||--o| profile_contacts : "연락처"
+  profiles ||--o{ memberships : "명부에 오름"
+  channels ||--o{ memberships : "명부"
+  channels ||--o{ messages : "방 안의 쪽지"
+  profiles ||--o{ messages : "쓴 사람"
+  messages |o--o{ messages : "답글"
+  messages ||--o{ attachments : "첨부"
+  messages ||--o{ message_reactions : "리액션"
+  messages ||--o| pinned_messages : "고정"
+  profiles ||--o{ read_positions : "읽은 위치"
+  channels ||--o{ read_positions : "방별"
+  profiles ||--o{ notifications : "받는 사람"
+  messages |o--o{ notifications : "메시지 알림"
+  events |o--o{ notifications : "일정 알림"
+  rooms |o--o{ events : "회의실"
+  profiles ||--o{ events : "만든 사람"
+  channels |o--o{ events : "만든 방·대화방"
+  events ||--o{ event_attendees : "초대장"
+  profiles ||--o{ event_attendees : "참석자"
+  profiles ||--o{ channel_favorites : "즐겨찾기"
+  profiles ||--o{ channel_mutes : "알림 끄기"
+  channels ||--o{ todos : "할 일"
+  messages |o--o{ todos : "근거"
+  channels ||--o{ chore_lists : "잡무 목록"
+  chore_lists ||--o{ chore_entries : "사람별"
+  profiles ||--o{ ai_usage_logs : "AI 사용"
+  profiles |o--o{ admin_logs : "한 사람"
+
+  profiles {
+    uuid id PK "auth.users.id"
+    text handle UK "멘션 열쇠"
+    text display_name
+    text role "admin 또는 member"
+    uuid org_unit_id FK
+    text status "본인만 읽음"
+  }
+  org_units {
+    uuid id PK
+    text kind "company division hq team"
+    uuid parent_id FK
+    uuid leader_id FK
+    uuid channel_id FK "유일"
+  }
+  channels {
+    uuid id PK
+    text type "public private dm"
+    text dm_key UK "DM 한 쌍에 하나"
+    uuid created_by FK
+    uuid notice_unit_id FK "공지 채널"
+  }
+  memberships {
+    uuid channel_id PK
+    uuid user_id PK
+    text role "leader sub member"
+  }
+  messages {
+    bigint id PK "번호표, 순서 기준"
+    uuid client_id UK "멱등 전송"
+    uuid channel_id FK
+    uuid user_id FK "필수, 로그인한 나"
+    bigint parent_id FK "답글"
+    text body "2000자, 공백만 불가"
+    timestamptz deleted_at
+  }
+  attachments {
+    uuid id PK
+    bigint message_id FK
+    text storage_path UK
+  }
+  message_reactions {
+    bigint message_id PK
+    uuid user_id PK
+    text emoji PK
+    timestamptz removed_at
+  }
+  pinned_messages {
+    bigint message_id PK
+    uuid pinned_by FK
+  }
+  read_positions {
+    uuid channel_id PK
+    uuid user_id PK
+    bigint last_read_message_id "뒤로 안 감"
+  }
+  notifications {
+    bigint id PK
+    uuid user_id FK
+    text type "8종"
+    bigint message_id FK
+    uuid event_id FK
+    uuid actor_id FK
+  }
+  rooms {
+    uuid id PK
+    text name UK
+  }
+  events {
+    uuid id PK
+    uuid room_id FK "겹침 금지 제약"
+    uuid created_by FK
+    timestamptz starts_at
+    timestamptz ends_at
+    timestamptz canceled_at
+    uuid series_id "반복 묶음"
+  }
+  event_attendees {
+    uuid event_id PK
+    uuid user_id PK
+    text response "pending accepted declined"
+  }
+  todos {
+    uuid id PK
+    uuid channel_id FK
+    bigint evidence_message_id FK
+  }
+```
+
+
+아래 절들은 표를 더하거나 바꿀 때마다 정한 세부 규칙이다 (날짜순).
 
 ### DB v1 을 만들면서 정한 것 (2026-09-29, `20260929100000_db_v1.sql`)
 
@@ -144,7 +465,7 @@ exclude using gist (room_id with =, tstzrange(starts_at, ends_at, '[)') with &&)
 - `ai_usage_logs.status` 는 `ok`·`error`·`timeout`·`rate_limited`·`denied`
 - 첨부 버킷 `attachments` 도 이 파일이 만든다 (비공개, 5MB, PNG·JPEG·PDF)
 - 사용자를 지우면 그 사람의 profiles·멤버십·회의는 같이 지워지지만, **메시지가 남아 있으면 지워지지 않는다** (작성자 FK). 계정은 지우지 말고 비활성화한다
-- 알림을 만드는 트리거(멘션·스레드 답글·DM·일정)와 10분 전 알림 `pg_cron` 작업은 **아직 없다** — 알림 작업(③)에서 새 마이그레이션으로 추가한다
+- 알림을 만드는 트리거(멘션·스레드 답글·DM·일정)와 10분 전 알림 `pg_cron` 작업은 v1 에는 없었고, 같은 날 새 마이그레이션으로 더했다 (메시지 알림 `20260929130000`, 일정 알림·`pg_cron` `20260929140000`)
 
 ### 조직도·부서 채널 (2026-09-29, `20260929170000_org_units.sql`)
 
@@ -168,7 +489,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - **패널 모양** (2026-09-30 WU-35 개편 뒤 사용자와 다시 정함, `ProfilePanel`): 전체 저장 버튼 없이 부분마다 저장 — 상태는 누르면 바로, 상태 메시지는 [저장]·Enter, 연락처는 기본 정보 맨 아래에서 [수정] → 빠짐없는 번호를 넣어야 [저장](`normalizePhone`: 010 은 11자리, 하이픈 붙여 저장, 비우기 불가 — DB 제약은 빈 값도 받으니 화면이 막는다), 공개·비공개는 [수정]과 따로 누르면 바로 저장. "오프라인으로 표시"는 헤더 내 메뉴에서만. **아이디는 계정 관리에만 보인다** (WU-31 "화면에 아이디를 보이지 않는다"의 예외 — 나만 보는 계정 정보)
 - 비밀번호 바꾸기는 **지금 비밀번호로 다시 로그인해 본 뒤** `auth.updateUser` 로 바꾼다 (탭을 열어 둔 채 자리를 비운 사이 남이 바꾸지 못하게)
 - 모두 `npm run check:profile` 이 가상 사용자 A·B·관리자로 확인한다 (33개, 2026-09-30 전부 통과)
-- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)·DM 목록·사람 찾기(② `DmList`·`PeoplePicker`)가 쓴다. 헤더 DM 제목(② `ChannelTitle`)은 사진 없이 "@이름 ● 상태 · 상태 메시지"만 보이고, DM 에서는 ① `ConnectionStatus` 가 연결됐을 때 숨는다 (1:1 이라 접속자 수가 뜻이 없고, 접속자 수는 사람이 아니라 **탭 수**를 센다). 이 부품들이 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
+- **남의 상태 점** (2026-09-30, WU-34): 채팅·스레드(① `MessageItem`)·조직도(③ `OrgChartPanel`)·DM 목록·사람 찾기(② `DmList`·`PeoplePicker`)가 쓴다. 헤더 DM 제목(② `ChannelTitle`)은 사진 없이 "@이름 ● 상태 · 상태 메시지"만 보이고, ① `ConnectionStatus` 는 채널·DM 모두 연결됐을 때 숨는다 (재연결 중·끊김일 때만 알약, 6-3). 이 부품들이 ② `PersonAvatar` 를 쓴다. 사진·상태 메시지는 명단(`directory`, 1분마다 새로), **상태는 DB 가 아니라 회사 접속자 채널 `presence:company`**(`components/profile/presence.ts`)에서 온다
   - 들어가는 키는 내 id (탭이 여럿이어도 한 사람, 가장 최근 `at` 의 상태를 쓴다). 보내는 것은 `{ status, at }` 뿐. 헤더(`UserMenu`)가 내 상태가 정해지거나 바뀔 때 보낸다
   - **"오프라인으로 표시"면 채널에서 나간다**(untrack) → 남에게는 접속을 끊은 사람과 똑같이 회색 "오프라인". ① 채널 접속자 수(`room:<채널>`)에서도 빠진다. 같은 사람의 다른 탭에는 `BroadcastChannel` 로 바뀐 값을 알린다 (다른 탭이 계속 온라인을 보내지 않게)
   - 한계: presence 는 보내는 쪽이 키와 `at` 을 정하므로 **로그인한 사람이 남의 id 로, `at` 을 아주 큰 값으로 들어가 그 사람의 점을 바꿀 수 있다** (① 접속자 수도 같은 방식). 화면 표시일 뿐 권한과는 관계없다. 채널이 공개라 공개 키만 있으면 누가 접속했는지(id)를 볼 수 있다. 서버가 확인하게 하려면 private 채널 + `realtime.messages` RLS 가 필요하다
@@ -188,7 +509,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별. **넣는 곳 세 군데** (2026-10-01 WU-47, 사용자 "즐겨찾기 등록 기능을 못 찾겠음"): 메시지 목록의 줄에 마우스를 올리면 오른쪽 끝에 나오는 별(손가락 화면은 없음) · 채팅 머리 이름 옆 "☆ 즐겨찾기" 버튼(휴대폰 폭은 채널 이름 옆 별. 오른쪽 패널이 열리거나 이름이 길어 "이름 + 글자 붙은 버튼"이 머리에 다 안 들어가면 글자를 빼고 "☆" 만 — `ChatHeader` 의 `useStarFit` 이 머리 폭에서 오른쪽 도구·아이콘 칸을 뺀 폭과 비교한다. 이름 칸 폭으로 재면 글자를 뺐다 붙였다 깜빡인다) · 즐겨찾기 칸은 비어 있어도 보이고 넣는 방법을 안내한다
 - `channels.description`(120자까지): 채널 설명. **이름·설명은 그 채널의 리더와 관리자만** 고친다 (2026-09-30 WU-39, 처음엔 만든 사람·관리자). **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
-- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다. **대화 위쪽 막대에 늘 보인다** (① `PinnedBar`, 2026-10-01 WU-47): 가장 최근에 고정한 것 한 줄 + 여러 개면 "1/4" 로 넘기기, ▾ 로 펼치면 전체(누르면 그 메시지로 이동·강조, 고정 해제). 메시지 목록 밖이라 스크롤해도 그대로 있다
+- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없다 — 방을 열 때와 **내가** 고정·해제한 뒤에 다시 불러온다 (남이 바꾼 것은 방을 다시 열어야 보인다). **대화 위쪽 막대에 늘 보인다** (① `PinnedBar`, 2026-10-01 WU-47): 가장 최근에 고정한 것 한 줄 + 여러 개면 "1/4" 로 넘기기, ▾ 로 펼치면 전체(누르면 그 메시지로 이동·강조, 고정 해제). 메시지 목록 밖이라 스크롤해도 그대로 있다
 - `message_reactions(message_id, user_id, emoji, channel_id, removed_at)`: 리액션. 이모지는 정해진 10개. `toggle_reaction(message_id, emoji)` 로만 단다. **떼도 행을 지우지 않고 `removed_at` 을 채운다** — Realtime 의 DELETE 이벤트는 필터(`channel_id=eq.`)가 안 되고 RLS 도 안 거쳐서, 지우면 떼는 것을 채널 멤버에게만 보낼 방법이 없다. INSERT·UPDATE 만 채널로 걸러 받는다
 - `channel_mutes(user_id, channel_id)`: 채널별 알림 끄기. `notifications` BEFORE INSERT 트리거 `notifications_skip_muted` 가 끈 채널의 메시지 알림(멘션·답글·DM)을 **아예 만들지 않는다**. 미읽음 배지는 그대로다. 일정 알림(`channel_id` 없음)은 상관없다
 - 채널에서 나가면(memberships 삭제) 그 채널의 즐겨찾기·알림 끄기를 트리거가 지운다
@@ -256,104 +577,486 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ## 5. 권한 (RLS)
 
-| 테이블 | 읽기 | 쓰기 |
+> **쉽게 말하면** — DB 앞에 **문지기가 세 명** 있다. 셋 중 하나라도 "안 돼" 하면 요청은 거부된다.
+>
+> 1. **칸 문지기**(표·칸 권한, `GRANT`) — "그 칸은 만질 수 없어."
+> 2. **줄 문지기**(행 정책, RLS) — "그 방 명부에 네 이름이 없어."
+> 3. **규칙 문지기**(트리거) — "공지 채널에는 담당 부서만 새 글을 써."
+>
+> 화면에서 버튼을 숨기는 것은 문지기가 아니다. 주소창이나 API 로 직접 와도 이 셋이 막는다.
+
+### 5-1. 요청이 표에 닿기까지
+
+초록 선은 통과, 빨간 점선은 거부(대부분 `42501`), 보라 선은 서버 API, 파란 선은 실시간 이벤트다.
+
+```mermaid
+flowchart LR
+  user(["로그인한 사람<br/>브라우저 · 사용자 토큰"])
+  anon(["로그인 안 한 사람<br/>공개 키만"])
+  g1{"① 칸 문지기<br/>GRANT"}
+  g2{"② 줄 문지기<br/>RLS 정책"}
+  g3{"③ 규칙 문지기<br/>트리거"}
+  db[("Postgres<br/>표 21개")]
+  no["거부<br/>42501 등"]
+  api["서버 API<br/>/api/attachments<br/>/api/ai"]
+  svc{{"service role<br/>RLS 를 건너뜀"}}
+  rt["Realtime"]
+
+  user -- 요청 --> g1 -- 허용된 칸만 --> g2 -- 내가 볼 줄만 --> g3 -- 규칙 통과 --> db
+  anon -- 표 권한 없음 --> no
+  g1 -. 없는 칸 .-> no
+  g2 -. 남의 줄 .-> no
+  g3 -. 규칙 위반 .-> no
+  user -- 첨부·AI --> api
+  api -- 먼저 사용자 토큰으로 조회 --> g2
+  api -- 검사가 끝난 뒤 저장·서명 URL --> svc --> db
+  db -- 바뀐 줄 --> rt -- 구독자마다 ② 를 다시 검사 --> user
+
+  classDef person fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  classDef gate fill:#FEF9C3,stroke:#CA8A04,color:#713F12
+  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef bad fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
+  classDef server fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+  classDef live fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+  class user,anon person
+  class g1,g2,g3 gate
+  class db ok
+  class no bad
+  class api,svc server
+  class rt live
+  linkStyle 0,1,2,3 stroke:#16A34A,stroke-width:2px
+  linkStyle 4,5,6,7 stroke:#DC2626,stroke-width:2px
+  linkStyle 8,9,10,11 stroke:#7C3AED,stroke-width:2px
+  linkStyle 12,13 stroke:#0284C7,stroke-width:2px
+```
+
+- **브라우저는 사용자 토큰으로 DB 에 바로 간다.** 그래서 권한은 화면이 아니라 DB 에 있어야 한다.
+- **서버 API 도 먼저 사용자 토큰으로 확인한다.**
+  - 첨부: 업로드 주소를 주기 전에 "이 방 멤버인가"를 본다.
+  - AI: 요약할 메시지를 RLS 로 읽는다. 그래서 그 사람이 볼 수 있는 것만 AI 에 간다.
+- **RLS 를 건너뛰는 `SUPABASE_SERVICE_ROLE_KEY` 는 서버에서만 쓴다.**
+  - 쓰는 곳: 첨부 확정·서명 URL, 시드, 검사 스크립트
+  - 2026-10-01 배포 JS 18조각(1.1MB)을 검사했다. 서비스 키·OpenAI 키·DB 비밀번호·JWT 비밀은 없었고, 공개용 anon 키만 있었다.
+- **로그인 안 한 사람(`anon`)은 어느 표도 못 읽고 못 쓴다.** 2026-10-01 `20261001200000_close_step1_anon` 부터다.
+  - 그전에는 Step 1 임시 호환으로 `#일반` 을 읽고, 아무 이름으로나 쓸 수 있었다(13절).
+  - 지금 남은 공개 통로는 두 곳이다. 가입·로그인 요청(Supabase Auth)과 공개 사진 버킷 `avatars` 다.
+
+### 5-2. 누가 누구인가
+
+| 부르는 이름 | DB 에서 어떻게 아나 | 누가 정하나 |
 |---|---|---|
-| `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만. 공지 채널의 새 글(최상위)은 담당 부서·리더·부리더·관리자만 (트리거, 2026-10-01) |
-| `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 `has_invite_right` — 관리자, 일반 채널에서 공개면 멤버 누구나·비공개면 리더·부리더 (부서 채널은 관리자만). 내보내기는 관리자(누구나)·리더(부리더·멤버)·부리더(멤버만), 역할(`role`)은 `set_sub_leader`·`transfer_leader` 함수로만 바꾼다 (2026-09-30 WU-39). 예전: 초대 권한 주기·빼기는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
-| `org_units` | 로그인 사용자 모두 | 서버·시드만 (클라이언트 쓰기 권한 없음). 소속(`profiles.org_unit_id`)도 update 컬럼 권한이 없어 서버만 바꾼다 — 소속이 곧 부서 채널 멤버십이라서 |
-| `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에). `name`·`description` 수정은 일반 채널의 리더·관리자만, DM 제외 (2026-09-30 WU-39), 부서 채널 이름은 거부 (2026-09-30) |
-| `channel_favorites` · `channel_mutes` | 본인 행만 | 본인이 멤버인 채널만 넣고, 본인 것만 지운다 (2026-09-30) |
-| `pinned_messages` | 그 채널의 멤버 | `toggle_pin()` 으로만 (멤버) |
-| `message_reactions` | 그 채널의 멤버 | `toggle_reaction()` 으로만 (멤버, 정해진 이모지) |
-| `attachments` | 그 채널의 멤버 | 서버 API 만 |
-| `read_positions` | 같은 채널 멤버 (안 읽은 사람 수 계산용) | 본인 행만 |
-| `notifications` | 본인만 | 생성은 DB 트리거만. 본인은 `read_at` 만 수정 |
-| `admin_logs` | 관리자만 | DB 트리거만 |
-| `rooms` | 로그인 사용자 모두 | 관리자만 (시설·설명·순서 칸 포함, 2026-10-01) |
-| `events` | 만든 사람과 참석자만. 같은 부서 팀원은 `list_team_events()` 로 공개 범위만큼 가린 칸만 (2026-10-01) | 생성은 로그인 사용자 (`created_by = auth.uid()` 강제). 수정·취소는 만든 사람만. 삭제 없음. `category`·`team_unit_id` 는 트리거만 |
-| `event_attendees` | 그 회의의 만든 사람과 참석자 | 추가·삭제는 회의를 만든 사람만. 본인은 `response`·`remind_minutes` 만 수정 |
-| `chore_lists` | 그 채널의 멤버 | 만들기·고치기(`title`·`place`·`memo`)는 멤버. 삭제는 만든 사람·관리자만 |
-| `chore_entries` | 목록을 볼 수 있는 사람 (= 그 채널 멤버) | 추가·고치기(`person_name`·`detail`)·삭제 모두 멤버. 다른 목록으로 옮길 수 없다 (`list_id` 수정 권한 없음) |
-| `profiles` | 로그인 사용자 모두 (`status` 칸만 본인, `my_status()` — 2026-09-30) | 본인 행의 `avatar`·`status`·`status_message` 만 (2026-09-30. 이름·아이디·부서·직급은 서버·시드만) |
-| `profile_contacts` | 본인, 공개한 사람의 것, 관리자 | 본인 행만 (`phone`·`is_public`) |
-| 회사 메일 (`auth.users`) | 로그인 사용자가 `profile_email(user_id)` 로 한 사람 것씩 (2026-09-30, 프로필 카드) | 없음 |
-| 보관함 `avatars` | 누구나 (공개 버킷) | 본인 폴더 `<내 id>/` 에만 올리고 지운다 |
+| 로그인 안 한 사람 | 역할 `anon` | — |
+| 로그인한 사람 (나) | 역할 `authenticated`, `auth.uid()` | Supabase Auth |
+| 방 멤버 | `memberships` 에 (방, 나) 줄이 있음 — `is_member(channel)` | 가입·초대·소속 트리거 |
+| 리더·부리더 | `memberships.role` = `leader`·`sub` — `my_channel_role(channel)`. **일반 채널**(부서 채널이 아닌 공개·비공개)에만 있다 | 만든 사람이 리더. 그 뒤로는 함수로만 바뀐다 |
+| 공지 담당 | 공지 채널 `notice_unit_id` 부서(하위 부서 포함)에 속한 사람 | 시드·SQL (화면에서 못 바꿈) |
+| 회사 관리자 | `profiles.role = 'admin'` — `is_admin()` | 서버·SQL만 (`role` 칸에 수정 권한 없음 → 스스로 못 올림) |
+| 일정 만든 사람·참석자 | `events.created_by`, `event_attendees` — `is_event_owner()`·`is_event_participant()` | 일정 만들 때 |
+| 서버 | 역할 `service_role` (RLS 건너뜀) | 서버 환경 변수 |
 
-**남의 회의는 회의실 예약 현황으로도 새지 않게 한다**: 회의실 빈 시간은 `room_busy(room_id, from, to)` 함수(security definer)로만 본다. 이 함수는 **시작·끝 시각만** 돌려주고 제목·참석자는 주지 않는다. 겹치는 예약을 넣으면 제약 오류로 거부되는데, 오류에도 누구의 회의인지는 나오지 않는다. **2026-10-01 회의실 개편부터** 회의실 화면은 `room_board()` 를 쓴다 — 공개 회의만 예약자 이름·부서를 더 주고, 제목·참석자는 지금처럼 참석자에게만 (4절 "회의실 예약 개편").
+정책끼리 서로를 조회하면 무한 재귀가 난다. 그런 곳(`memberships`, `events`↔`event_attendees`)은 위의 `security definer` 판정 함수로 끊었다.
 
-**작성자 위조 방지**: `messages.user_id` 는 기본값 `auth.uid()` 에 정책으로 같은 값을 강제한다. 클라이언트가 다른 ID 를 보내면 거부된다.
+### 5-3. 권한표 — 표 21개 전부
 
-**컬럼 권한** (2026-09-29): 테이블마다 anon·authenticated 권한을 모두 거둔 뒤 필요한 컬럼만 다시 준다. 그래서 클라이언트는
-`user_id`·`created_by`·`role`·`id`·`created_at` 같은 컬럼을 아예 보낼 수 없다 (보내면 42501). 무엇을 줬는지는 `20260929100000_db_v1.sql` 에 테이블마다 적었다.
+표·칸 권한(`information_schema`)과 RLS 정책(`pg_policies`) 60개를 운영 DB 에서 뽑아 그대로 옮겼다. 2026-10-01 기준이며, 익명 정책 2개는 `20261001200000` 에서 지워져 빠졌다.
 
-**위 표에서 정한 것** (2026-09-29): 관리자는 비공개 채널도 본다 (멤버를 넣어야 하므로). **DM 은 관리자도 못 본다.** 공개·비공개 채널은 본인이 나갈 수 있다 (DM 은 못 나간다).
+- "—" 는 권한이 없어서 클라이언트가 할 수 없다는 뜻이다(해도 거부).
+- **칸** 은 보낼 수 있는 칸이다. 그 밖의 칸(`id`·`user_id`·`created_by`·`role`·`created_at` 등)은 보내면 42501 이다. 기본값(`auth.uid()`, `now()`)이 채운다.
 
-**초대 권한** (2026-09-29, `20260929150000_invite_rights.sql`, WU-27): 판단은 `has_invite_right(channel_id)` (security definer) — 공개·비공개 채널이고 관리자이거나 내 `memberships.can_invite` 가 true.
-- `can_invite` 는 insert 컬럼 권한이 없어 넣을 때 늘 false 다 → **넣으면서 권한까지 줄 수 없다.** 권한은 update(`can_invite` 만 권한 있음)로 따로 준다.
-- update 정책은 `using` 과 `with check` 모두 `has_invite_right` 라 권한이 없으면 자기 행도 못 바꾼다 (0건). `with check` 에 `can_invite or is_admin()` 이 있어 **관리자가 아니면 true 로만** 바꾼다 (빼기는 관리자만, 관리자 아닌 사람이 빼면 42501).
-- 멤버 제거(delete) 정책은 그대로 관리자만이다. 권한을 주고 빼면 트리거 `memberships_log_invite_right` 가 `admin_logs` 에 `grant_invite`·`revoke_invite` 로 남긴다.
-- 이미 있던 채널은 마이그레이션이 만든 사람에게 권한을 채웠다. `created_by` 가 null 인 `#일반` 은 관리자만 넣는다.
-- **2026-09-30 부터 초대 권한 대신 리더·부리더를 쓴다 (아래)**. `can_invite` 칸과 기록 트리거는 남았지만 update 권한·정책을 거뒀다.
+| 표 | 읽기 | 넣기 | 고치기 | 지우기 |
+|---|---|---|---|---|
+| `profiles` | 로그인한 누구나. 단 `status` 칸은 본인만(`my_status()`) | — (가입 트리거 `handle_new_user`) | 본인 줄. 칸 `avatar`·`status`·`status_message` | — |
+| `profile_contacts` | 본인 · 공개(`is_public`)한 사람 것 · 관리자 | 본인 줄. 칸 `phone`·`is_public` | 본인 줄. 같은 칸 | — |
+| `org_units` | 로그인한 누구나 | — (서버·시드) | — | — |
+| `channels` | 공개 채널 · 내가 만든 채널 · 내가 멤버인 채널 · 관리자는 비공개도. **DM 은 관리자도 못 본다** | 칸 `name`·`type`. 공개·비공개만. DM 은 `create_dm()` 으로만 | 칸 `name`·`description`. 일반 채널의 리더·관리자. DM 은 안 됨. **부서 채널 이름은 트리거가 거부** | — |
+| `memberships` | 내 줄 · 내가 멤버인 방의 명부 · 관리자(DM 제외) | 칸 `channel_id`·`user_id`. 공개 채널에 **나 자신**, 또는 `has_invite_right()`(아래 5-5) | — (역할은 `set_sub_leader`·`transfer_leader` 함수로만) | 나가기: 본인(DM·부서 채널·공지 채널은 안 됨).<br/>내보내기: 관리자, 일반 채널 리더(부리더·멤버), 부리더(멤버만) |
+| `messages` | 방 멤버 | 칸 `client_id`·`channel_id`·`parent_id`·`body`.<br/>멤버이고 `user_id` = 나이고 본문에 글자가 있어야 한다(`body ~ '\S'`, 2000자까지).<br/>트리거: 답글은 같은 방 최상위에만, **공지 채널 새 글은 담당 부서·리더·부리더·관리자만** | 본인 것. 칸 `body`·`deleted_at` (화면에는 아직 고치기·지우기가 없다) | — (줄은 안 지운다. `deleted_at` 으로 숨김) |
+| `attachments` | 방 멤버 | — (서버 API 가 시그니처 검사 뒤 넣는다) | — | — |
+| `message_reactions` | 방 멤버 | — (`toggle_reaction()` 으로만: 멤버, 정해진 이모지 10개) | — | — |
+| `pinned_messages` | 방 멤버 | — (`toggle_pin()` 으로만: 멤버) | — | — |
+| `read_positions` | 같은 방 멤버 (안 읽은 사람 수를 세려고) | 본인 줄·멤버인 방. 칸 `channel_id`·`last_read_message_id` (`mark_read()`) | 본인 줄. 칸 `last_read_message_id`. **뒤로는 안 간다**(트리거) | — |
+| `notifications` | 본인 것만 | — (트리거만) | 본인 것. 칸 `read_at` | — (불참 뒤 다시 참석하면 트리거가 안 읽은 불참 알림을 지운다) |
+| `channel_favorites`·`channel_mutes` | 본인 것만 | 본인 줄. 칸 `channel_id`. 멤버인 방만 | — | 본인 것 |
+| `todos` | 방 멤버 | 칸 `task`·`assignee`·`due`·`evidence_message_id`·`channel_id`. 멤버이고, 근거 메시지는 같은 방 것 | 칸 `done_at`. 방 멤버 | 만든 사람 |
+| `ai_usage_logs` | 본인 것만 | 본인 줄. 칸 `feature`·`input_tokens`·`output_tokens`·`cost_usd`·`status` (서버 API 가 사용자 토큰으로 남긴다) | — | — |
+| `admin_logs` | 관리자 | — (트리거만) | — | — |
+| `chore_lists` | 방 멤버 | 칸 `channel_id`·`title`·`place`·`memo`. 멤버 | 칸 `title`·`place`·`memo`. 멤버 | 만든 사람·관리자 |
+| `chore_entries` | 그 목록을 볼 수 있는 사람(= 방 멤버) | 칸 `list_id`·`person_name`·`detail`. 같은 사람 | 칸 `person_name`·`detail` (다른 목록으로는 못 옮김) | 같은 사람 |
+| `rooms` | 로그인한 누구나 | 관리자 | 관리자 | 관리자 |
+| `events` | 만든 사람·참석자.<br/>팀원은 `list_team_events()` 로 가린 칸만.<br/>회의실 시간표는 `room_board()`·`room_busy()` 로 | 칸 `title`·`starts_at`·`ends_at`·`room_id`·`kind`·`subtype`·`all_day`·`location`·`visibility`·`channel_id`·`description`.<br/>`created_by` = 나. 채널은 멤버인 곳만. 회의실 정책·겹침 금지(트리거·제약) | 만든 사람. 같은 칸 + `canceled_at`(취소). `category`·`team_unit_id` 는 트리거만 | — (취소만) |
+| `event_attendees` | 그 일정의 만든 사람·참석자 | 만든 사람. 칸 `event_id`·`user_id` | 본인 줄. 칸 `response`·`remind_minutes` | 만든 사람 |
 
-**리더·부리더** (2026-09-30, `20260930210000_channel_leaders.sql`, WU-39, 사용자 결정): "일반 채널" = 부서 채널이 아닌 공개·비공개 채널 (`is_team_channel()`). 부서 채널(#일반 포함)·DM 에는 리더가 없다.
+**표 밖의 데이터**
+
+| 무엇 | 읽기 | 쓰기 |
+|---|---|---|
+| 보관함 `attachments` (비공개, 5MB, PNG·JPEG·PDF) | 브라우저가 직접 못 연다 — 정책이 없다. `GET /api/attachments/<id>` 가 사용자 토큰으로 `attachments` 를 읽어 보이면(= 멤버면) **60초짜리 서명 URL** 로 보낸다. 아니면 404 | 업로드 주소 API(`/sign`)가 멤버인지 본 뒤 서명 업로드 주소를 준다 → 확정 API(`/confirm`)가 시그니처를 검사하고 `post_attachment_message()` 로 메시지·첨부를 한 번에 넣는다. 아니면 파일을 지우고 415 |
+| 보관함 `avatars` (**공개**, 2MB, WEBP·JPEG·PNG) | 주소를 아는 누구나 (파일 이름은 임의 24자) | 본인 폴더(`<내 id>/`)에만 올리고 지운다 (`storage.objects` 정책 3개) |
+| 회사 메일 (`auth.users.email`) | 로그인한 사람이 `profile_email(user)` 로 한 사람 것씩 | — |
+| 실시간 DB 변경 (`postgres_changes`) | 등록한 표 6개(`messages`·`attachments`·`message_reactions`·`memberships`·`read_positions`·`notifications`)만. **구독자마다 그 표의 RLS 읽기 정책을 다시 적용**해 볼 수 있는 줄만 보낸다. 단 DELETE 이벤트는 거르지 못하고 기본 키만 모두에게 간다 | — |
+| 실시간 접속자 (`presence`) | 공개 채널이다 (`realtime.messages` 정책 없음). 로그인한 사람이 남의 id 로 들어가 상태 점을 꾸밀 수 있다 — 화면 표시일 뿐 권한과는 관계없다 (4절 "내 프로필") | — |
+
+### 5-4. 권한을 대신 확인하는 함수
+
+표에 직접 쓰는 권한을 주지 않은 일은 아래 함수(`security definer`)가 **호출한 사람을 직접 확인한 뒤** 처리한다. 로그인 안 한 사람은 부를 수 없다(`revoke … from anon`).
+
+| 함수 | 하는 일 | 누가 |
+|---|---|---|
+| `create_dm(other)` | DM 방과 두 사람 명부를 한 번에. 같은 두 사람이면 같은 방 | 로그인한 누구나 |
+| `toggle_reaction(message, emoji)`·`toggle_pin(message)` | 리액션 달기·떼기, 고정·해제 | 그 방 멤버 |
+| `mark_read(channel, message)` | 내 읽음 위치 올리기 (`security invoker` — RLS 를 그대로 받는다) | 그 방 멤버 |
+| `set_sub_leader(channel, user, on)`·`transfer_leader(channel, user)` | 부리더 지정·해제, 리더 넘기기 | 그 방 리더·관리자 |
+| `create_event(…)`·`create_event_series(…)`·`update_event_series(…)`·`cancel_event_series(…)` | 일정 만들기(참석자 함께)·반복 묶음 | 로그인한 누구나 / 반복 고치기·취소는 만든 사람 |
+| `open_event_chat(event)` | 참석자와 대화방(DM 또는 비공개 채널) | 그 일정 참석자 |
+| `list_team_events(from, to)` | 같은 조직 팀원의 일정을 공개 범위만큼 가려서 (62일까지) | 로그인한 누구나 (자기 조직만) |
+| `room_board(from, to)`·`room_busy(room, from, to)` | 회의실 시간표 — 시각은 모두, 예약자는 공개 회의만, 제목은 참석자에게만 | 로그인한 누구나 |
+| `profile_email(user)`·`my_status()` | 한 사람의 회사 메일 / 내 상태 | 로그인한 누구나 / 본인 |
+| `can_post_in(channel)` | 공지 채널에 새 글을 쓸 수 있나 (화면이 입력창 대신 안내를 띄우는 데 씀) | 로그인한 누구나 |
+| `is_member`·`is_admin`·`has_invite_right`·`my_channel_role`·`is_event_owner`·`is_event_participant`·`channel_type`·`is_org_channel`·`is_team_channel` | 정책 안에서 쓰는 판정 | 정책이 부른다 |
+
+### 5-5. 세부 규칙
+
+**작성자는 로그인 정보로만 정해진다**
+
+- `messages.user_id` 는 기본값이 `auth.uid()` 이고, 쓰기 정책이 같은 값을 강제한다. 클라이언트가 남의 id 를 보내면 거부된다.
+- 2026-10-01 부터는 `user_id` 가 필수이고 이름 칸(`author`)도 없다. 그래서 다른 사람 이름으로 보낼 길이 없다.
+- `check:step1` "남의 user_id 로 쓰기 거부", "작성자 이름 위조 거부"가 확인한다.
+
+**관리자 권한 상승 방지**
+
+- `profiles.role` 에는 수정 권한이 없다. 본인 줄을 고칠 수 있는 칸은 사진·상태·상태 메시지뿐이다.
+- `check:db` "일반 사용자가 자기 role 을 admin 으로 바꾸면 거부"(42501)가 확인한다.
+
+**남의 일정은 회의실 시간표로도 새지 않는다**
+
+- `room_busy()` 는 시작·끝 시각만 준다.
+- `room_board()` 는 다음처럼 나눠 준다.
+  - 공개 회의: 예약자 이름·부서를 더 준다.
+  - 제목: 참석자에게만 준다.
+  - 비공개 회의: 관리자에게도 예약자를 주지 않는다.
+- 겹치는 예약을 넣으면 제약 오류로 거부된다. 오류에도 누구의 회의인지는 나오지 않는다.
+
+**리더·부리더** (2026-09-30, `20260930210000_channel_leaders.sql`) — 일반 채널에만 있다. 부서 채널(`#일반` 포함)·DM 에는 없다.
 
 | 할 일 | 공개 일반 채널 | 비공개 일반 채널 |
 |---|---|---|
 | 이름·설명 수정 | 리더 | 리더 |
-| 초대 | 멤버 누구나 | 리더·부리더 |
+| 초대 (`has_invite_right`) | 멤버 누구나 | 리더·부리더 |
 | 내보내기 | 리더(부리더·멤버), 부리더(일반 멤버만) | 같음 |
 | 부리더 지정·해제, 리더 넘기기 | 리더 | 리더 |
 
-- 회사 관리자는 모든 채널에서 다 한다 (리더를 내보내는 것 포함). 나가기는 누구나 (부서 채널 제외).
-- 리더는 처음에 만든 사람이다 (`channels_add_creator`). 마이그레이션이 이미 있던 채널에 만든 사람(없으면 먼저 들어온 멤버)을 리더로 채웠다.
-- **부리더 한도** `sub_leader_limit()` = 멤버 10명당 1명, 최대 5명. `set_sub_leader` 가 찼으면 23514 로 거부한다. **리더를 넘기면 원래 리더가 부리더가 되므로 이때만 한도를 넘을 수 있다** (그 뒤 새로 지정은 막힌다). 멤버가 줄어 한도보다 많아져도 이미 있는 부리더는 그대로다.
-- **리더가 나가거나 내보내지면** 트리거 `memberships_next_leader` 가 먼저 부리더가 된 사람(`role_at`) → 없으면 가장 먼저 들어온 멤버(`joined_at`)를 리더로 올린다. 마지막 멤버까지 나가면 비어 남고, **다음에 들어오는 사람이 리더가 된다** (트리거 `memberships_first_leader`). 채널을 통째로 지울 때는 채널이 먼저 사라져 건너뛴다.
-- **동시에 일어나도 리더가 비지 않게**: 역할을 바꾸는 함수·트리거는 모두 채널 행을 `for update` 로 잠가 차례로 처리한다. 자동 위임은 나가는 중인(잠긴) 후보를 건너뛰고(`skip locked`), 실제로 올렸을 때만 기록한다. 넘기기는 받는 사람 행도 잠근다. 부리더 한도 함수 `sub_leader_limit()` 은 로그인 사용자가 부르지 못한다 (화면은 인원을 직접 센다).
-- 새 화면은 `memberships.role` 을 읽는다. **원격 적용 전에 배포되면** `useChannelMembers` 가 역할 없이 다시 읽어 멤버 목록은 보이고 왕관·⋯ 만 없다 (2026-09-30 검토 반영).
-- **역할은 함수로만 바꾼다**: `role`·`role_at` 에는 insert·update 컬럼 권한이 없다 (넣으면 늘 `member`). `set_sub_leader(channel, user, on)`·`transfer_leader(channel, user)` 는 security definer 로 호출한 사람이 리더(또는 관리자)인지 본다 (아니면 42501).
-- 내보내기 정책은 **지워지는 행의 `role`** 과 내 역할(`my_channel_role()`)을 비교한다.
-- `admin_logs` 에 `grant_sub`·`revoke_sub`·`transfer_leader`(호출한 사람), `auto_leader`(작성자 없음, `target.from` = 나간 리더) 로 남는다.
-- 화면(③ `ChannelInfoPanel`): 이름 옆 채운 왕관 "리더"·테두리 왕관 "부리더", 멤버 옆 `⋯` 에 내가 할 수 있는 것만, 리더에게 "부리더 n / m명", 리더 넘기기 확인 창. 멤버 목록의 역할은 `useChannelMembers` 가 `memberships` UPDATE 를 받아 바로 바꾼다.
-정책끼리 서로를 조회하는 곳(`memberships`, `events`↔`event_attendees`)은 `is_member()`·`is_event_participant()` 같은 security definer 함수로 끊었다.
+- 회사 관리자는 모든 채널에서 다 한다(리더를 내보내는 것 포함). 부서 채널에 남을 넣는 것은 관리자만 한다.
+- 리더는 처음에 만든 사람이다(`channels_add_creator`).
+- 부리더 한도 `sub_leader_limit()` 은 멤버 10명당 1명, 최대 5명이다. 넘으면 23514 다.
+  - 리더를 넘기면 원래 리더가 부리더가 된다. 이때만 한도를 넘을 수 있다.
+- 리더가 나가거나 내보내지면 트리거 `memberships_next_leader` 가 다음 리더를 올린다.
+  - 먼저 부리더가 된 사람이 리더가 된다. 없으면 가장 먼저 들어온 멤버가 된다.
+  - 방이 비면 다음에 들어오는 사람이 리더가 된다(`memberships_first_leader`).
+- 동시에 일어나도 리더가 비지 않게 한다.
+  - 역할을 바꾸는 함수·트리거는 모두 채널 줄을 `for update` 로 잠근다.
+  - 자동 위임은 나가는 중인 후보를 건너뛴다(`skip locked`).
+- 역할 칸(`role`·`role_at`)에는 넣기·고치기 권한이 없다. 넣으면 늘 `member` 로 들어간다.
+- 내보내기 정책은 **지워지는 줄의 `role`** 과 내 역할을 비교한다.
+- 바뀌면 `admin_logs` 에 남는다: `grant_sub`·`revoke_sub`·`transfer_leader`·`auto_leader`.
 
-모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과). 초대 권한 항목 14개를 더해 **62개, 2026-09-29 전부 통과** (WU-27). 2026-09-30 초대 권한 항목을 리더·부리더 항목으로 바꿔 **76개 전부 통과** (WU-39, 원격 적용 뒤).
+**예전 초대 권한** (2026-09-29, `20260929150000_invite_rights.sql`)
 
-**공지 채널** (2026-10-01, `20261001160000_notice_channel.sql`, WU-46, 사용자 요청 "사내 공지를 담당하는 부서의 담당자가 전체에 공지할 수 있는 공지 채널"):
-`channels.notice_unit_id`(공지 담당 부서)가 있는 공개·비공개 채널이 공지 채널이다. 지금은 시드의 `#공지사항` 하나 (담당 경영지원본부, 리더 노영훈·부리더 정대현).
-- **새 글(최상위 메시지)**: 담당 부서(하위 부서 포함) 사람·그 채널 리더·부리더·회사 관리자만. 트리거 `messages_check_notice` 가 **쓴 사람(`user_id`) 기준**으로 검사하므로 RLS 를 건너뛰는 service role(첨부 API·시드·검사 스크립트)에도 걸린다 → 42501
-- **답글·리액션·고정**은 멤버 누구나 (공지에 대한 질문은 답글로)
-- **멤버**: 공지 채널이 되면(`notice_unit_id` 를 넣거나 바꾸면) 모든 사람을 넣고, 새로 가입한 사람도 넣는다 (#일반 과 같게). **본인이 나가지 못한다** (`memberships_keep_notice`, 관리자·리더가 내보내는 것과 채널을 지울 때는 된다)
-- 담당 부서는 화면에서 바꾸지 않는다 — `notice_unit_id` 에 수정 권한을 주지 않았다 (SQL·시드로만)
-- 화면(① `ChatPane`): `can_post_in(channel)` 이 false 면 입력창 대신 "📢 공지 채널입니다…" 안내 (`components/chat/usePostRight.ts`). 스레드 답글 입력창은 그대로
-- 대시보드 회사 공지 상자 (2026-10-01 WU-50): `notice_unit_id` 가 있고 내가 멤버인 채널의 최상위 메시지를 읽는다 (모든 사람이 멤버라 RLS 로 읽힌다) — 7절 "대시보드"
+- 처음에는 `memberships.can_invite` 로 초대 권한을 따로 주었다.
+- 2026-09-30 부터 위의 리더·부리더로 바꿨다. 칸과 기록 트리거는 남았지만, 고치는 권한과 정책은 거뒀다.
 
-**관리자 권한 상승 방지**: `profiles.role` 은 사용자가 수정할 수 없게 컬럼 권한이나 트리거로 막는다.
+**공지 채널** (2026-10-01, `20261001160000_notice_channel.sql`) — `channels.notice_unit_id` 가 있는 채널이다. 지금은 `#공지사항` 하나이고, 담당은 경영지원본부, 리더 노영훈·부리더 정대현이다.
+
+- **새 글(최상위 메시지)**: 담당 부서(하위 부서 포함) 사람, 그 방 리더·부리더, 회사 관리자만 쓴다.
+  - 트리거 `messages_check_notice` 가 **쓴 사람(`user_id`) 기준**으로 본다. 그래서 RLS 를 건너뛰는 service role 에도 걸린다.
+- **답글·리액션·고정**: 멤버 누구나.
+- **멤버**: 모든 사람이 들어가고, 새로 가입한 사람도 들어간다. 본인은 나가지 못한다(`memberships_keep_notice`).
+- 담당 부서는 화면에서 바꾸지 않는다(`notice_unit_id` 수정 권한 없음).
+
+**칸 권한을 먼저 거두고 필요한 칸만 다시 준다** (2026-09-29 DB v1)
+
+- 그래서 클라이언트는 `user_id`·`created_by`·`role`·`id`·`created_at` 같은 칸을 아예 보낼 수 없다.
+- 표마다 무엇을 줬는지는 마이그레이션에 적혀 있다.
+- **새 표는 `enable row level security` 를 꼭 같이 쓴다.** 정책만 만들고 RLS 를 안 켜면 정책이 무시된다(13절 함정, 2026-09-29 잡무 수첩에서 겪음).
+
+### 5-6. 어떻게 확인했나
+
+검사 스크립트는 가상 사용자를 만들어 **허용되는 것과 거부되는 것을 둘 다** 시험하고, 끝나면 만든 것을 지운다.
+
+**2026-10-01 운영 DB·운영 URL 대상, 모두 통과**
+
+| 검사 | 개수 | 비고 |
+|---|---|---|
+| `check:db` | 76 | |
+| `check:step1` | 12 | 로그인 기준으로 바꾼 뒤 |
+| `check:notify` | 21 | |
+| `check:events` | 21 | 실제 `pg_cron` 포함 |
+| `check:chat` | 28 | |
+| `check:schedule` | 29 | |
+| `check:profile` | 38 | |
+| `check:chores` | 18 | |
+| `check:attach` | 20 | 운영 URL |
+| `check:ai` | 19 | 운영 URL, 실제 OpenAI |
+
+- 가장 중요한 거부 시험
+  - 비회원은 메시지·DM·첨부를 API 로도 0건만 받는다.
+  - 남의 id 로 쓰면 거부된다.
+  - 멤버에서 빠지면 **이미 열려 있던 실시간 구독**으로도 새 메시지가 0건 온다.
+  - 스스로 관리자가 될 수 없다.
+  - 로그인 안 하면 아무것도 못 읽는다.
+- 운영 DB 카탈로그로 확인한 것 (2026-10-01): 표 21개 모두 RLS 가 켜져 있다(`pg_class.relrowsecurity`).
 
 ## 6. 실시간 동기화
 
-### 보내기 (멱등)
+> **쉽게 말하면** — 원칙은 세 가지다.
+>
+> 1. **번호표** — 메시지는 번호표(`id`) 순서로 줄을 선다. 화면은 "마지막으로 받은 번호"를 기억해 둔다. 연결이 끊겼다 붙으면 **"그 번호 다음 것부터 주세요"** 하고 한 번 더 묻는다. 그래서 놓친 것이 채워진다.
+> 2. **송장 번호** — 보낼 때는 내가 만든 **택배 송장 번호**(`client_id`)를 붙인다. 같은 택배를 두 번 보내도 DB 가 한 번만 받는다. 그래서 "다시 보내기"를 눌러도 겹치지 않는다.
+> 3. **방송국** — 새 메시지는 DB 가 바뀌는 순간 **방송**(Supabase Realtime)으로 온다. 방송국은 듣는 사람마다 "이 방 명부에 있나"(RLS)를 다시 확인한다. 그래서 명부에 없는 사람은 못 듣는다.
+>
+> 진실은 언제나 **DB 한 곳**에 있다. 화면은 DB 를 따라 그릴 뿐이다(1절 원칙 1).
 
-1. 클라이언트가 `client_id`(uuid) 를 만들고, 화면에 "보내는 중"으로 먼저 그린다.
-2. `messages` 에 `client_id` 를 넣어 저장한다. 같은 `client_id` 가 이미 있으면 무시한다 (`on conflict do nothing`).
-3. 성공하면 서버의 `id` 로 바꾼다. 실패하면 "전송 실패 · 다시 보내기"를 보여 준다. 다시 보내도 `client_id` 가 같으니 한 번만 저장된다.
+이 절은 2026-10-01 코드(`components/`)와 라이브러리(`@supabase/supabase-js`·`realtime-js` 2.117.2)를 대조해 썼다. 숫자(5초·50건·1000건·2초·30초·75초)는 모두 코드 상수 그대로다.
 
-### 받기
+### 6-1. 보내기 — 같은 메시지는 한 번만
 
-- 대화를 열면 `messages` INSERT 를 `channel_id` 필터로 구독한다.
-- 받은 메시지는 `id` 를 키로 한 목록에 합친다. 같은 `id` 가 두 번 와도 한 번만 그린다.
-- 내 알림(`notifications`)과 그 채널의 `read_positions` 도 구독한다.
+색 띠는 단계를 뜻한다. 파랑은 보통 전송, 빨강은 응답을 못 받은 경우다.
 
-### 재접속
+```mermaid
+sequenceDiagram
+  autonumber
+  box rgba(37,99,235,0.12) 보내는 사람 A
+    participant A as A 화면
+  end
+  box rgba(22,163,74,0.12) Supabase
+    participant DB as Postgres (RLS·트리거)
+    participant RT as Realtime
+  end
+  box rgba(124,58,237,0.12) 받는 사람 B
+    participant B as B 화면
+  end
+  rect rgba(37,99,235,0.08)
+    A->>A: client_id(uuid) 만들고 "보내는 중…" 을 먼저 그림
+    A->>DB: upsert {client_id, channel_id, body}<br/>같은 client_id 면 무시, 5초 제한
+    DB->>DB: 정책: 멤버? user_id = 나? 글자 있음?<br/>트리거: 답글 확인·공지 권한·알림·답글 수
+    DB-->>A: 저장된 줄 (id = 번호표)
+    A->>A: client_id 로 "보내는 중" 을 지우고 id 자리에 넣음
+    DB-->>RT: INSERT 이벤트
+    RT->>RT: 구독자마다 RLS 로 거름 (멤버만)
+    RT-->>A: 같은 줄 → id 가 같아 한 번만 그림
+    RT-->>B: 새 메시지 → id 순서 자리에 그림
+  end
+  rect rgba(220,38,38,0.10)
+    Note over A,DB: 응답을 못 받으면 (5초 초과·연결 끊김) "전송 실패 · 다시 보내기"
+    A->>DB: 같은 client_id 로 다시 upsert
+    DB-->>A: 이미 있음 → 0줄 → client_id 로 저장된 줄을 읽어 합침
+  end
+```
 
-- 연결 상태가 끊김 → 다시 연결됨으로 바뀌면, **마지막으로 받은 `id` 보다 큰 메시지만** 조회해서 합친다.
-- 알림도 같은 방식으로 마지막 알림 `id` 이후만 받아 온다. 끊긴 동안 쌓인 알림은 하나씩 띄우지 않고 "알림 N개" 토스트 하나로 묶는다.
-- 연결 상태는 화면 위쪽에 "연결됨 / 끊김 / 재연결 중"으로 표시한다 (F1-4).
+1. `client_id` 는 브라우저가 만든다(`newClientId()`). `crypto.getRandomValues` 로 만든 v4 uuid 이고, IP 주소(http)로 접속해도 된다.
+   - 브라우저가 오프라인(`navigator.onLine` false)이면 요청 없이 바로 실패로 표시한다.
+2. 저장은 `upsert(…, { onConflict: "client_id", ignoreDuplicates: true })` 다.
+   - DB 로는 `INSERT … ON CONFLICT (client_id) DO NOTHING` 이 된다.
+   - `client_id` 는 유일하므로, 같은 요청이 두 번 와도 줄은 하나다.
+   - 시간 제한은 `AbortSignal.timeout(5000)` 이다.
+3. 응답과 실시간 이벤트 가운데 **먼저 온 쪽**이 "보내는 중"을 지우고 서버 줄을 넣는다(`merge`: `id` 를 키로 합치고 `id` 순서로 정렬). 늦게 온 쪽은 같은 `id` 를 덮어쓸 뿐이다.
+4. 실패하면 "전송 실패 · [다시 보내기] [삭제]"가 뜬다.
+   - **다시 보내기는 같은 `client_id`** 를 쓴다. 이미 저장돼 있었다면 0줄이 오고, `client_id` 로 저장된 줄을 읽어 합친다.
+   - 삭제는 화면 목록에서만 뺀다.
+5. **첨부·스레드 답글**도 같은 `client_id` 규칙을 따른다.
+   - 첨부는 서버가 받는다. `post_attachment_message()` 가 메시지는 `ON CONFLICT (client_id)`, 첨부는 `ON CONFLICT (storage_path)` 로 한 번에 넣는다.
+   - **첨부 전송에는 5초 제한이 없다.**
+6. 멱등 흐름 밖의 보내기가 두 곳 있다. 매번 새 `client_id` 로 한 번만 보낸다.
+   - 잡무 수첩 "채널에 올리기"
+   - 일정 "채팅에 공유"
 
-### 검증해야 할 가정
+**확인 (2026-10-01 운영 URL, 이서연 계정 + 임시 사용자 A)**
 
-- Realtime 이 구독자마다 RLS 를 적용하는지, **멤버에서 빠진 뒤 기존 연결로 새 메시지가 오지 않는지** 1일차에 직접 확인한다 (Step 4 통과 조건). 안 되면 멤버 제거 시 해당 사용자의 구독을 끊는 방법을 따로 만든다.
-  → **확인함 (2026-09-29, `npm run check:db`)**: 비회원 C 와 익명 구독에는 이벤트가 0건 왔다. 관리자가 B 를 뺀 뒤 A 가 보낸 메시지는 B 의 열려 있던 구독에 0건 왔다. 따로 구독을 끊을 필요는 없다.
-  단, `memberships` 의 DELETE 이벤트는 RLS 를 거치지 않고 기본 키(`channel_id`·`user_id`)가 구독자 모두에게 간다 (Supabase 의 동작). 누가 어느 채널에서 나갔는지 정도가 보인다.
+- 끊긴 상태에서 보내면 "전송 실패"가 뜨고, 연결 뒤 다시 보내면 DB 에 1건만 남는다.
+- **서버에는 저장됐는데 응답만 잃어버린 경우**도 시험했다(fetch 를 가로채 응답을 버림). 실시간 이벤트가 실패 표시를 지워 1건만 남았다.
+- 시험 13건이 모두 DB 에 한 번씩만 있었다.
+
+### 6-2. 받기 — 처음 50건, 위로 올리면 50건씩
+
+```mermaid
+flowchart LR
+  open(["대화방을 엶"]) --> sub["room:채널 구독<br/>messages INSERT·UPDATE<br/>attachments INSERT"]
+  sub -- SUBSCRIBED --> first["처음 불러오기<br/>최상위 메시지 id 내림차순 50건"]
+  first --> show["id 오름차순으로 그림<br/>id 가 같으면 한 번만"]
+  live["실시간 INSERT"] --> show
+  up(["위로 올림·<br/>이전 메시지 더 보기"]) --> older["id < 가장 오래 받은 것<br/>50건 (키셋)"] --> show
+  jump(["메시지로 이동 ?m="]) --> gapfill["사이를 1000건씩 채우고<br/>위로 10건 더"] --> show
+
+  classDef act fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  classDef query fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef screen fill:#FEF9C3,stroke:#CA8A04,color:#713F12
+  classDef rt fill:#E0F2FE,stroke:#0284C7,color:#0C4A6E
+  class open,up,jump act
+  class sub,live rt
+  class first,older,gapfill query
+  class show screen
+  linkStyle 0,1,2 stroke:#16A34A,stroke-width:2px
+  linkStyle 3 stroke:#0284C7,stroke-width:2px
+  linkStyle 4,5,6,7 stroke:#2563EB,stroke-width:2px
+```
+
+- 조회는 모두 "이 방(`channel_id`)의 최상위(`parent_id is null`) 메시지 + 첨부"다. 답글은 스레드 패널이 따로 받는다(`thread:<부모 id>` 구독, 처음 1000건).
+- **전체를 받지 않는다.**
+  - 처음에 `order=id.desc&limit=50` 으로 받는다.
+  - 위로 올리면 `id=lt.<가장 오래 받은 id>&order=id.desc&limit=50` 이다. 번호를 기준으로 자르는 **키셋 페이지네이션**이다.
+  - 맨 위 120px 안으로 들어오거나 버튼을 누를 때 부른다.
+  - 2026-10-01 운영 URL `#백엔드팀`(최상위 151건)에서 네트워크 요청이 정확히 이 모양인 것을 확인했다(50 → 100 → 150).
+- 실시간 UPDATE 는 답글 수(`reply_count`)가 오르거나 본문을 고칠 때 온다.
+  - **받아 둔 범위보다 오래된 메시지의 UPDATE 는 넣지 않는다**(2026-10-01 고침). 넣으면 목록 맨 위에 그 메시지만 끼어 사이가 비고, 위로 올려도 채워지지 않았다.
+- messages 의 DELETE 는 구독하지 않는다. 메시지는 지우지 않고 `deleted_at` 으로 숨기는데, 지우는 화면은 아직 없다.
+- 시험 결과(1만 건 채널의 첫 조회 44ms 등)는 WORK_UNITS "실측 기록"에 있다.
+
+### 6-3. 끊겼다 다시 붙을 때 — 마지막 번호 다음부터
+
+```mermaid
+flowchart LR
+  have["받아 둔 것<br/>… 101 · 102 · 103"] --> cut{{"연결 끊김"}} --> back["다시 붙음<br/>SUBSCRIBED"] --> ask["id > 103 을<br/>오름차순 1000건씩<br/>1000건보다 적게 올 때까지"] --> merge["104 · 105 · 106 합침<br/>id 로 중복 없이 정렬"]
+  back -. 2초 뒤 한 번 더 .-> ask
+
+  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef bad fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
+  classDef step fill:#DBEAFE,stroke:#2563EB,color:#1E3A8A
+  class have,merge ok
+  class cut bad
+  class back,ask step
+  linkStyle 0 stroke:#16A34A,stroke-width:2px
+  linkStyle 1 stroke:#DC2626,stroke-width:2px
+  linkStyle 2,3 stroke:#2563EB,stroke-width:2px
+  linkStyle 4 stroke:#2563EB,stroke-width:2px,stroke-dasharray:4 3
+```
+
+- **구독될 때마다**(처음 포함) `sync()` 를 바로 한 번, **2초 뒤 한 번 더** 부른다.
+  - 구독 직후 1~2초 사이에 저장된 메시지의 이벤트가 빠질 수 있어서다(2026-09-28 첫 시험에서 겪음).
+  - 끊겼다 붙으면 supabase-js 가 다시 참여하고 SUBSCRIBED 가 다시 오므로, 같은 일이 저절로 한 번 더 일어난다.
+- `sync()` 는 둘 중 하나를 한다.
+  - 처음이면 최근 50건을 받는다.
+  - 처음이 아니면 **`id > 마지막으로 받은 id`** 를 1000건(Supabase 한 번 조회 상한)씩 끝까지 이어 받는다.
+  - "처음인가"는 따로 기억한다(`loadedRef`). 2026-10-01 고침 — 전에는 "마지막 id 가 0인가"로 봐서, 구독 전에 보낸 내 메시지가 먼저 합쳐지면 처음 50건을 건너뛰었다.
+- **알림**은 다시 붙을 때 마지막 알림 id 이후를 **50건 한 번** 받는다.
+  - 2건 이상이면 "알림 N개" 하나로 묶어 띄운다.
+  - 배지 숫자는 DB 에서 다시 센다.
+- **미읽음 배지·명부·읽음 위치·스레드 답글**은 붙을 때마다 한 번 다시 불러온다. 2초 뒤 한 번 더 하는 것은 메시지 본문만이다.
+
+**연결 상태 표시** (채팅 머리 오른쪽 알약, `ConnectionStatus`) — 판정에는 `room:<채널>` 구독 상태와 브라우저 `online`·`offline` 이벤트만 쓴다.
+
+```mermaid
+flowchart LR
+  c0(["처음 연결 중<br/>알약 없음"])
+  ok(["연결됨<br/>알약 없음"])
+  re(["재연결 중…<br/>노랑 알약"])
+  off(["끊김 · 메시지가 안 갈 수 있어요<br/>빨강 알약"])
+  c0 -- SUBSCRIBED --> ok
+  ok -- CHANNEL_ERROR · TIMED_OUT --> re
+  re -- SUBSCRIBED --> ok
+  ok -- 브라우저 offline --> off
+  re -- 브라우저 offline --> off
+  off -- "online + 구독이 살아 있음 (2026-10-01 고침)" --> ok
+  off -- online + 구독이 끊김 --> re
+  ok -- CLOSED --> off
+
+  classDef start fill:#F3F4F6,stroke:#6B7280,color:#1F2937
+  classDef good fill:#DCFCE7,stroke:#16A34A,color:#14532D
+  classDef warn fill:#FEF3C7,stroke:#D97706,color:#78350F
+  classDef bad fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D
+  class c0 start
+  class ok good
+  class re warn
+  class off bad
+  linkStyle 0,2,5 stroke:#16A34A,stroke-width:2px
+  linkStyle 1,6 stroke:#D97706,stroke-width:2px
+  linkStyle 3,4,7 stroke:#DC2626,stroke-width:2px
+```
+
+- TIMED_OUT 은 10초 안에 참여 응답이 없을 때다. heartbeat 는 25초마다 간다(realtime-js 기본값).
+- **2026-10-01 운영 URL 시험에서 찾은 버그 (고침)**
+  - 무엇이 문제였나: `online` 이 오면 무조건 "재연결 중"으로 바꿨다. 소켓이 끊기지 않고 신호만 왔다 갔으면(짧은 와이파이 끊김, 개발자 도구의 오프라인 전환) SUBSCRIBED 가 다시 오지 않아 **"재연결 중…"이 끝없이 남았다**. 메시지는 계속 오갔다.
+  - 지금: `online` 때 구독이 `joined` 이고 소켓이 연결돼 있으면 바로 "연결됨"으로 돌리고, `sync()` 로 끊긴 동안 것을 채운다(로컬에서 0.3초 안에 돌아오는 것 확인).
+- CLOSED 는 "끊김"만 표시하고 다시 구독하지 않는다(12절). 다시 들어가는 것은 회사 접속자 채널(`presence:company`, 3초 뒤)뿐이다.
+
+### 6-4. 읽음·안 읽은 사람 수·미읽음 배지
+
+- **내가 어디까지 읽었나**
+  - 메시지 목록이 스크롤·새 메시지·탭이 다시 보일 때마다 **400ms 뒤 한 번** 잰다.
+  - 화면 안에 걸친 메시지 가운데 가장 아래 것을 `mark_read(channel, id)` 로 올린다. 탭이 보일 때(`visibilityState === "visible"`)만 잰다.
+  - DB 트리거가 뒤로 가는 값은 버린다.
+  - 실패하면 다음에 다시 보낸다.
+- **안 읽은 사람 수(메시지 옆 숫자)**
+  - 방 멤버 가운데 작성자를 빼고, 읽음 위치가 그 메시지 `id` 보다 작은 사람 수다.
+  - 남의 읽음 위치는 `reads:<채널>` 구독(`read_positions` 변경)으로 받는다.
+  - 2026-10-01 운영 URL 에서 확인했다. A 가 읽자 이서연 메시지 옆 "1" 이 새로고침 없이 사라졌다.
+- **채널 목록 미읽음 배지**
+  - 방마다 "내 읽음 위치보다 큰, 최상위이고 안 지운, 남이 쓴" 메시지 수를 `count` 로 센다.
+  - `unread:<나>` 구독이 새 메시지·내 읽음 위치 변경을 받는다. 그러면 그 방만 300ms 모아 다시 센다.
+  - 보고 있는 대화에는 숫자를 띄우지 않는다. 99를 넘으면 99+ 다.
+
+### 6-5. 알림
+
+- 알림은 사람이 아니라 **DB 트리거**가 만든다.
+  - 메시지(멘션·DM·스레드 답글)에서, 그리고 일정(초대·변경·취소·불참)에서 만든다.
+  - 시작 전 알림은 `pg_cron` 이 1분마다 만든다(`send_event_reminders()`).
+  - 끈 방(`channel_mutes`)의 메시지 알림은 아예 만들지 않는다.
+- `notifications:<나>` 구독이 INSERT 를 받는다(`user_id=eq.<나>`).
+- **보고 있다**는 탭이 보이고 창에 초점이 있다는 뜻이다(`visibilityState === "visible" && document.hasFocus()`). 띄우는 방법은 이렇게 고른다.
+  - 그 메시지를 보고 있으면: 띄우지 않고 바로 읽음 처리한다.
+  - 보고 있으면: 토스트(6초, 최대 3개)
+  - 안 보고 있고 브라우저 알림 권한이 있으면: 브라우저 알림. `tag` 가 알림 id 라 탭이 여러 개여도 하나로 합쳐진다.
+  - 그 밖: 탭 제목 숫자 `(N)` 만 붙인다.
+  - 내 상태가 방해 금지면: 아무것도 띄우지 않는다. 목록·배지·탭 제목 숫자는 그대로 늘어난다.
+- 화면에 알림의 메시지가 보이면 누르지 않아도 읽음이 된다(IntersectionObserver).
+
+### 6-6. 접속자 (presence)
+
+- **회사 접속자 채널 `presence:company`**
+  - key 는 내 user id 이고, `{status, at}` 만 보낸다.
+  - **30초마다** 다시 보낸다.
+  - 읽는 쪽은 **75초** 넘게 갱신 없는 기록을 버린다. 탭을 닫을 때 나가기(untrack)가 서버에 닿지 않는 일이 있어서다(4절 "내 프로필").
+  - "오프라인으로 표시"면 나간다. 그래서 남에게는 접속을 끊은 사람과 똑같이 보인다.
+- 채널 머리 "총인원 N명 · 접속 N명 ●●●" 은 그 방 멤버 가운데 회사 접속자 채널에 있는 **사람** 수다.
+- `room:<채널>` 에도 presence 가 있다(key 는 탭마다 새 값). 세기는 하지만 지금은 어디에도 그리지 않는다.
+
+### 6-7. 구독 목록
+
+모든 구독은 `components/` 에 있다. Supabase broadcast 는 쓰지 않는다.
+
+| 구독 이름 | 받는 것 | 받으면 | 어디서 |
+|---|---|---|---|
+| `room:<채널>` | messages INSERT·UPDATE, attachments INSERT (`channel_id=eq.`), presence | 메시지 합치기, 첨부 붙이기 | `chat/useMessages.ts` |
+| `thread:<부모>:<꼬리>` | messages INSERT (`parent_id=eq.`) | 답글 목록에 합치기 | `chat/useThread.ts` |
+| `reads:<채널>:<꼬리>` | read_positions 모든 변경 (`channel_id=eq.`) | 사람마다 큰 값만 남김 → 안 읽은 사람 수 | `chat/useReadStatus.ts` |
+| `members:<채널>:<꼬리>` | memberships INSERT·UPDATE (`channel_id=eq.`), DELETE (거르지 못함) | 명부·역할 다시 그림 | `chat/useChannelMembers.ts` |
+| `reactions:<채널>:<꼬리>` | message_reactions INSERT·UPDATE (`channel_id=eq.`) | 달기·떼기(`removed_at`) | `chat/useReactions.ts` |
+| `notifications:<나>:<꼬리>` | notifications INSERT (`user_id=eq.`), DELETE | 토스트·브라우저 알림·목록 | `notifications/useNotifications.ts` |
+| `unread:<나>:<번호>` | messages INSERT·UPDATE (RLS 로 내 방만), 내 read_positions | 그 방 미읽음 다시 세기 | `sidebar/unread.ts` |
+| `memberships:<나>:<번호>` | 내 memberships 모든 변경 | 채널·DM 목록 다시 불러오기 | `sidebar/channelSource.ts` |
+| `presence:company` | presence | 사람마다 상태 점 | `profile/presence.ts` |
+
+- **꼬리**(`newClientId()`·번호)를 붙이는 이유가 있다. `supabase.channel(이름)` 은 같은 이름이 있으면 **이미 구독한 채널을 돌려준다**. 거기에 `.on()` 을 붙이면 오류로 페이지가 멈춘다(13절 함정).
+- 모두가 같은 이름으로 들어가야 세어지는 presence 채널(`room:`·`presence:company`)에는 꼬리를 붙이지 않는다.
+- 실시간이 아니라 **다시 불러오기**로 처리하는 것도 있다.
+  - 고정 메시지·채널 이름과 설명: 내가 고칠 때
+  - 즐겨찾기·알림 끄기: 본인 것이라 처음 한 번
+  - 사람 명단: 60초 캐시
+  - 일정: 탭이 다시 보일 때
+  - 회의실 현황: 5분마다
+
+### 6-8. 확인한 가정
+
+- **실시간도 RLS 를 지키는가** — 확인함(2026-09-29 `check:db`, 2026-10-01 다시 통과).
+  - 비회원 구독에는 0건이 왔다.
+  - 관리자가 B 를 뺀 뒤 A 가 보낸 메시지는 **B 의 열려 있던 구독에 0건** 왔다. 따로 구독을 끊을 필요가 없다.
+  - 로그인 안 한 구독은 2026-10-01부터 아무 이벤트도 못 받는다.
+- **DELETE 이벤트는 RLS 를 거치지 않는다** (Supabase 동작).
+  - 기본 키만 모든 구독자에게 간다. 그래서 `memberships` DELETE 로 "누가 어느 방에서 나갔는지" 정도가 보인다.
+  - 리액션은 이것 때문에 지우지 않고 `removed_at` 을 쓴다.
+- **전달 지연**: 2026-10-01 운영 URL 에서 쟀다(이서연 화면 ↔ 임시 사용자 A, 각 5건). 둘 다 2초 기준 안이다.
+  - A→B: 최대 817ms
+  - B→A: 최대 435ms
+  - 검사 스크립트(`check:step1`)는 최대 1,112ms 였다.
+  - 기록은 WORK_UNITS "실측 기록"에 있다.
 
 ## 7. 기능별 구현
 
@@ -425,7 +1128,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 - 만들기: `messages_notify()` 트리거 (`20260929130000_message_notifications.sql`). 멘션은 본문을 정규식 `(?:^|[^[:alnum:]_])@([A-Za-z0-9_가-힣-]+)` 로 뽑아 그 채널 멤버의 handle 과 대소문자 없이 맞춘다. 익명(Step 1) 메시지는 알림을 만들지 않는다.
 - 받기·띄우기: `components/notifications/useNotifications.ts` 가 최근 50건과 안 읽은 수를 불러 두고 `user_id=eq.<나>` 로 구독한다. 다시 연결되면 마지막 알림 id 이후만 받아 여러 건이면 "알림 N개" 토스트 하나로 묶는다.
   미리보기는 메시지·채널·회의를 RLS 로 읽어 만든다 → 채널에서 빠졌으면 "볼 수 없는 메시지입니다".
-- 이동 주소는 `/c/{channel_id}?m=` 대신 **`/?m={message_id}`** 로 한다. 채널 주소(`/c/...`)가 아직 없고, ① 이 `?m=` 을 받으면 그 메시지의 채널로 바꾼 뒤 이동한다 (답글이면 스레드도 연다).
+- 이동 주소는 **`/chat?m={message_id}`** 다 (2026-09-30 화면 개편 전에는 `/?m=`, 옛 주소는 넘겨 준다). ① 이 `?m=` 을 받으면 그 메시지의 채널로 바꾼 뒤 이동한다 (답글이면 스레드도 연다). 일정 알림은 `/calendar?e=<일정 id>`.
 - 도착할 때: 최상위 메시지는 **채널이 같으면**, 답글(멘션 답글 포함)은 **그 스레드가 열려 있으면** 바로 읽음 처리한다. 예전에는 채널만 같으면 답글도 읽음이 돼서 스레드를 안 열었는데 알림이 사라졌다 (2026-09-29 고침). 답글인지는 미리보기를 만들 때 `messages.parent_id` 로 안다.
 - 화면에 보이면 읽음: `useNotifications` 가 안 읽은 알림(최근 50건 안)의 메시지를 `[data-message-id]` 로 찾아 `IntersectionObserver` 로 지켜본다. 조금이라도 보이고 `isLooking()` 이면 읽음. 메시지가 나중에 그려지는 것(채널 바꾸기·스레드 열기·이전 메시지)은 `MutationObserver` 로 다시 찾는다. **`MessageItem` 의 `data-message-id` 는 ① 과 ③ 사이의 약속이라 이름을 바꾸면 이것이 멈춘다.** 최근 50건 밖의 옛 알림은 목록에서 누르거나 "모두 읽음"으로 지운다.
 - "알림 켜기" 안내는 권한이 아직 없을 때(default) 화면 아래에 한 번 보이고, "나중에"를 누르면 이 브라우저에서는 다시 안 보인다 (localStorage). 거부(denied)·지원 안 함(IP 접속 등)이면 알림 목록 위에 켜는 방법을 적는다.
@@ -512,7 +1215,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - 경로에 올린 사람의 `user_id` 를 넣었다. 확정 API 는 **자기가 올린 경로만** 받는다 (남이 올린 파일을 자기 메시지로 확정하지 못하게).
 - 파일 이름은 원래 이름을 `attachments.file_name` 에만 두고, Storage 경로에는 영문·숫자·`_`·`-` 로 바꾼 이름을 쓴다. Supabase Storage 는 한글 등 ASCII 밖 글자가 든 경로를 거부한다고 알려져 있어서 처음부터 피했다 (직접 확인하지는 않았다).
-- 확정은 `post_attachment_message()` 함수(service role 만)가 **메시지와 첨부 행을 한 트랜잭션으로** 넣는다. 따로 넣으면 실시간으로 메시지를 먼저 받은 화면이 첨부 없는 메시지를 그린다. 첨부 전용 메시지는 본문이 빈 문자열이다.
+- 확정은 `post_attachment_message()` 함수(service role 만)가 **메시지와 첨부 행을 한 트랜잭션으로** 넣는다 (반쯤 저장된 상태가 DB 에 남지 않게). 다만 실시간 이벤트는 `messages` 와 `attachments` 가 따로 오므로, 받는 화면에는 메시지가 먼저 그려지고 첨부가 곧바로 붙을 수 있다 (`useMessages` 가 첨부를 메시지 id 별로 따로 모은다). 보낸 사람 화면은 확정 API 응답의 메시지·첨부를 함께 합친다. 첨부 전용 메시지는 본문이 빈 문자열이다.
 - `attachments` 도 실시간 구독 대상에 넣었다. 화면은 메시지와 첨부를 따로 받아 `message_id` 로 붙인다. 처음 불러올 때는 `messages` 조회에 `attachments(...)` 를 붙여 한 번에 받는다.
 - 시그니처는 파일 전체가 아니라 **앞 8바이트만** 서명 URL 에 `Range` 요청으로 읽는다.
 - 다시 보내기: 같은 `client_id` 메시지에 이미 첨부가 있으면, 새로 올린 파일은 지우고 먼저 저장한 것을 돌려준다 (첫 확정이 성공했는데 응답만 못 받은 경우).
@@ -559,7 +1262,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - 헤더 검색창에서 **두 글자부터**, 입력이 300ms 멈추면 `ilike '%검색어%'` (최근 것부터 30건, 지운 메시지 제외, 답글 포함). "이 대화에서만"을 켜면 `channel_id` 로 좁힌다.
 - `%` `_` `\` 는 글자 그대로 찾도록 막는다. **PostgREST 는 like 패턴의 `*` 를 `%` 로 바꾸고 막을 방법이 없다** → `*` 가 든 검색어는 `*` 로 나눈 가장 긴 조각으로 넓게 찾고, 받아 온 뒤 검색어 전체가 들어 있는지 다시 거른다.
-- 결과를 누르면 `/?m=<메시지 id>` 로 보낸다 (① 이 채널을 바꾸고 강조, 답글이면 스레드). ① 은 채널을 id·이름만으로 바꾸므로, ② 의 채널·DM 목록이 종류(비공개·DM)와 상대 이름을 채운다.
+- 결과를 누르면 `/chat?m=<메시지 id>` 로 보낸다 (① 이 채널을 바꾸고 강조, 답글이면 스레드). ① 은 채널을 id·이름만으로 바꾸므로, ② 의 채널·DM 목록이 종류(비공개·DM)와 상대 이름을 채운다.
 - 검색창을 다시 누르면 같은 검색어라도 새로 찾는다 (그 사이 새 메시지·가입한 채널).
 - 걸린 시간을 결과 위에 보여 준다 (예: `4건 · 0.04초`).
 - 멘션은 본문에 `@아이디` 로 저장된다 (아래 "멘션"). 결과는 `@이름` 으로 바꿔 보여 주고, 검색어가 들어 있는지도 **이름으로 바꾼 글**로 거른다 (숨은 아이디로는 걸리지 않게). 이름이 검색어를 담은 사람(최대 5명)의 `@아이디` 도 함께 찾는다 → "김송이"로 `@김송이` 를 부른 메시지가 찾아진다 (2026-09-29).
@@ -772,14 +1475,33 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 ## 12. 알려진 메시지 유실·중복 조건
 
-제출물 항목이다. 테스트하면서 채운다.
+제출물 항목이다. 6절의 구조에서 **어떤 때 메시지가 빠지거나 두 번 보일 수 있는지** 적는다.
 
-| 조건 | 결과 | 대응 |
-|---|---|---|
-| 구독 직후 1~2초 | 그 사이에 저장된 메시지의 실시간 이벤트가 빠질 수 있다 (2026-09-28, 테이블을 만든 직후 첫 테스트에서 A 0건·B 1건만 받음. 재실행은 10건 모두 받음) | 구독되면 바로 한 번, 2초 뒤 한 번 더 `id` 로 동기화한다. 빠진 것은 여기서 채워진다 |
-| 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패". 실제로는 저장됐을 수 있다 | 저장됐으면 실시간 이벤트가 와서 실패 표시가 사라진다. "다시 보내기"를 눌러도 같은 `client_id` 라 한 번만 저장된다 (2026-09-28 테스트 통과) |
-| 전송 실패한 메시지가 있는 채로 새로고침 | 실패한 메시지가 화면에서 사라진다 (브라우저에만 있었음) | 알려진 한계 |
-| 재연결까지 1000건 넘게 쌓임 | 한 번 조회로는 Supabase 상한(1000행)까지만 온다 | 마지막 `id` 이후를 1000건씩 끝까지 이어 받는다 (2026-09-29 코드 수정. 예전에는 500건에서 멈췄다). 1000건 넘는 경우는 아직 시험하지 않았다 |
+- **근거**: 운영 URL 시험(2026-09-28~10-01)과 코드 대조(2026-10-01, `useMessages`·`useThread`·`useNotifications`·`useReactions`·`unread`)
+- **상태**: "고침"은 그날 고친 것, "한계"는 알고 남긴 것이다.
+
+**저장(DB)에서는 중복이 생기지 않는다.** `client_id` 가 유일해서 같은 메시지는 몇 번을 보내도 한 줄이다. 아래 조건은 모두 **화면에 보이는 것**이 잠깐 또는 새로고침 전까지 틀리는 경우다.
+
+| 조건 | 무엇이 일어나나 | 대응 | 상태 |
+|---|---|---|---|
+| 구독 직후 1~2초 | 그 사이 저장된 메시지의 실시간 이벤트가 빠질 수 있다 (2026-09-28 첫 시험에서 겪음) | 구독되면 바로 한 번, 2초 뒤 한 번 더 `id > 마지막` 으로 채운다 | 대응함 |
+| 전송 응답이 5초 안에 안 옴 | 화면은 "전송 실패"인데 실제로는 저장됐을 수 있다 | 실시간 이벤트가 오면 실패 표시가 사라진다. "다시 보내기"도 같은 `client_id` 라 한 줄이다 (2026-10-01 운영 URL 에서 응답을 일부러 버려 시험: 1건) | 대응함 |
+| 실시간 이벤트가 시간 초과**보다 먼저** 옴 | 저장된 메시지 옆에 늦게 온 "전송 실패"가 다시 붙었다 | 저장을 확인한 `client_id` 에는 실패를 붙이지 않는다 (`savedClientIdsRef`) | 고침 2026-10-01 |
+| 보내는 중에 다른 방으로 옮김 | 실패 결과가 **새 방** 목록에 붙고, 거기서 "다시 보내기"를 누르면 새 방에 저장됐다 | 보낼 때의 방과 지금 방이 다르면 결과를 붙이지 않는다 | 고침 2026-10-01 (채팅 본문. 스레드 패널은 같은 구조가 남음 — 한계) |
+| 채널을 바꾸자마자 Enter (구독 전에 보냄) | 내 메시지가 먼저 합쳐져 "처음 50건 불러오기"를 건너뛰고, 앞 대화가 안 보였다 | "처음 불러왔나"를 따로 기억한다 (`loadedRef`) | 고침 2026-10-01 |
+| 오래된 메시지에 누가 답글을 닮 | 그 메시지(답글 수 UPDATE)만 목록 맨 위에 끼어, 사이 메시지가 위로 올려도 채워지지 않았다 | 받아 둔 범위보다 오래된 UPDATE 는 넣지 않는다 | 고침 2026-10-01 |
+| 브라우저 `online` 인데 소켓은 안 끊겼음 | "재연결 중…"이 끝없이 남았다 (메시지는 오감) | 구독이 살아 있으면 바로 "연결됨" + 채우기 | 고침 2026-10-01 (운영 URL 에서 찾음) |
+| 시간 초과 문구 | "서버 응답이 없습니다" 대신 `TimeoutError: signal timed out` 이 보였을 것이다 (postgrest-js 는 `name` 없이 `message` 로 준다) | 문구로도 시간 초과를 알아본다 | 고침 2026-10-01 |
+| 전송 실패한 채로 새로고침·방 이동 | 실패한 메시지가 화면에서 사라진다 (브라우저에만 있었음) | — | 한계 |
+| 재연결까지 1000건 넘게 쌓임 | 한 번 조회로는 1000건까지만 온다 | `id > 마지막` 을 1000건씩 끝까지 이어 받는다. 1000건 넘는 경우는 시험하지 않았다 | 대응함 (미시험) |
+| 이벤트 하나만 빠지고 연결은 안 끊김 | 그 뒤 메시지가 오면 "마지막 id" 가 넘어가, 빠진 것을 다시 채우지 않는다 | 구독 직후 2초 재확인만 덮는다. 새로고침하면 보인다 | 한계 |
+| 늦게 커밋된 작은 `id` | 동시에 저장된 두 메시지가 번호 순서와 다른 순서로 커밋되면, 그 순간 끊겼다 붙은 화면이 작은 번호를 건너뛸 수 있다 | 이론상. 새로고침하면 보인다 | 한계 |
+| 서버가 구독을 닫음 (`CLOSED`, 토큰 만료 등) | 채팅 구독은 "끊김"만 보이고 다시 들어가지 않는다 | 방을 바꾸거나 새로고침. 회사 접속자 채널만 3초 뒤 다시 들어간다 | 한계 |
+| 동기화 조회가 실패 | 조용히 그만두고 다시 시도하지 않는다 | 다음 재연결·새로고침 때 채워진다 | 한계 |
+| 끊긴 동안 알림이 50건 넘게 옴 | 다시 붙을 때 오래된 것부터 50건만 받아, 최근 알림이 목록에 안 보일 수 있다. 같은 알림을 이어 받기와 실시간이 둘 다 주면 토스트가 두 번 뜰 수 있다 | 배지 숫자는 DB 에서 다시 세어 맞다. 목록을 다시 열면 최근 50건 | 한계 |
+| 끊긴 동안 리액션을 뗌 | 다시 붙어도 리액션은 다시 맞추지 않아 뗀 것이 남아 보인다 | 방을 다시 열면 맞다 | 한계 |
+| 다른 탭·기기에서 알림을 읽음 | 이 탭 목록에는 안 읽음으로 남는다 (알림 UPDATE 를 구독하지 않음) | 목록을 다시 열면 맞다 | 한계 |
+| 첨부 전송 | 5초 제한이 없어 오래 "올리는 중"일 수 있다. 확정 API 는 같은 `client_id` 면 기존 것을 돌려줘 겹치지 않는다 | — | 한계 |
 
 ## 13. 현재 구조와 배포
 
@@ -844,6 +1566,9 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
 ### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
+
+> **2026-10-01 모두 없앴다** — 1단계 `20261001200000_close_step1_anon`(익명 권한·정책), 2단계 `20261001210000_drop_step1_author`(`author` 칸·제약). 지금 로그인 안 한 사람은 어느 표도 못 읽고 못 쓴다 (5절). 아래는 기록이다.
+> 없애기 전 2026-10-01 전체 통과 테스트에서 운영에 실제로 남아 있던 것을 확인했다: 공개 키만으로 `#일반` 메시지 71건이 읽혔고, `author` 를 "정대현"으로 넣어 쓴 글이 운영 화면에 정대현이 쓴 것으로 보였다 (시험 글은 바로 지움, 남은 익명 메시지 0건).
 
 DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도록 남겨 둔 것이다 (`20260929100100_step1_compat.sql`, 2026-09-29).
 
