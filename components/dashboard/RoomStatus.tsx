@@ -1,12 +1,12 @@
 "use client";
 
 // 대시보드 회의실 현황 (2026-10-01 개편). 지금 이 순간의 상태만 칩으로 보여 준다 — 사용 가능·N분 후 예약·사용 중·운영 종료.
-// 하루 전체 시간 막대와 날짜 고르기는 /rooms 의 RoomBoard(②) 몫이다.
+// 하루 전체 시간표와 날짜 고르기는 /rooms(② components/rooms) 몫이다. 회의실 8개를 room_board 한 번으로 받는다 (2026-10-01).
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Room } from "@/lib/types/calendar";
-import { roomBusy, type BusySlot } from "@/components/calendar/source";
+import { roomBoard, type BusySlot } from "@/components/calendar/source";
 import { addDays, formatKstTime, kstDateKey, kstMinuteOfDay, startOfKstDay, toMs } from "@/components/calendar/time";
 import { HOUR_END } from "@/components/calendar/TimeGrid";
 import { RoomIcon } from "@/components/shell/icons";
@@ -56,10 +56,10 @@ export default function RoomStatus({ rooms }: { rooms: Room[] | null }) {
     const load = () => {
       const from = startOfKstDay(new Date());
       const to = addDays(from, 1);
-      void Promise.all(rooms.map((r) => roomBusy(r.id, from, to))).then(
-        (all) => {
+      void roomBoard(from, to).then(
+        (rows) => {
           if (!alive) return;
-          setBusy(Object.fromEntries(rooms.map((r, i) => [r.id, all[i]])));
+          setBusy(Object.fromEntries(rooms.map((r) => [r.id, rows.filter((b) => b.room_id === r.id)])));
           setLoadedAt(Date.now());
           setNow(Date.now());
           setError(null);
