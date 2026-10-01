@@ -4,6 +4,7 @@
 // 정보 우선순위대로 위에서 아래로: 인사말(내 상태·다음 일정) → 요약 카드 4개(오늘의 일정·안 읽은 메시지·내 회의 예약·내 할 일)
 // → 오늘의 일정(전체 폭, 지난 일정은 접음) → 빠른 실행(버튼 줄) → 내 할 일 | 회의실 현황 → 최근 대화.
 // 내 할 일 (WU-47): 맨 위 "일정 초대 응답 필요 N건" 묶음([참석]·[불참]) + 할 일(todos)과 7일 안 업무 유형 일정을 기한순으로 섞은 한 목록.
+// 오늘 팀 부재 (WU-49): 오늘의 일정 상자 맨 위 한 줄 — 같은 부서 팀원의 휴가·부재·외근(list_team_events, 공개 범위대로 가려 옴). 없으면 줄을 숨긴다.
 // 새 표는 없다. 쓰는 것은 할 일 끝냄(done_at)과 일정 초대 응답(respond)뿐. 누르면 해당 화면으로 주소 이동 (/chat?c=, /chat?m=, /calendar?e=).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -13,7 +14,7 @@ import type { Room } from "@/lib/types/calendar";
 import { showMentions } from "@/lib/mentions";
 import { colorVar, KIND_LABEL, subtypeLabel } from "@/components/calendar/kinds"; // ② 일정 유형 이름·색 (2026-10-01)
 import { listMyEvents, listRooms, respond, type EventWithAttendees } from "@/components/calendar/source";
-import { addDays, formatKstTime, kstDateKey, startOfKstDay } from "@/components/calendar/time";
+import { addDays, formatKstTime, fromKstInput, kstDateKey, kstParts, startOfKstDay } from "@/components/calendar/time";
 import { useSelf } from "@/components/chat/useSelf";
 import { useMentionLabels } from "@/components/people/directory";
 import PersonAvatar from "@/components/profile/PersonAvatar";
@@ -23,9 +24,20 @@ import { getUnread } from "@/components/sidebar/unread";
 import { useMyChannels, useMyDms, useUnread } from "@/components/sidebar/useChannels";
 import { CalendarIcon, ChatIcon, CheckIcon, ChevronIcon, HashIcon, PlusIcon, RoomIcon } from "@/components/shell/icons";
 import { useUnreadTotals } from "@/components/shell/useUnreadTotals";
+import { openProfileCard } from "@/components/shell/cardStore";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import RoomStatus, { type MyMeeting } from "./RoomStatus";
-import { finishTodo, listMyTodos, listPendingInvites, listRecent, type MyTodo, type PendingInvite, type Recent } from "./source";
+import {
+  finishTodo,
+  listMyTodos,
+  listPendingInvites,
+  listRecent,
+  listTeamAway,
+  type MyTodo,
+  type PendingInvite,
+  type Recent,
+  type TeamAway,
+} from "./source";
 import s from "./dashboard.module.css";
 
 const RECENT = 6;
@@ -52,6 +64,12 @@ function when(iso: string) {
 /** "2026-10-03" 두 개의 날짜 차이 (b - a, 일) */
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
+/** "2026-10-03" → "10월 3일" */
+const md = (key: string) => `${Number(key.slice(5, 7))}월 ${Number(key.slice(8, 10))}일`;
+
+/** 끝 시각이 속한 날 (종일·자정에 끝나면 그 전날) */
+const endKey = (endsAt: string) => kstDateKey(new Date(new Date(endsAt).getTime() - 1));
+
 /** 할 일 기한 표시. tone 이 있으면 칩, 없으면 글자만 */
 function dueOf(due: string | null, todayKey: string): { text: string; tone: "bad" | "warn" | null } {
   if (due === null) return { text: "기한 없음", tone: null };
@@ -59,7 +77,7 @@ function dueOf(due: string | null, todayKey: string): { text: string; tone: "bad
   if (d < 0) return { text: `${-d}일 지남`, tone: "bad" };
   if (d === 0) return { text: "오늘 마감", tone: "warn" };
   if (d === 1) return { text: "내일 마감", tone: "warn" }; // 카드의 "마감 임박"(내일까지)과 같은 기준
-  return { text: `${Number(due.slice(5, 7))}월 ${Number(due.slice(8, 10))}일 마감`, tone: null };
+  return { text: `${md(due)} 마감`, tone: null };
 }
 
 /** "10월 3일 (금) 14:00", 종일이면 시각 없이 */
@@ -76,7 +94,7 @@ const longWhen = (iso: string, allDay: boolean) =>
 const started = (e: EventWithAttendees, nowMs: number) => new Date(e.starts_at).getTime() <= nowMs;
 
 /** 업무 일정의 마감 날짜 — 끝 시각이 속한 날 (종일·자정에 끝나면 그 전날) */
-const endDay = (e: EventWithAttendees) => kstDateKey(new Date(new Date(e.ends_at).getTime() - 1));
+const endDay = (e: EventWithAttendees) => endKey(e.ends_at);
 
 /** 정렬·마감 임박 기준 날짜: 아직 시작 전이면 시작하는 날, 이미 시작했으면 끝나는 날 */
 const workDate = (e: EventWithAttendees, nowMs: number) => (started(e, nowMs) ? endDay(e) : kstDateKey(e.starts_at));
@@ -88,12 +106,26 @@ function workDue(e: EventWithAttendees, todayKey: string, nowMs: number): { text
     const left = dayDiff(todayKey, end);
     if (left <= 0) return e.all_day ? { text: "오늘 마감", tone: "warn" } : { text: "진행 중", tone: "ok" };
     if (left === 1) return { text: "내일 마감", tone: "warn" };
-    return { text: `진행 중 · ~${Number(end.slice(5, 7))}월 ${Number(end.slice(8, 10))}일`, tone: "ok" };
+    return { text: `진행 중 · ~${md(end)}`, tone: "ok" };
   }
   const d = dayDiff(todayKey, kstDateKey(e.starts_at));
   if (d <= 0) return { text: e.all_day ? "오늘" : `오늘 ${formatKstTime(e.starts_at)}`, tone: "warn" };
   if (d === 1) return { text: "내일", tone: "warn" };
   return { text: `D-${d}`, tone: null };
+}
+
+/** 팀 부재 칩 글자. 종일: "연차", "연차 ~10월 3일". 시간: "오후 반차", "외근 15:00~18:00",
+ *  날을 걸치면 오늘 밖의 끝은 날짜로·어제 시작이면 시작을 빼고 ("외근 15:00~10월 2일", "외근 ~02:00") */
+function awayText(a: TeamAway, todayKey: string): string {
+  const last = endKey(a.endsAt);
+  if (a.allDay) return last > todayKey ? `${a.label} ~${md(last)}` : a.label;
+  const startsToday = kstDateKey(a.startsAt) === todayKey;
+  if (a.kind === "leave" && a.label === "반차" && startsToday && last === todayKey) {
+    return kstParts(a.startsAt).hour < 12 ? "오전 반차" : "오후 반차";
+  }
+  const from = startsToday ? formatKstTime(a.startsAt) : "";
+  const to = last > todayKey ? md(last) : formatKstTime(a.endsAt);
+  return `${a.label} ${from}~${to}`;
 }
 
 /** 할 일 목록 한 줄 — todos 또는 업무 유형 일정. date 는 정렬 기준 날짜(없으면 맨 뒤) */
@@ -117,6 +149,7 @@ export default function Dashboard() {
   const [invites, setInvites] = useState<PendingInvite[] | null>(null);
   const [invitesOpen, setInvitesOpen] = useState(false);
   const [recent, setRecent] = useState<Recent[] | null>(null);
+  const [away, setAway] = useState<TeamAway[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dmOpen, setDmOpen] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -177,6 +210,19 @@ export default function Dashboard() {
   const name = profile?.display_name ?? me.name;
   const nowMs = now.getTime();
   const todayKey = kstDateKey(now);
+
+  // 오늘 팀 부재 — 켜 둔 채 날이 바뀌면 새 날 것으로. 실패하면 오류 띠 없이 줄만 숨긴다 (부가 정보라 다른 상자의 오류 문구를 덮지 않게)
+  useEffect(() => {
+    let alive = true;
+    const from = startOfKstDay(fromKstInput(todayKey, "12:00"));
+    void listTeamAway(from, addDays(from, 1)).then(
+      (list) => alive && setAway(list),
+      () => alive && setAway([]),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [todayKey]);
   const isPast = (e: EventWithAttendees) => !e.all_day && new Date(e.ends_at).getTime() <= nowMs;
   const declined = (e: EventWithAttendees) => e.attendees.some((a) => a.user_id === self?.id && a.response === "declined");
   const past = (events ?? []).filter(isPast);
@@ -190,6 +236,10 @@ export default function Dashboard() {
     .map((e): MyMeeting => ({ room_id: e.room_id!, starts_at: e.starts_at, ends_at: e.ends_at }));
   const roomName = (id: string | null) => rooms?.find((r) => r.id === id)?.name ?? "";
   const liveWork = (work ?? []).filter((e) => new Date(e.ends_at).getTime() > nowMs);
+  // 이미 돌아온 사람(오늘 끝난 반차·외근)은 뺀다. 종일 먼저, 그다음 시작 순
+  const awayNow = away
+    .filter((a) => new Date(a.endsAt).getTime() > nowMs)
+    .sort((a, b) => (a.allDay !== b.allDay ? (a.allDay ? -1 : 1) : a.startsAt.localeCompare(b.startsAt)));
   const items: Item[] = [
     ...(todos ?? []).map((t): Item => ({ key: `t:${t.id}`, date: t.due, at: "", todo: t })),
     // 이미 시작해 이어지는 업무(여러 날 프로젝트 등)는 끝나는 날로 친다 — 마감이 멀면 "마감 임박"에서 빠진다
@@ -350,6 +400,35 @@ export default function Dashboard() {
             전체 보기 ›
           </Link>
         </div>
+        {awayNow.length > 0 && (
+          <div className={s.away}>
+            <span className={s.awayHead} id="dash-away">
+              팀 부재 <strong>{new Set(awayNow.map((a) => a.userId)).size}명</strong>
+            </span>
+            <ul className={s.awayList} aria-labelledby="dash-away">
+              {awayNow.map((a) => {
+                const text = awayText(a, todayKey);
+                const detail = [a.title, a.location].filter(Boolean).join(" · ");
+                return (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      className={s.awayChip}
+                      title={detail || undefined}
+                      aria-label={`${a.name} ${text}${detail ? ` · ${detail}` : ""} — 프로필 보기`}
+                      onClick={() => openProfileCard(a.userId)}
+                    >
+                      <PersonAvatar userId={a.userId} name={a.name} size={22} />
+                      <strong>{a.name}</strong>
+                      <i style={{ background: colorVar(a.kind) }} aria-hidden="true" />
+                      <span>{text}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         {events === null ? (
           <p className={s.empty}>불러오는 중…</p>
         ) : events.length === 0 ? (

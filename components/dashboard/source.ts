@@ -3,6 +3,8 @@
 // 대시보드 데이터. 새 표는 없다 — 캘린더·할 일·메시지를 RLS 그대로 읽는다 (내가 볼 수 있는 것만 온다).
 
 import { getSupabase } from "@/lib/supabase";
+import { listTeamEvents } from "@/components/calendar/source";
+import { getPeople } from "@/components/people/directory";
 import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import type { ChannelSummary, DmSummary } from "@/lib/types/channel";
 
@@ -63,6 +65,42 @@ export async function listPendingInvites(me: string): Promise<PendingInvite[]> {
     .map((r) => r.events as unknown as PendingInvite)
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     .map(({ id, title, starts_at, all_day }) => ({ id, title, starts_at, all_day }));
+}
+
+export type TeamAway = {
+  id: string;
+  userId: string;
+  name: string;
+  kind: "leave" | "outside";
+  /** list_team_events 가 공개 범위대로 준 말: "연차"·"반차"·"휴가"·"부재"·"기타 부재"·"외근" */
+  label: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  /** 외근을 팀에 공개했을 때만 */
+  title: string | null;
+  location: string | null;
+};
+
+/** 같은 부서 팀원의 휴가·부재와 외근 (2026-10-01 WU-49). 가리는 것은 list_team_events 가 한다 — 새 표·함수 없음 */
+export async function listTeamAway(from: Date, to: Date): Promise<TeamAway[]> {
+  const list = (await listTeamEvents(from, to)).filter(
+    (t): t is typeof t & { kind: "leave" | "outside" } => t.kind === "leave" || t.kind === "outside",
+  );
+  const people = list.length ? await getPeople(list.map((t) => t.user_id)) : [];
+  const nameOf = new Map(people.map((p) => [p.id, p.display_name]));
+  return list.map((t) => ({
+    id: t.event_id,
+    userId: t.user_id,
+    name: nameOf.get(t.user_id) ?? "알 수 없는 사람", // getPeople 이 모르는 id 도 돌려주므로 실제로는 오지 않는다
+    kind: t.kind,
+    label: t.label,
+    startsAt: t.starts_at,
+    endsAt: t.ends_at,
+    allDay: t.all_day,
+    title: t.title,
+    location: t.location,
+  }));
 }
 
 export type Recent = {
