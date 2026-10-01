@@ -220,13 +220,18 @@ const must = ({ data, error }) => {
 };
 
 async function seedRooms() {
-  // supabase/seed.sql 과 같다 (원격에는 이 스크립트로 넣는다)
+  // 원격(팀·운영 공용) DB 의 회의실 8개와 같다 — supabase/seed.sql · 마이그레이션 20261001180000_rooms_data (2026-10-01 층·시설·설명)
   must(
     await admin.from("rooms").upsert(
       [
-        { name: "회의실 1 (소)", capacity: 4, location: "3층" },
-        { name: "회의실 2 (중)", capacity: 8, location: "3층" },
-        { name: "회의실 3 (대)", capacity: 16, location: "5층" },
+        { name: "C1 상생", capacity: 30, location: "5층", facilities: ["projector", "video", "mic"], description: "대회의실 · 무선 마이크 2개 · 타운홀·행사", sort_order: 10 },
+        { name: "C2 신뢰", capacity: 12, location: "5층", facilities: ["monitor", "video"], description: "보안 회의 · 임원·고객 미팅 우선", sort_order: 20 },
+        { name: "C3 열정", capacity: 20, location: "3층", facilities: ["projector"], description: "교육실 · 노트북 대여 6대 · 교육·온보딩", sort_order: 30 },
+        { name: "C4 이끔", capacity: 12, location: "6층", facilities: ["monitor", "video"], description: "85인치 TV · 스프린트·배포 상황실", sort_order: 40 },
+        { name: "M1 확산", capacity: 8, location: "5층", facilities: ["video", "mic", "whiteboard"], description: "화상회의 카메라·스피커폰", sort_order: 50 },
+        { name: "M2 공유", capacity: 4, location: "5층", facilities: ["monitor"], description: "C1 옆 · 55인치 TV·화면 공유", sort_order: 60 },
+        { name: "M3 가치", capacity: 4, location: "6층", facilities: ["monitor", "whiteboard"], description: "소회의실 · 면접 가능", sort_order: 70 },
+        { name: "M4 연구", capacity: 2, location: "6층", facilities: ["video"], description: "2인 화상회의 부스 · 방음 · 1:1 면담", sort_order: 80 },
       ],
       { onConflict: "name", ignoreDuplicates: true },
     ),
@@ -407,7 +412,7 @@ async function insertEvent(id, ids) {
   const day = kst.toISOString().slice(0, 10);
   const starts_at = `${day}T14:00:00+09:00`;
   const ends_at = `${day}T15:00:00+09:00`;
-  const room = must(await admin.from("rooms").select("id").eq("name", "회의실 2 (중)").single());
+  const room = must(await admin.from("rooms").select("id").eq("name", "M1 확산").single());
 
   const event = {
     id,

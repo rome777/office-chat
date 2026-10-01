@@ -8,7 +8,10 @@
 //   공개 범위(회의 제외): 팀에 공개 · 시간만 공개 · 나만 보기 — 같은 부서 팀원에게 무엇이 보이는지 바로 아래에 보여 준다
 //   관련 채널(회의·업무): 일반 채널이면 프로젝트 일정으로 분류된다 (분류는 저장할 때 DB 가 정한다)
 //   반복(새로 만들 때): 매일·매주·평일·매월 + 종료일 (최대 1년·52회). 반복 일정을 고칠 때는 "이 일정만 / 이후 모두"
+//   회의실을 고르면(2026-10-01 회의실 개편): 시각은 30분 단위, 회의는 공개/비공개 회의(시간표의 예약자 표시), 예약 전 확인 줄,
+//   반복 종료는 오늘부터 90일까지 — 규칙은 components/rooms/policy.ts (막는 것은 DB 트리거)
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { EventKind, Recurrence, Room, Visibility } from "@/lib/types/calendar";
 import type { Person } from "@/lib/types/people";
@@ -17,6 +20,8 @@ import { getPeople } from "@/components/people/directory";
 import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import { useMyChannels } from "@/components/sidebar/useChannels";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import { ROOM_POLICY, bookingWindow, checkBooking, hm } from "@/components/rooms/policy";
+import { amIAdmin } from "@/components/rooms/source";
 import { bumpCalendar, focusCalendarDate } from "./calendarBus";
 import { cachedRooms } from "./EventPanel";
 import {
@@ -168,7 +173,11 @@ export default function EventEditor(props: EditorProps) {
   /** 반복 일정을 고칠 때: 이 회차만 / 이 회차부터 뒤 모두 */
   const [scope, setScope] = useState<"one" | "following">("one");
   const [error, setError] = useState<string | null>(null);
+  const [admin, setAdmin] = useState(false);
   const { channels } = useMyChannels();
+  useEffect(() => {
+    void amIAdmin().then(setAdmin);
+  }, []);
 
   const key =
     props.mode === "new"
@@ -192,10 +201,13 @@ export default function EventEditor(props: EditorProps) {
           setError("일정을 찾을 수 없습니다");
           return;
         }
+        // 참석자를 다 받은 뒤에 폼을 채운다 — 못 받은 채 저장하면 기존 참석자가 지워지므로 그때는 열지 않는다 (2026-10-01 검토)
+        const others = e.attendees.map((a) => a.user_id).filter((u) => u !== id);
+        const list = others.length ? await getPeople(others) : [];
+        if (!alive) return;
+        setPeople(list);
         setEditing(e);
         setForm(editForm(e, id));
-        const others = e.attendees.map((a) => a.user_id).filter((u) => u !== id);
-        setPeople(others.length ? await getPeople(others).catch(() => []) : []);
       } else {
         const f = newForm(props.date, props.time);
         const msg = props.fromMessage ? await getMessageForEvent(props.fromMessage).catch(() => null) : null;
@@ -210,7 +222,7 @@ export default function EventEditor(props: EditorProps) {
         const withIds = (props.withIds ?? []).filter((u) => u !== id);
         setPeople(withIds.length ? await getPeople(withIds).catch(() => []) : []);
       }
-    }, (e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
+    }).catch((e: unknown) => alive && setError(`일정을 불러오지 못했습니다: ${e instanceof Error ? e.message : String(e)}`));
     return () => {
       alive = false;
     };
@@ -304,9 +316,50 @@ export default function EventEditor(props: EditorProps) {
   const span = (HOUR_END - HOUR_START) * 60;
   const pct = (min: number) => Math.min(100, Math.max(0, ((min - HOUR_START * 60) / span) * 100));
   const conflict = !form.allDay && busy.some((b) => toMs(b.starts_at) < endsAt.getTime() && toMs(b.ends_at) > startsAt.getTime());
+  // 회의실을 고른 시간 일정은 회의실 정책을 따른다 (30분 단위·30분~4시간·08~21시·90일·지난 시각)
+  const roomMode = canRoom && form.showRoom && !!form.roomId && !form.allDay;
+  const roomInfo = rooms.find((r) => r.id === form.roomId);
+  const { lastDay } = bookingWindow();
+  /** 회의실을 고른 반복은 종료를 오늘부터 90일에서 자른다 (기본 종료 "시작 + 90일"이 넘을 수 있다) */
+  const until = roomMode && form.until > lastDay ? lastDay : form.until;
+  /** 진행 중인 회의실 예약: 시작·회의실은 못 바꾼다 (종료만 — DB 트리거와 같다) */
+  const lockStart = !!editing?.room_id && !editing.canceled_at && toMs(editing.starts_at) <= Date.now();
+  const roomChecks = roomMode
+    ? (() => {
+        const sm = toMinutes(form.startTime);
+        const em = sameDay ? toMinutes(form.endTime) : 24 * 60;
+        const first = busy.find((b) => toMs(b.starts_at) < endsAt.getTime() && toMs(b.ends_at) > startsAt.getTime());
+        const list = checkBooking({
+          date: form.startDate,
+          start: sm,
+          end: em,
+          clash: first ? `${formatKstTime(first.starts_at)}~${formatKstTime(first.ends_at)} 다른 예약` : null,
+          double: null,
+          people: people.length + 1,
+          capacity: roomInfo?.capacity ?? null,
+          admin,
+          lockStart: !!editing && toMs(editing.starts_at) <= Date.now(),
+        });
+        if (!sameDay) list.unshift({ level: "bad", text: "회의실은 하루 안에서만 예약할 수 있습니다" });
+        if (sm % ROOM_POLICY.slot !== 0 || em % ROOM_POLICY.slot !== 0) {
+          list.unshift({ level: "bad", text: `회의실은 ${ROOM_POLICY.slot}분 단위로 예약합니다 (:00 · :30)` });
+        }
+        return list.filter((c) => c.level !== "ok");
+      })()
+    : [];
+  /** 회의실을 고르면 시각을 30분 칸에 맞춘다 (시작은 내림, 종료는 올림 — 같은 날) */
+  function chooseRoom(id: string) {
+    const f = form!;
+    if (!id || f.allDay) return set({ roomId: id });
+    const sm = Math.floor(toMinutes(f.startTime) / ROOM_POLICY.slot) * ROOM_POLICY.slot;
+    const rawEnd = f.endDate === f.startDate ? toMinutes(f.endTime) : sm + 60;
+    const em = Math.min(24 * 60 - ROOM_POLICY.slot, Math.max(sm + ROOM_POLICY.slot, Math.ceil(rawEnd / ROOM_POLICY.slot) * ROOM_POLICY.slot));
+    set({ roomId: id, startTime: hm(sm), endDate: f.startDate, endTime: hm(em) });
+  }
 
+  const roomBlocked = roomChecks.some((c) => c.level === "bad");
   async function save() {
-    if (!valid || !form || saving) return;
+    if (!valid || roomBlocked || !form || saving) return;
     setSaving(true);
     setError(null);
     const input: EventInput = {
@@ -324,7 +377,7 @@ export default function EventEditor(props: EditorProps) {
       visibility: form.visibility,
       channel_id: canRoom && form.showChannel && form.channelId ? form.channelId : null,
       remind_minutes: form.reminders,
-      repeat: !editing && canRepeat && form.repeat ? { rule: form.repeat, until: form.until } : null,
+      repeat: !editing && canRepeat && form.repeat ? { rule: form.repeat, until } : null,
     };
     try {
       const saved = editing
@@ -398,15 +451,16 @@ export default function EventEditor(props: EditorProps) {
           </label>
         </div>
         <div className={s.inline}>
-          <input type="date" aria-label="시작 날짜" value={form.startDate} onChange={(e) => e.target.value && changeStart(e.target.value, form.startTime)} />
-          {!form.allDay && <TimeSelect label="시작" value={form.startTime} onChange={(v) => changeStart(form.startDate, v)} />}
+          <input type="date" aria-label="시작 날짜" disabled={lockStart} value={form.startDate} onChange={(e) => e.target.value && changeStart(e.target.value, form.startTime)} />
+          {!form.allDay && <TimeSelect label="시작" disabled={lockStart} step={roomMode ? ROOM_POLICY.slot : 5} value={form.startTime} onChange={(v) => changeStart(form.startDate, v)} />}
         </div>
         <span className={s.fieldLabel}>{form.kind === "work" ? "종료 (마감)" : "종료"}</span>
         <div className={s.inline}>
           <input type="date" aria-label="종료 날짜" min={form.startDate} value={form.endDate} onChange={(e) => e.target.value && set({ endDate: e.target.value })} />
-          {!form.allDay && <TimeSelect label="종료" value={form.endTime} onChange={(v) => set({ endTime: v })} />}
+          {!form.allDay && <TimeSelect label="종료" step={roomMode ? ROOM_POLICY.slot : 5} value={form.endTime} onChange={(v) => set({ endTime: v })} />}
         </div>
         {!timeOk && <p className={`${s.hint} ${s.bad}`}>종료가 시작보다 늦어야 합니다.</p>}
+        {lockStart && <p className={s.hint}>진행 중인 회의실 예약이라 시작과 회의실은 바꿀 수 없습니다. 종료만 늘리거나 줄일 수 있습니다.</p>}
       </div>
 
       {!editing && canRepeat && (
@@ -429,15 +483,17 @@ export default function EventEditor(props: EditorProps) {
                   type="date"
                   aria-label="반복 종료일"
                   min={form.startDate}
-                  max={addDaysKey(form.startDate, 365)}
-                  value={form.until}
+                  max={roomMode && lastDay < addDaysKey(form.startDate, 365) ? lastDay : addDaysKey(form.startDate, 365)}
+                  value={until}
                   onChange={(e) => e.target.value && set({ until: e.target.value })}
                 />
               </>
             )}
           </div>
           {form.repeat && (
-            <p className={s.hint}>회차를 최대 1년·52회까지 만듭니다. 회의실이 겹치는 날이 있으면 저장하지 않고 그 날짜를 알려 줍니다.</p>
+            <p className={s.hint}>
+              회차를 최대 1년·52회까지 만듭니다{roomMode ? ` (회의실은 오늘부터 ${ROOM_POLICY.windowDays}일까지)` : ""}. 회의실이 겹치는 날이 있으면 저장하지 않고 그 날짜를 알려 줍니다.
+            </p>
           )}
         </div>
       )}
@@ -468,7 +524,7 @@ export default function EventEditor(props: EditorProps) {
           <label className={s.fieldLabel} htmlFor="ev-room">
             회의실
           </label>
-          <select id="ev-room" value={form.roomId} onChange={(e) => set({ roomId: e.target.value })}>
+          <select id="ev-room" value={form.roomId} disabled={lockStart} onChange={(e) => chooseRoom(e.target.value)}>
             <option value="">회의실 없음</option>
             {rooms.map((r) => (
               <option key={r.id} value={r.id}>
@@ -508,8 +564,21 @@ export default function EventEditor(props: EditorProps) {
                   ? "이 시간은 이미 예약돼 있습니다. 다른 시간이나 회의실을 고르세요."
                   : busy.length === 0
                     ? "시작일에 예약 없음"
-                    : `시작일에 예약된 시간: ${busy.map((b) => `${formatKstTime(b.starts_at)}~${formatKstTime(b.ends_at)}`).join(", ")} (누구의 회의인지는 보이지 않습니다)`}
+                    : `시작일에 예약된 시간: ${busy.map((b) => `${formatKstTime(b.starts_at)}~${formatKstTime(b.ends_at)}`).join(", ")}`}{" "}
+              <Link href={`/rooms?date=${form.startDate}`} className="link">
+                회의실 현황 보기
+              </Link>
             </p>
+          )}
+          {roomChecks.length > 0 && (
+            <ul className={s.roomChecks}>
+              {roomChecks.map((c) => (
+                <li key={c.text} className={c.level === "bad" ? s.bad : ""}>
+                  {c.level === "bad" ? "✕ " : "! "}
+                  {c.text}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
@@ -569,7 +638,27 @@ export default function EventEditor(props: EditorProps) {
         </div>
       )}
 
-      {form.kind === "meeting" ? (
+      {form.kind === "meeting" && roomMode ? (
+        <div className={s.field}>
+          <span className={s.fieldLabel}>회의실 시간표에</span>
+          <div className={s.radio}>
+            <label>
+              <input type="radio" name="ev-room-visibility" checked={form.visibility === "public"} onChange={() => set({ visibility: "public" })} />
+              <span>
+                공개 회의 (기본)
+                <small>예약자 이름·부서가 보입니다. 회의 내용은 참석자에게만.</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="ev-room-visibility" checked={form.visibility !== "public"} onChange={() => set({ visibility: "private" })} />
+              <span>
+                비공개 회의
+                <small>&quot;비공개 예약&quot;과 시각만 보입니다. 예약자도 숨깁니다.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      ) : form.kind === "meeting" ? (
         <p className={s.note}>회의는 참석자에게만 보입니다.</p>
       ) : (
         <div className={s.field}>
@@ -641,7 +730,7 @@ export default function EventEditor(props: EditorProps) {
         <button type="button" className={s.secondary} onClick={() => (editing ? openPanel({ kind: "event", eventId: editing.id }) : closePanel())}>
           취소
         </button>
-        <button type="submit" className={s.primary} disabled={!valid || saving}>
+        <button type="submit" className={s.primary} disabled={!valid || roomBlocked || saving}>
           {saving ? "저장 중…" : editing ? "고치기" : "저장"}
         </button>
       </div>

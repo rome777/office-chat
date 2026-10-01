@@ -7,6 +7,8 @@ import ThreadPanel from "@/components/chat/ThreadPanel";
 import ProfilePanel from "@/components/profile/ProfilePanel"; // ② 내 프로필 (2026-09-30)
 import EventEditor from "@/components/calendar/EventEditor"; // ② 일정 만들기·고치기 (2026-09-30)
 import EventPanel, { TeamEventPanel } from "@/components/calendar/EventPanel"; // ② 일정 상세·팀원 일정
+import RoomBookingPanel from "@/components/rooms/RoomBookingPanel"; // ② 회의실 예약·예약 고치기 (2026-10-01)
+import RoomSlotPanel from "@/components/rooms/RoomSlotPanel"; // ② 남의 회의실 예약 정보
 import { useWorkspace, type PanelState } from "@/components/workspace/WorkspaceContext";
 import ChannelInfoPanel from "./ChannelInfoPanel";
 import ChoresPanel from "./ChoresPanel";
@@ -25,6 +27,8 @@ const TITLE: Record<PanelState["kind"], string> = {
   eventNew: "일정 만들기",
   eventEdit: "일정 고치기",
   teamEvent: "팀원 일정",
+  roomBook: "회의실 예약",
+  roomSlot: "예약 정보",
 };
 
 function PanelBody({ panel }: { panel: PanelState }) {
@@ -49,16 +53,21 @@ function PanelBody({ panel }: { panel: PanelState }) {
       return <EventEditor mode="edit" eventId={panel.eventId} />;
     case "teamEvent":
       return <TeamEventPanel {...panel} />;
+    case "roomBook":
+      return <RoomBookingPanel {...panel} />;
+    case "roomSlot":
+      return <RoomSlotPanel {...panel} />;
   }
 }
 
 export default function RightPanel() {
   const { panel, closePanel } = useWorkspace();
   if (!panel) return null;
+  const title = panel.kind === "roomBook" && panel.eventId ? "예약 고치기" : TITLE[panel.kind];
   return (
-    <aside className={s.panel} aria-label={TITLE[panel.kind]}>
+    <aside className={s.panel} aria-label={title}>
       <header className={s.head}>
-        <h2>{TITLE[panel.kind]}</h2>
+        <h2>{title}</h2>
         <button className="link" onClick={closePanel} aria-label="패널 닫기">
           닫기
         </button>

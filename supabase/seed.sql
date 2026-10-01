@@ -7,8 +7,14 @@
 --
 -- 회의실을 지워도 그 회의실을 쓰던 회의는 지워지지 않는다 (events.room_id 가 on delete set null → "회의실 없음").
 
-insert into public.rooms (name, capacity, location) values
-  ('회의실 1 (소)', 4, '3층'),
-  ('회의실 2 (중)', 8, '3층'),
-  ('회의실 3 (대)', 16, '5층')
+-- 회의실 8개 (원격 DB 와 같다 — 2026-10-01 층·시설·설명은 마이그레이션 20261001180000_rooms_data)
+insert into public.rooms (name, capacity, location, facilities, description, sort_order) values
+  ('C1 상생', 30, '5층', '{projector,video,mic}', '대회의실 · 무선 마이크 2개 · 타운홀·행사', 10),
+  ('C2 신뢰', 12, '5층', '{monitor,video}', '보안 회의 · 임원·고객 미팅 우선', 20),
+  ('C3 열정', 20, '3층', '{projector}', '교육실 · 노트북 대여 6대 · 교육·온보딩', 30),
+  ('C4 이끔', 12, '6층', '{monitor,video}', '85인치 TV · 스프린트·배포 상황실', 40),
+  ('M1 확산', 8, '5층', '{video,mic,whiteboard}', '화상회의 카메라·스피커폰', 50),
+  ('M2 공유', 4, '5층', '{monitor}', 'C1 옆 · 55인치 TV·화면 공유', 60),
+  ('M3 가치', 4, '6층', '{monitor,whiteboard}', '소회의실 · 면접 가능', 70),
+  ('M4 연구', 2, '6층', '{video}', '2인 화상회의 부스 · 방음 · 1:1 면담', 80)
 on conflict (name) do nothing;

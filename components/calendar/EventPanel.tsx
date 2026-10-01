@@ -3,22 +3,25 @@
 // ② 일정 상세 (오른쪽 패널). 유형·분류·일시·회의실·참석자별 응답, 초대받은 사람은 참석·불참,
 // 누구나 자기 시작 전 알림, 만든 사람은 고치기·취소(반복이면 "이 일정만 / 이후 모두").
 // [참석자와 대화](DM 또는 일정에 이은 비공개 채널)·[채팅에 공유](고른 대화방에 링크 메시지). 같은 부서 팀원의 일정은 TeamEventPanel (DB 가 준 칸만).
+// 회의실 예약(2026-10-01): 진행 중이면 [일찍 끝내기](취소 대신 — 시작한 예약은 DB 가 취소를 막는다), /rooms 에서 고치기는 회의실 예약 패널로.
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMyChannels, useMyDms } from "@/components/sidebar/useChannels";
 import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import type { AttendeeResponse, Room } from "@/lib/types/calendar";
 import PersonAvatar from "@/components/profile/PersonAvatar";
 import { getPeople } from "@/components/people/directory";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
+import { ROOM_POLICY } from "@/components/rooms/policy";
 import { bumpCalendar, useCalendarVersion } from "./calendarBus";
 import { CATEGORY_LABEL, KIND_LABEL, REMINDERS, VISIBILITIES, colorVar, reminderLabel, subtypeLabel, teamPreview } from "./kinds";
 import { dayLabel } from "./EventLists";
 import {
   cancelEvent,
   cancelEventSeries,
+  endRoomBookingEarly,
   getCategoryNames,
   getEvent,
   getMyId,
@@ -32,7 +35,7 @@ import {
 } from "./source";
 import type { Recurrence } from "@/lib/types/calendar";
 import { weekdayOf } from "./items";
-import { formatKstRange, kstDateKey, toMs } from "./time";
+import { formatKstRange, formatKstTime, kstDateKey, toKstInput, toMs } from "./time";
 import s from "./schedule.module.css";
 
 const RESPONSE_LABEL: Record<AttendeeResponse, string> = { accepted: "참석", declined: "불참", pending: "응답 전" };
@@ -59,6 +62,7 @@ export default function EventPanel({ eventId }: { eventId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   const [series, setSeries] = useState<{ first: string; last: string; count: number } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -122,6 +126,16 @@ export default function EventPanel({ eventId }: { eventId: string }) {
   const canceled = event.canceled_at !== null;
   const nameOf = (id: string) => people.get(id) ?? "알 수 없는 사람";
   const count = (r: AttendeeResponse) => event.attendees.filter((a) => a.response === r).length;
+  // 회의실 예약은 시작하면 취소하지 않고, 진행 중이면 일찍 끝낸다 (DB 트리거 events_room_policy)
+  const roomStarted = !!event.room_id && toMs(event.starts_at) <= Date.now();
+  const roomRunning = roomStarted && Date.now() < toMs(event.ends_at);
+  const roomEnded = !!event.room_id && toMs(event.ends_at) <= Date.now();
+  function edit() {
+    if (event!.room_id && pathname.startsWith("/rooms") && !roomEnded && !event!.all_day) {
+      const a = toKstInput(event!.starts_at);
+      openPanel({ kind: "roomBook", roomId: event!.room_id, date: a.date, start: a.time, end: toKstInput(event!.ends_at).time, eventId: event!.id });
+    } else openPanel({ kind: "eventEdit", eventId: event!.id });
+  }
 
   async function run(action: () => Promise<void>) {
     setWorking(true);
@@ -226,7 +240,7 @@ export default function EventPanel({ eventId }: { eventId: string }) {
             <span>회의실</span>
             <span>
               {room ? `${room.name}${room.capacity ? ` · ${room.capacity}명` : ""}${room.location ? ` · ${room.location}` : ""}` : "회의실"}{" "}
-              <Link href="/rooms" className="link">
+              <Link href={`/rooms?date=${startKey}`} className="link">
                 예약 현황
               </Link>
             </span>
@@ -241,7 +255,13 @@ export default function EventPanel({ eventId }: { eventId: string }) {
         <div className={s.kv}>
           <span>공개</span>
           <span>
-            {event.kind === "meeting" ? "참석자에게만" : VISIBILITIES.find((v) => v.value === event.visibility)?.label}
+            {event.kind === "meeting"
+              ? event.room_id
+                ? event.visibility === "public"
+                  ? "공개 회의 — 내용은 참석자에게만, 회의실 시간표에는 예약자 이름·부서"
+                  : "비공개 회의 — 회의실 시간표에는 '비공개 예약'만"
+                : "참석자에게만"
+              : VISIBILITIES.find((v) => v.value === event.visibility)?.label}
             {event.kind !== "meeting" && (
               <span className={s.hint}> · 팀원에게는 {teamPreview(event.kind, event.visibility, event.subtype)}</span>
             )}
@@ -422,22 +442,35 @@ export default function EventPanel({ eventId }: { eventId: string }) {
         </div>
       )}
 
+      {!canceled && isCreator && roomRunning && (
+        <p className={s.hint}>진행 중인 회의실 예약은 취소 대신 [일찍 끝내기]로 남은 시간을 돌려줍니다 (종료를 다음 {ROOM_POLICY.slot}분 칸으로).</p>
+      )}
       {!canceled && isCreator && (
         <div className={s.foot}>
-          <button
-            type="button"
-            className={s.danger}
-            disabled={working}
-            onClick={() => setConfirmCancel(true)}
-          >
-            일정 취소
-          </button>
+          {roomRunning ? (
+            <button
+              type="button"
+              className={s.danger}
+              disabled={working}
+              onClick={() => void run(async () => void (await endRoomBookingEarly(event.id, ROOM_POLICY.slot)))}
+            >
+              일찍 끝내기
+            </button>
+          ) : (
+            !roomStarted && (
+              <button type="button" className={s.danger} disabled={working} onClick={() => setConfirmCancel(true)}>
+                {event.room_id ? "예약 취소" : "일정 취소"}
+              </button>
+            )
+          )}
           <span className={s.grow} />
-          <button type="button" className={s.primary} disabled={working} onClick={() => openPanel({ kind: "eventEdit", eventId: event.id })}>
+          <button type="button" className={s.primary} disabled={working} onClick={edit}>
             고치기
           </button>
         </div>
       )}
+      {!canceled && event.room_id && roomEnded && <p className={s.hint}>끝난 회의실 예약은 시각·회의실을 바꾸거나 취소할 수 없습니다 (기록으로 남깁니다).</p>}
+      {!canceled && event.room_id && roomRunning && !isCreator && <p className={s.hint}>{formatKstTime(event.ends_at)}까지 사용 중입니다.</p>}
       {canceled && <p className={s.hint}>취소된 일정은 지우지 않고 남깁니다.</p>}
     </div>
   );

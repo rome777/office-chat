@@ -7,6 +7,8 @@
 //   팀원 일정 — list_team_events() 로 같은 부서 팀원 일정을 공개 범위에 맞게 가린 칸만 (회의·나만 보기는 없음)
 //   회의실 예약 현황 — room_busy() 로 시각만 (남의 회의 제목·참석자는 주지 않는다)
 //   회의실 겹침 — events_no_double_booking 제약이 막는다 (23P01). 두 사람이 동시에 눌러도 하나만 성공
+//   회의실 정책 — events_room_policy 트리거 (30분 단위·30분~4시간·08~21시·90일·지난 시각·두 곳 금지, P0001 한국어 문구)
+//   회의실 시간표 — room_board() 로 모든 회의실을 한 번에 (공개 회의만 예약자 이름·부서, 제목은 참석자만)
 
 import type {
   AttendeeResponse,
@@ -15,6 +17,7 @@ import type {
   EventKind,
   Recurrence,
   Room,
+  RoomBooking,
   TeamEvent,
   Visibility,
 } from "@/lib/types/calendar";
@@ -113,7 +116,7 @@ function validate(input: EventInput) {
 const isUuid = (s: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-/** 새 칸. 회의의 공개 범위는 쓰지 않으므로 팀에 공개로 둔다 */
+/** 새 칸. 회의의 공개 범위는 회의실 시간표의 예약자 표시에만 쓴다 (public = 공개 회의, private = 비공개 회의 — 2026-10-01) */
 function extraColumns(input: EventInput) {
   const kind = input.kind ?? "meeting";
   return {
@@ -121,7 +124,10 @@ function extraColumns(input: EventInput) {
     subtype: input.subtype ?? null,
     all_day: input.all_day ?? false,
     location: input.location?.trim() || null,
-    visibility: kind === "meeting" ? "public" : (input.visibility ?? (kind === "personal" ? "time_only" : "public")),
+    visibility:
+      kind === "meeting"
+        ? input.visibility === "public" || !input.visibility ? "public" : "private"
+        : (input.visibility ?? (kind === "personal" ? "time_only" : "public")),
     channel_id: input.channel_id ?? null,
   };
 }
@@ -131,10 +137,49 @@ function extraColumns(input: EventInput) {
 export async function listRooms(): Promise<Room[]> {
   const { data, error } = await getSupabase()
     .from("rooms")
-    .select("id, name, capacity, location")
+    .select("id, name, capacity, location, facilities, description")
+    .order("sort_order")
     .order("name");
   if (error) throw friendly(error);
-  return data ?? [];
+  return (data ?? []) as Room[];
+}
+
+/** 모든 회의실의 예약 [from, to) — 한 번에 8일까지 (DB room_board) */
+export async function roomBoard(from: Date, to: Date): Promise<RoomBooking[]> {
+  const { data, error } = await getSupabase().rpc("room_board", { p_from: from.toISOString(), p_to: to.toISOString() });
+  if (error) throw friendly(error);
+  return (data ?? []) as RoomBooking[];
+}
+
+/** 내가 예약자인 회의실 일정 [from, to) — 취소된 것도 (내 예약 목록의 "지난·취소") */
+export async function listMyRoomBookings(from: Date, to: Date): Promise<CalendarEvent[]> {
+  const me = await getMyId();
+  const { data, error } = await getSupabase()
+    .from("events")
+    .select(EVENT_COLUMNS)
+    .eq("created_by", me)
+    .not("room_id", "is", null)
+    .lt("starts_at", to.toISOString())
+    .gt("ends_at", from.toISOString())
+    .order("starts_at");
+  if (error) throw friendly(error);
+  return (data ?? []) as unknown as CalendarEvent[];
+}
+
+/** 진행 중인 회의실 예약을 일찍 끝낸다: 종료를 지금 다음 30분 칸으로 당긴다 (만든 사람만 — RLS, 시작·회의실은 트리거가 고정) */
+export async function endRoomBookingEarly(id: string, slotMinutes: number): Promise<string> {
+  const step = slotMinutes * 60000;
+  const end = new Date(Math.floor(Date.now() / step) * step + step).toISOString();
+  const { data, error } = await getSupabase()
+    .from("events")
+    .update({ ends_at: end })
+    .eq("id", id)
+    .is("canceled_at", null)
+    .gt("ends_at", end)
+    .select("id");
+  if (error) throw friendly(error);
+  if (!data?.length) throw new ForbiddenError("이미 끝났거나 곧 끝나는 예약입니다");
+  return end;
 }
 
 /** 내가 만들었거나 초대받은 일정 중 [from, to) 와 겹치는 것 (RLS 가 남의 일정을 가린다) */
