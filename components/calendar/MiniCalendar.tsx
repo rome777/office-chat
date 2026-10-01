@@ -7,7 +7,7 @@ import { HOLIDAYS } from "./kinds";
 import { addMonthKey, monthGrid, weekdayOf } from "./items";
 import s from "./schedule.module.css";
 
-const DOW = ["월", "화", "수", "목", "금", "토", "일"];
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
 export default function MiniCalendar({
   month,

@@ -26,7 +26,7 @@ import {
   byDay as groupByDay,
   dayStart,
   eventItem,
-  mondayOf,
+  weekStartOf,
   monthGrid,
   passes,
   teamItem,
@@ -127,10 +127,10 @@ export default function CalendarView() {
   }, [focus, focusSeen, select]);
 
   // 불러올 기간: 미니 캘린더·월 보기의 달 격자 + 주·일 보기와 오른쪽 목록이 쓰는 날짜
-  const monday = mondayOf(selected);
+  const weekStart = weekStartOf(selected);
   const grid = monthGrid(month);
-  const viewFrom = view === "month" ? grid.first : view === "week" ? monday : selected;
-  const viewTo = view === "month" ? addDaysKey(grid.last, 1) : view === "week" ? addDaysKey(monday, 7) : addDaysKey(selected, 8);
+  const viewFrom = view === "month" ? grid.first : view === "week" ? weekStart : selected;
+  const viewTo = view === "month" ? addDaysKey(grid.last, 1) : view === "week" ? addDaysKey(weekStart, 7) : addDaysKey(selected, 8);
   const from = viewFrom < grid.first ? viewFrom : grid.first;
   const to = viewTo > addDaysKey(grid.last, 1) ? viewTo : addDaysKey(grid.last, 1);
 
@@ -239,9 +239,9 @@ export default function CalendarView() {
     view === "month"
       ? `${month.slice(0, 4)}년 ${Number(month.slice(5))}월`
       : view === "week"
-        ? `${Number(monday.slice(5, 7))}월 ${Number(monday.slice(8))}일 ~ ${Number(addDaysKey(monday, 6).slice(5, 7))}월 ${Number(addDaysKey(monday, 6).slice(8))}일`
+        ? `${Number(weekStart.slice(5, 7))}월 ${Number(weekStart.slice(8))}일 ~ ${Number(addDaysKey(weekStart, 6).slice(5, 7))}월 ${Number(addDaysKey(weekStart, 6).slice(8))}일`
         : `${selected.slice(0, 4)}년 ${Number(selected.slice(5, 7))}월 ${Number(selected.slice(8))}일`;
-  const range = rangeOf(view, month, selected, monday);
+  const range = rangeOf(view, month, selected, weekStart);
   const onToday = view === "month" ? month === today.slice(0, 7) && selected === today : selected === today;
 
   return (
@@ -297,7 +297,7 @@ export default function CalendarView() {
           <MonthGrid month={month} selected={selected} today={today} days={byDay} onSelect={select} onCreate={onCreate} onOpen={onOpen} />
         ) : (
           <TimeGrid
-            days={view === "week" ? Array.from({ length: 7 }, (_, i) => addDaysKey(monday, i)) : [selected]}
+            days={view === "week" ? Array.from({ length: 7 }, (_, i) => addDaysKey(weekStart, i)) : [selected]}
             byDay={byDay}
             selected={selected}
             today={today}

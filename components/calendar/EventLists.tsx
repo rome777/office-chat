@@ -186,12 +186,12 @@ export default function EventLists({
 }
 
 /** 보는 방식마다 오른쪽 목록의 날짜와 제목 */
-export function rangeOf(view: "month" | "week" | "day", month: string, selected: string, monday: string): { days: string[]; title: string } {
+export function rangeOf(view: "month" | "week" | "day", month: string, selected: string, weekStart: string): { days: string[]; title: string } {
   if (view === "month") {
     const days: string[] = [];
     for (let d = `${month}-01`; d.slice(0, 7) === month; d = addDaysKey(d, 1)) days.push(d);
     return { days, title: `${Number(month.slice(5))}월 일정 목록` };
   }
-  if (view === "week") return { days: Array.from({ length: 7 }, (_, i) => addDaysKey(monday, i)), title: "이 주 일정 목록" };
+  if (view === "week") return { days: Array.from({ length: 7 }, (_, i) => addDaysKey(weekStart, i)), title: "이 주 일정 목록" };
   return { days: Array.from({ length: 7 }, (_, i) => addDaysKey(selected, i + 1)), title: "앞으로 7일" };
 }

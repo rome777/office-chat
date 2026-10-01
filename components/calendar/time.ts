@@ -43,11 +43,10 @@ export function startOfKstDay(at: Date | string): Date {
   return fromKstInput(kstDateKey(at), "00:00");
 }
 
-/** 그 주 월요일 한국 시각 0시 */
+/** 그 주 일요일 한국 시각 0시 */
 export function startOfKstWeek(at: Date | string): Date {
   const day0 = startOfKstDay(at);
-  const fromMonday = (kstParts(day0).weekday + 6) % 7;
-  return addDays(day0, -fromMonday);
+  return addDays(day0, -kstParts(day0).weekday);
 }
 
 /** 시각 비교용 밀리초. DB 는 "+00:00"·마이크로초 형식으로 줄 수 있어 글자끼리 비교하면 틀린다 */
