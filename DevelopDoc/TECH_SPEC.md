@@ -186,9 +186,9 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 2026-09-30 원격 적용, `npm run check:chat` 27개 통과.
 
-- `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별
+- `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별. **넣는 곳 세 군데** (2026-10-01 WU-47, 사용자 "즐겨찾기 등록 기능을 못 찾겠음"): 메시지 목록의 줄에 마우스를 올리면 오른쪽 끝에 나오는 별(손가락 화면은 없음) · 채팅 머리 이름 옆 "☆ 즐겨찾기" 버튼(휴대폰 폭은 채널 이름 옆 별. 오른쪽 패널이 열리거나 이름이 길어 "이름 + 글자 붙은 버튼"이 머리에 다 안 들어가면 글자를 빼고 "☆" 만 — `ChatHeader` 의 `useStarFit` 이 머리 폭에서 오른쪽 도구·아이콘 칸을 뺀 폭과 비교한다. 이름 칸 폭으로 재면 글자를 뺐다 붙였다 깜빡인다) · 즐겨찾기 칸은 비어 있어도 보이고 넣는 방법을 안내한다
 - `channels.description`(120자까지): 채널 설명. **이름·설명은 그 채널의 리더와 관리자만** 고친다 (2026-09-30 WU-39, 처음엔 만든 사람·관리자). **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
-- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다
+- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다. **대화 위쪽 막대에 늘 보인다** (① `PinnedBar`, 2026-10-01 WU-47): 가장 최근에 고정한 것 한 줄 + 여러 개면 "1/4" 로 넘기기, ▾ 로 펼치면 전체(누르면 그 메시지로 이동·강조, 고정 해제). 메시지 목록 밖이라 스크롤해도 그대로 있다
 - `message_reactions(message_id, user_id, emoji, channel_id, removed_at)`: 리액션. 이모지는 정해진 10개. `toggle_reaction(message_id, emoji)` 로만 단다. **떼도 행을 지우지 않고 `removed_at` 을 채운다** — Realtime 의 DELETE 이벤트는 필터(`channel_id=eq.`)가 안 되고 RLS 도 안 거쳐서, 지우면 떼는 것을 채널 멤버에게만 보낼 방법이 없다. INSERT·UPDATE 만 채널로 걸러 받는다
 - `channel_mutes(user_id, channel_id)`: 채널별 알림 끄기. `notifications` BEFORE INSERT 트리거 `notifications_skip_muted` 가 끈 채널의 메시지 알림(멘션·답글·DM)을 **아예 만들지 않는다**. 미읽음 배지는 그대로다. 일정 알림(`channel_id` 없음)은 상관없다
 - 채널에서 나가면(memberships 삭제) 그 채널의 즐겨찾기·알림 끄기를 트리거가 지운다
@@ -662,7 +662,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ shell/                      공통 틀 (2026-09-30, 이호섭) — AppFrame · AppShell(배치) · NavRail(왼쪽 메뉴) · ChatWorkspace(/chat) · MessageNav(메시지 목록 칸) · ChatHeader · ProfileCard · favorites · channelDetails · cardStore · useUnreadTotals · icons
 │  ├─ org/                        ③ 조직도 페이지 (2026-09-30) — OrgPage · OrgDiagram(다이어그램) · OrgTree(계층 목록) · orgSource(org_units)
 │  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
-│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins · usePostRight(공지 채널 쓰기 권한)
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins · PinnedBar(대화 위 고정 메시지 막대) · usePostRight(공지 채널 쓰기 권한)
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인) · signUp(가입 처리 — 2026-09-30 화면에서 빼고 따로 남김, 지금은 안 씀)
 │  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu · MyMenu(내 메뉴 — 위 막대 내 이름과 왼쪽 메뉴 내 카드가 같이 씀, 2026-09-30)
 │  ├─ search/                     ② SearchBox

@@ -17,6 +17,152 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* 고정 메시지 막대 (PinnedBar) — 메시지 목록 밖이라 스크롤해도 위에 붙어 있다 */
+.pinBar {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  background: var(--warn-soft);
+  font-size: 13px;
+}
+
+.pinBarRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 16px;
+  min-width: 0;
+}
+
+.pinBarIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--warn-text);
+}
+
+.pinBarMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinBarMain:hover .pinBarText {
+  text-decoration: underline;
+}
+
+.pinBarWho {
+  flex: none;
+  font-weight: 700;
+}
+
+.pinBarText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pinBarStep,
+.pinBarToggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--warn-text);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.pinBarStep:hover,
+.pinBarToggle:hover,
+.pinBarToggle[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+/* 펼친 목록은 대화 위에 겹쳐 띄운다 (대화가 아래로 밀리지 않게) */
+.pinBarList {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.12);
+}
+
+.pinBarList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+}
+
+.pinBarList li + li {
+  border-top: 1px solid var(--border);
+}
+
+.pinBarItem {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  background: none;
+  padding: 8px 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinBarItem:hover .pinBarItemText {
+  text-decoration: underline;
+}
+
+.pinBarMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pinBarItemText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.pinBarUnpin {
+  flex: none;
+  margin-top: 9px;
+  font-size: 12px;
+}
+
 .listWrap {
   position: relative;
   flex: 1;

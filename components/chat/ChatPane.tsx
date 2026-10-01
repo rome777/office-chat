@@ -14,6 +14,7 @@ import { useReactions } from "./useReactions";
 import { togglePin, usePins } from "./pins";
 import { usePostRight } from "./usePostRight";
 import MessageList, { type Focus } from "./MessageList";
+import PinnedBar from "./PinnedBar";
 import Composer from "./Composer";
 import JumpToMessage from "./JumpToMessage";
 import s from "./chat.module.css";
@@ -45,6 +46,7 @@ export default function ChatPane() {
   const members = useChannelMembers(channel.id);
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
   const handles = useMemo(() => new Set(members.map((m) => m.handle.toLowerCase())), [members]);
+  const memberNames = useMemo(() => new Map(members.map((m) => [m.id, m.display_name])), [members]);
   const { markRead, unreadCount } = useReadStatus(channel.id, self?.id ?? null, memberIds);
   const { reactions, toggle: toggleReaction } = useReactions(channel.id, messages[0]?.id ?? null);
   const pins = usePins(channel.id);
@@ -139,6 +141,7 @@ export default function ChatPane() {
         <JumpToMessage onJump={(id) => void requestJump(id)} />
       </Suspense>
       {jumpNotice && <p className={`${s.notice} error-text`}>{jumpNotice}</p>}
+      <PinnedBar key={channel.id} pins={pins} names={memberNames} onJump={(id) => void requestJump(id)} onUnpin={pin} />
       <MessageList
         messages={messages}
         pending={pending}
