@@ -8,7 +8,7 @@ import { monthGrid, weekdayOf, type CalItem } from "./items";
 import { formatKstTime } from "./time";
 import s from "./schedule.module.css";
 
-const DOW = ["월", "화", "수", "목", "금", "토", "일"];
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 const MAX_CHIPS = 3;
 
 export function Chip({ item, onOpen }: { item: CalItem; onOpen: (item: CalItem) => void }) {

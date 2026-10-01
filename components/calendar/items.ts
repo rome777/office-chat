@@ -80,19 +80,19 @@ export const weekdayOf = (key: string) => {
   const [y, m, d] = key.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 };
-/** 그 주 월요일 */
-export const mondayOf = (key: string) => addDaysKey(key, -((weekdayOf(key) + 6) % 7));
+/** 그 주 일요일 (한 주는 일요일에 시작한다) */
+export const weekStartOf = (key: string) => addDaysKey(key, -weekdayOf(key));
 /** "YYYY-MM" 의 n 달 뒤 */
 export const addMonthKey = (month: string, n: number) => {
   const [y, m] = month.split("-").map(Number);
   const t = new Date(Date.UTC(y, m - 1 + n, 1));
   return t.toISOString().slice(0, 7);
 };
-/** 달력 격자(월요일 시작)의 첫날과 마지막 날 */
+/** 달력 격자(일요일 시작)의 첫날과 마지막 날 */
 export function monthGrid(month: string): { first: string; last: string; days: string[] } {
-  const first = mondayOf(`${month}-01`);
+  const first = weekStartOf(`${month}-01`);
   const lastOfMonth = addDaysKey(`${addMonthKey(month, 1)}-01`, -1);
-  const last = addDaysKey(mondayOf(lastOfMonth), 6);
+  const last = addDaysKey(weekStartOf(lastOfMonth), 6);
   const days: string[] = [];
   for (let d = first; d <= last; d = addDaysKey(d, 1)) days.push(d);
   return { first, last, days };
