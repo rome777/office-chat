@@ -2,8 +2,10 @@
 
 // 대시보드 (/, 로그인 뒤 첫 화면, 2026-09-30 WU-35 · 2026-10-01 개편 WU-45).
 // 정보 우선순위대로 위에서 아래로: 인사말(내 상태·다음 일정) → 요약 카드 4개(오늘의 일정·안 읽은 메시지·내 회의 예약·내 할 일)
-// → 오늘의 일정(전체 폭, 지난 일정은 접음) → 빠른 실행(버튼 줄) → 내 할 일 | 회의실 현황 → 최근 대화.
+// → 오늘의 일정 | 회사 공지(공지 채널이 없으면 오늘의 일정이 전체 폭, 지난 일정은 접음) → 빠른 실행(버튼 줄) → 내 할 일 | 회의실 현황 → 최근 대화.
 // 내 할 일 (WU-47): 맨 위 "일정 초대 응답 필요 N건" 묶음([참석]·[불참]) + 할 일(todos)과 7일 안 업무 유형 일정을 기한순으로 섞은 한 목록.
+// 회사 공지 (WU-50): 오늘의 일정 오른쪽 상자 — 공지 채널(notice_unit_id)의 고정 공지(최대 2) + 최근 공지, 안 읽은 공지는 진하게 + N. 누르면 /chat?m=.
+//   공지 채널이 없으면 상자를 그리지 않고 오늘의 일정이 전체 폭.
 // 오늘 팀 부재 (WU-49): 오늘의 일정 상자 맨 위 한 줄 — 같은 부서 팀원의 휴가·부재·외근(list_team_events, 공개 범위대로 가려 옴). 없으면 줄을 숨긴다.
 // 새 표는 없다. 쓰는 것은 할 일 끝냄(done_at)과 일정 초대 응답(respond)뿐. 누르면 해당 화면으로 주소 이동 (/chat?c=, /chat?m=, /calendar?e=).
 
@@ -22,7 +24,7 @@ import { STATUS_LABEL, useMyProfile } from "@/components/profile/profileSource";
 import NewDmDialog from "@/components/sidebar/NewDmDialog";
 import { getUnread } from "@/components/sidebar/unread";
 import { useMyChannels, useMyDms, useUnread } from "@/components/sidebar/useChannels";
-import { CalendarIcon, ChatIcon, CheckIcon, ChevronIcon, HashIcon, PlusIcon, RoomIcon } from "@/components/shell/icons";
+import { CalendarIcon, ChatIcon, CheckIcon, ChevronIcon, HashIcon, MegaphoneIcon, PlusIcon, RoomIcon } from "@/components/shell/icons";
 import { useUnreadTotals } from "@/components/shell/useUnreadTotals";
 import { openProfileCard } from "@/components/shell/cardStore";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
@@ -30,10 +32,12 @@ import RoomStatus, { type MyMeeting } from "./RoomStatus";
 import {
   finishTodo,
   listMyTodos,
+  listNotices,
   listPendingInvites,
   listRecent,
   listTeamAway,
   type MyTodo,
+  type NoticeBoard,
   type PendingInvite,
   type Recent,
   type TeamAway,
@@ -41,6 +45,7 @@ import {
 import s from "./dashboard.module.css";
 
 const RECENT = 6;
+const NOTICES = 5; // 회사 공지 상자에 보일 공지 수 (고정 포함)
 const TODO_SHOWN = 5; // 할 일은 이만큼만 펼치고 나머지는 [더 보기]
 const WORK_DAYS = 7; // 업무 유형 일정은 오늘부터 이 날수 안의 것만 할 일에 끌어온다
 
@@ -150,6 +155,8 @@ export default function Dashboard() {
   const [invitesOpen, setInvitesOpen] = useState(false);
   const [recent, setRecent] = useState<Recent[] | null>(null);
   const [away, setAway] = useState<TeamAway[]>([]);
+  // undefined = 불러오는 중, null = 공지 채널 없음(상자를 그리지 않음)
+  const [notices, setNotices] = useState<NoticeBoard | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [dmOpen, setDmOpen] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -196,6 +203,31 @@ export default function Dashboard() {
       (e) => (fail(e), setWork([])),
     );
   }, [self, fail]);
+
+  // 회사 공지: 공지 채널의 안 읽은 수가 바뀌면(남이 올린 새 공지·읽음) 다시 부르고, 다른 탭에 갔다 돌아오면 다시 부른다
+  //   (내가 올린 공지·고치기·지우기·고정·답글은 안 읽은 수를 바꾸지 않아서). 실패하면 받아 둔 것을 두고 오류 띠에
+  const noticeUnread = useUnread(notices?.channelId ?? "");
+  const [noticeTick, setNoticeTick] = useState(0);
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === "visible" && setNoticeTick((n) => n + 1);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+  useEffect(() => {
+    if (!self) return;
+    let alive = true;
+    void listNotices(self.id, NOTICES).then(
+      (b) => alive && setNotices(b),
+      (e) => {
+        if (!alive) return;
+        fail(e);
+        setNotices((b) => (b === undefined ? null : b));
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [self, noticeUnread, noticeTick, fail]);
 
   // 새 메시지가 오면(안 읽은 수가 바뀌면) 최근 대화를 다시 불러온다
   useEffect(() => {
@@ -391,101 +423,153 @@ export default function Dashboard() {
         </button>
       </section>
 
-      <section className={s.box} aria-labelledby="dash-schedule">
-        <div className={s.boxHead}>
-          <h2 id="dash-schedule">
-            <CalendarIcon size={18} /> 오늘의 일정
-          </h2>
-          <Link href="/calendar" className={s.more}>
-            전체 보기 ›
-          </Link>
-        </div>
-        {awayNow.length > 0 && (
-          <div className={s.away}>
-            <span className={s.awayHead} id="dash-away">
-              팀 부재 <strong>{new Set(awayNow.map((a) => a.userId)).size}명</strong>
-            </span>
-            <ul className={s.awayList} aria-labelledby="dash-away">
-              {awayNow.map((a) => {
-                const text = awayText(a, todayKey);
-                const detail = [a.title, a.location].filter(Boolean).join(" · ");
-                return (
-                  <li key={a.id}>
-                    <button
-                      type="button"
-                      className={s.awayChip}
-                      title={detail || undefined}
-                      aria-label={`${a.name} ${text}${detail ? ` · ${detail}` : ""} — 프로필 보기`}
-                      onClick={() => openProfileCard(a.userId)}
-                    >
-                      <PersonAvatar userId={a.userId} name={a.name} size={22} />
-                      <strong>{a.name}</strong>
-                      <i style={{ background: colorVar(a.kind) }} aria-hidden="true" />
-                      <span>{text}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-        {events === null ? (
-          <p className={s.empty}>불러오는 중…</p>
-        ) : events.length === 0 ? (
-          <div className={s.emptyBox}>
-            <p>오늘 잡힌 일정이 없습니다.</p>
-            <Link href="/calendar?new=1" className={s.emptyAction}>
-              <PlusIcon size={16} /> 일정 추가
+      <div className={notices === null ? s.topSolo : s.top}>
+        <section className={s.box} aria-labelledby="dash-schedule">
+          <div className={s.boxHead}>
+            <h2 id="dash-schedule">
+              <CalendarIcon size={18} /> 오늘의 일정
+            </h2>
+            <Link href="/calendar" className={s.more}>
+              전체 보기 ›
             </Link>
           </div>
-        ) : (
-          <>
-            {past.length > 0 && (
-              <button type="button" className={s.pastToggle} aria-expanded={showPast} aria-controls="dash-timeline" onClick={() => setShowPast((v) => !v)}>
-                <ChevronIcon size={14} open={showPast} /> 지난 일정 {past.length}건
-              </button>
-            )}
-            <ul className={s.timeline} id="dash-timeline">
-              {(showPast ? events : upcoming).map((e) => {
-                const live = !e.all_day && !isPast(e) && !declined(e) && new Date(e.starts_at).getTime() <= nowMs;
-                const mine = e.attendees.find((a) => a.user_id === self?.id);
-                const place = roomName(e.room_id) || e.location || KIND_LABEL[e.kind];
-                return (
-                  <li key={e.id}>
-                    <span className={s.tlTime}>
-                      {e.all_day ? (
-                        <strong>종일</strong>
-                      ) : (
-                        <>
-                          <strong>{formatKstTime(e.starts_at)}</strong>
-                          <span>{formatKstTime(e.ends_at)}</span>
-                        </>
-                      )}
-                    </span>
-                    <Link
-                      href={`/calendar?e=${encodeURIComponent(e.id)}`}
-                      className={`${s.tlCard} ${isPast(e) ? s.past : ""} ${live ? s.tlLive : ""}`}
-                      style={{ borderLeftColor: colorVar(e.kind) }}
-                    >
-                      <span className={s.tlText}>
-                        <strong>{e.title}</strong>
+          {awayNow.length > 0 && (
+            <div className={s.away}>
+              <span className={s.awayHead} id="dash-away">
+                팀 부재 <strong>{new Set(awayNow.map((a) => a.userId)).size}명</strong>
+              </span>
+              <ul className={s.awayList} aria-labelledby="dash-away">
+                {awayNow.map((a) => {
+                  const text = awayText(a, todayKey);
+                  const detail = [a.title, a.location].filter(Boolean).join(" · ");
+                  return (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        className={s.awayChip}
+                        title={detail || undefined}
+                        aria-label={`${a.name} ${text}${detail ? ` · ${detail}` : ""} — 프로필 보기`}
+                        onClick={() => openProfileCard(a.userId)}
+                      >
+                        <PersonAvatar userId={a.userId} name={a.name} size={22} />
+                        <strong>{a.name}</strong>
+                        <i style={{ background: colorVar(a.kind) }} aria-hidden="true" />
+                        <span>{text}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {events === null ? (
+            <p className={s.empty}>불러오는 중…</p>
+          ) : events.length === 0 ? (
+            <div className={s.emptyBox}>
+              <p>오늘 잡힌 일정이 없습니다.</p>
+              <Link href="/calendar?new=1" className={s.emptyAction}>
+                <PlusIcon size={16} /> 일정 추가
+              </Link>
+            </div>
+          ) : (
+            <>
+              {past.length > 0 && (
+                <button type="button" className={s.pastToggle} aria-expanded={showPast} aria-controls="dash-timeline" onClick={() => setShowPast((v) => !v)}>
+                  <ChevronIcon size={14} open={showPast} /> 지난 일정 {past.length}건
+                </button>
+              )}
+              <ul className={s.timeline} id="dash-timeline">
+                {(showPast ? events : upcoming).map((e) => {
+                  const live = !e.all_day && !isPast(e) && !declined(e) && new Date(e.starts_at).getTime() <= nowMs;
+                  const mine = e.attendees.find((a) => a.user_id === self?.id);
+                  const place = roomName(e.room_id) || e.location || KIND_LABEL[e.kind];
+                  return (
+                    <li key={e.id}>
+                      <span className={s.tlTime}>
+                        {e.all_day ? (
+                          <strong>종일</strong>
+                        ) : (
+                          <>
+                            <strong>{formatKstTime(e.starts_at)}</strong>
+                            <span>{formatKstTime(e.ends_at)}</span>
+                          </>
+                        )}
+                      </span>
+                      <Link
+                        href={`/calendar?e=${encodeURIComponent(e.id)}`}
+                        className={`${s.tlCard} ${isPast(e) ? s.past : ""} ${live ? s.tlLive : ""}`}
+                        style={{ borderLeftColor: colorVar(e.kind) }}
+                      >
+                        <span className={s.tlText}>
+                          <strong>{e.title}</strong>
+                          <span>
+                            {place}
+                            {e.attendees.length > 1 && ` · ${e.attendees.length}명`}
+                          </span>
+                        </span>
+                        {live && <span className={`${s.chip} ${s.chipOk}`}>진행 중</span>}
+                        {!live && !isPast(e) && mine?.response === "pending" && <span className={`${s.chip} ${s.chipWarn}`}>응답 전</span>}
+                        {mine?.response === "declined" && <span className={`${s.chip} ${s.chipIdle}`}>불참</span>}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              {upcoming.length === 0 && <p className={s.empty}>오늘 남은 일정이 없습니다.</p>}
+            </>
+          )}
+        </section>
+
+        {notices !== null && (
+          <section className={s.box} aria-labelledby="dash-notice">
+            <div className={s.boxHead}>
+              <h2 id="dash-notice">
+                <MegaphoneIcon size={18} /> 회사 공지
+              </h2>
+              {notices && (
+                <Link href={`/chat?c=${encodeURIComponent(notices.channelId)}`} className={s.more}>
+                  전체 보기 ›
+                </Link>
+              )}
+            </div>
+            {notices === undefined ? (
+              <p className={s.empty}>불러오는 중…</p>
+            ) : notices.notices.length === 0 ? (
+              <div className={s.emptyBox}>
+                <p>아직 올라온 공지가 없습니다.</p>
+                <span>#{notices.channelName} 에 공지가 올라오면 여기에 모입니다.</span>
+              </div>
+            ) : (
+              <ul className={s.notices}>
+                {notices.notices.map((n) => (
+                  <li key={n.id}>
+                    <Link href={`/chat?m=${n.id}`} className={`${s.noticeRow} ${n.unread ? s.unread : ""}`}>
+                      <span className={s.noticeText}>
+                        <strong>
+                          {n.pinned && <span className={s.pinTag}>고정</span>}{n.pinned && " "}
+                          {showMentions(n.title, labels)}
+                        </strong>
                         <span>
-                          {place}
-                          {e.attendees.length > 1 && ` · ${e.attendees.length}명`}
+                          {n.author ?? "알 수 없는 사람"} · <time dateTime={n.at}>{when(n.at)}</time>
+                          {n.replies > 0 && ` · 답글 ${n.replies}`}
                         </span>
                       </span>
-                      {live && <span className={`${s.chip} ${s.chipOk}`}>진행 중</span>}
-                      {!live && !isPast(e) && mine?.response === "pending" && <span className={`${s.chip} ${s.chipWarn}`}>응답 전</span>}
-                      {mine?.response === "declined" && <span className={`${s.chip} ${s.chipIdle}`}>불참</span>}
+                      {n.unread && (
+                        <>
+                          <span className={s.newTag} aria-hidden="true">
+                            N
+                          </span>
+                          <span className={s.srOnly}>안 읽음</span>
+                        </>
+                      )}
                     </Link>
                   </li>
-                );
-              })}
-            </ul>
-            {upcoming.length === 0 && <p className={s.empty}>오늘 남은 일정이 없습니다.</p>}
-          </>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
-      </section>
+      </div>
 
       <section className={s.quick} aria-label="빠른 실행">
         <button type="button" className={s.quickItem} onClick={() => setDmOpen(true)}>
