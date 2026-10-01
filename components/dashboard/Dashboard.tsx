@@ -3,15 +3,16 @@
 // 대시보드 (/, 로그인 뒤 첫 화면, 2026-09-30 WU-35 · 2026-10-01 개편 WU-45).
 // 정보 우선순위대로 위에서 아래로: 인사말(내 상태·다음 일정) → 요약 카드 4개(오늘의 일정·안 읽은 메시지·내 회의 예약·내 할 일)
 // → 오늘의 일정(전체 폭, 지난 일정은 접음) → 빠른 실행(버튼 줄) → 내 할 일 | 회의실 현황 → 최근 대화.
-// 모두 기존 데이터를 읽기만 한다. 누르면 해당 화면으로 주소 이동 (/chat?c=, /chat?m=, /calendar?e=).
+// 내 할 일 (WU-47): 맨 위 "일정 초대 응답 필요 N건" 묶음([참석]·[불참]) + 할 일(todos)과 7일 안 업무 유형 일정을 기한순으로 섞은 한 목록.
+// 새 표는 없다. 쓰는 것은 할 일 끝냄(done_at)과 일정 초대 응답(respond)뿐. 누르면 해당 화면으로 주소 이동 (/chat?c=, /chat?m=, /calendar?e=).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Room } from "@/lib/types/calendar";
 import { showMentions } from "@/lib/mentions";
-import { colorVar, KIND_LABEL } from "@/components/calendar/kinds"; // ② 일정 유형 이름·색 (2026-10-01)
-import { listMyEvents, listRooms, type EventWithAttendees } from "@/components/calendar/source";
+import { colorVar, KIND_LABEL, subtypeLabel } from "@/components/calendar/kinds"; // ② 일정 유형 이름·색 (2026-10-01)
+import { listMyEvents, listRooms, respond, type EventWithAttendees } from "@/components/calendar/source";
 import { addDays, formatKstTime, kstDateKey, startOfKstDay } from "@/components/calendar/time";
 import { useSelf } from "@/components/chat/useSelf";
 import { useMentionLabels } from "@/components/people/directory";
@@ -23,12 +24,13 @@ import { useMyChannels, useMyDms, useUnread } from "@/components/sidebar/useChan
 import { CalendarIcon, ChatIcon, CheckIcon, ChevronIcon, HashIcon, PlusIcon, RoomIcon } from "@/components/shell/icons";
 import { useUnreadTotals } from "@/components/shell/useUnreadTotals";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import RoomStatus from "./RoomStatus";
-import { finishTodo, listMyTodos, listRecent, type MyTodo, type Recent } from "./source";
+import RoomStatus, { type MyMeeting } from "./RoomStatus";
+import { finishTodo, listMyTodos, listPendingInvites, listRecent, type MyTodo, type PendingInvite, type Recent } from "./source";
 import s from "./dashboard.module.css";
 
 const RECENT = 6;
 const TODO_SHOWN = 5; // 할 일은 이만큼만 펼치고 나머지는 [더 보기]
+const WORK_DAYS = 7; // 업무 유형 일정은 오늘부터 이 날수 안의 것만 할 일에 끌어온다
 
 function greeting(now: Date) {
   const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "numeric", hourCycle: "h23" }).format(now));
@@ -60,6 +62,29 @@ function dueOf(due: string | null, todayKey: string): { text: string; tone: "bad
   return { text: `${Number(due.slice(5, 7))}월 ${Number(due.slice(8, 10))}일 마감`, tone: null };
 }
 
+/** "10월 3일 (금) 14:00", 종일이면 시각 없이 */
+const longWhen = (iso: string, allDay: boolean) =>
+  new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    ...(allDay ? {} : { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+  }).format(new Date(iso));
+
+/** 업무 일정의 기한 칩 — 진행 중·오늘·내일은 색, 그 뒤는 D-n */
+function workDue(e: EventWithAttendees, todayKey: string, nowMs: number): { text: string; tone: "ok" | "warn" | null } {
+  const start = new Date(e.starts_at).getTime();
+  if (!e.all_day && start <= nowMs) return { text: "진행 중", tone: "ok" };
+  const d = dayDiff(todayKey, kstDateKey(e.starts_at));
+  if (d <= 0) return { text: e.all_day ? "오늘" : `오늘 ${formatKstTime(e.starts_at)}`, tone: "warn" };
+  if (d === 1) return { text: "내일", tone: "warn" };
+  return { text: `D-${d}`, tone: null };
+}
+
+/** 할 일 목록 한 줄 — todos 또는 업무 유형 일정. date 는 정렬 기준 날짜(없으면 맨 뒤) */
+type Item = { key: string; date: string | null; at: string; todo?: MyTodo; work?: EventWithAttendees };
+
 export default function Dashboard() {
   const router = useRouter();
   const params = useSearchParams();
@@ -74,6 +99,9 @@ export default function Dashboard() {
   const [events, setEvents] = useState<EventWithAttendees[] | null>(null);
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [todos, setTodos] = useState<MyTodo[] | null>(null);
+  const [work, setWork] = useState<EventWithAttendees[] | null>(null);
+  const [invites, setInvites] = useState<PendingInvite[] | null>(null);
+  const [invitesOpen, setInvitesOpen] = useState(false);
   const [recent, setRecent] = useState<Recent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dmOpen, setDmOpen] = useState(false);
@@ -102,7 +130,24 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!self) return;
-    void listMyTodos(self.id).then(setTodos, fail);
+    // 하나가 실패해도 나머지는 보이게 실패하면 빈 목록으로 둔다 (오류는 맨 위 띠에)
+    void listMyTodos(self.id).then(setTodos, (e) => (fail(e), setTodos([])));
+    void listPendingInvites(self.id).then(setInvites, fail);
+    // 업무 유형 일정: 내가 참석자이고 불참하지 않은 것, 아직 안 끝난 것 (팀 일정이라 보이기만 하는 남의 것은 뺀다)
+    const from = startOfKstDay(new Date());
+    void listMyEvents(from, addDays(from, WORK_DAYS)).then(
+      (list) =>
+        setWork(
+          list.filter(
+            (e) =>
+              !e.canceled_at &&
+              e.kind === "work" &&
+              new Date(e.ends_at).getTime() > Date.now() &&
+              e.attendees.some((a) => a.user_id === self.id && a.response !== "declined"),
+          ),
+        ),
+      (e) => (fail(e), setWork([])),
+    );
   }, [self, fail]);
 
   // 새 메시지가 오면(안 읽은 수가 바뀌면) 최근 대화를 다시 불러온다
@@ -126,8 +171,25 @@ export default function Dashboard() {
   const nextLive = next && new Date(next.starts_at).getTime() <= nowMs;
   const myRooms = useMemo(() => (events ?? []).filter((e) => e.room_id), [events]);
   const nextRoom = myRooms.find((e) => new Date(e.ends_at).getTime() > nowMs);
+  const myMeetings = myRooms
+    .filter((e) => !declined(e))
+    .map((e): MyMeeting => ({ room_id: e.room_id!, starts_at: e.starts_at, ends_at: e.ends_at }));
   const roomName = (id: string | null) => rooms?.find((r) => r.id === id)?.name ?? "";
-  const urgent = (todos ?? []).filter((t) => t.due !== null && dayDiff(todayKey, t.due) <= 1).length;
+  const liveWork = (work ?? []).filter((e) => new Date(e.ends_at).getTime() > nowMs);
+  const items: Item[] = [
+    ...(todos ?? []).map((t): Item => ({ key: `t:${t.id}`, date: t.due, at: "", todo: t })),
+    // 이미 시작해 이어지는 업무(여러 날 프로젝트 등)는 오늘 것으로 친다
+    ...liveWork.map((e): Item => {
+      const day = kstDateKey(e.starts_at);
+      return { key: `w:${e.id}`, date: day < todayKey ? todayKey : day, at: e.starts_at, work: e };
+    }),
+  ].sort((a, b) => {
+    if (a.date !== b.date) return a.date === null ? 1 : b.date === null ? -1 : a.date.localeCompare(b.date);
+    if (!!a.work !== !!b.work) return a.work ? -1 : 1; // 같은 날이면 시각이 정해진 업무 일정 먼저
+    return a.at.localeCompare(b.at);
+  });
+  const itemsLoading = todos === null || work === null;
+  const urgent = items.filter((i) => i.date !== null && dayDiff(todayKey, i.date) <= 1).length;
 
   async function done(t: MyTodo) {
     setTodos((list) => list?.filter((x) => x.id !== t.id) ?? null);
@@ -159,7 +221,34 @@ export default function Dashboard() {
   };
 
   const status = profile?.status ?? "online"; // 오프라인으로 표시·오프라인은 st_ 클래스가 없어 기본 회색
-  const shownTodos = todos ? (allTodos ? todos : todos.slice(0, TODO_SHOWN)) : [];
+  const shownItems = allTodos ? items : items.slice(0, TODO_SHOWN);
+
+  // 초대에 답한다. 목록에서 먼저 빼고, 실패하면 다시 불러온다. 오늘의 일정의 "응답 전" 칩도 같이 고친다
+  async function answer(inv: PendingInvite, response: "accepted" | "declined") {
+    const rest = (invites ?? []).filter((x) => x.id !== inv.id);
+    const after = rest[(invites ?? []).findIndex((x) => x.id === inv.id)] ?? rest[rest.length - 1];
+    setInvites(rest);
+    // 누른 줄이 사라지면 포커스가 body 로 가니 다음 초대의 [참석]으로, 없으면 할 일 제목으로 옮긴다
+    requestAnimationFrame(() =>
+      (after ? document.getElementById(`invite-yes-${after.id}`) : document.getElementById("dash-todos-title"))?.focus(),
+    );
+    try {
+      await respond(inv.id, response);
+      const mark = (e: EventWithAttendees) =>
+        e.id === inv.id ? { ...e, attendees: e.attendees.map((a) => (a.user_id === self?.id ? { ...a, response } : a)) } : e;
+      // 업무 유형 일정이면 할 일 목록에서도: 불참은 빼고 참석은 응답만 바꾼다
+      setWork((list) => (list ? (response === "declined" ? list.filter((e) => e.id !== inv.id) : list.map(mark)) : list));
+      setEvents(
+        (list) =>
+          list?.map((e) =>
+            e.id === inv.id ? { ...e, attendees: e.attendees.map((a) => (a.user_id === self?.id ? { ...a, response } : a)) } : e,
+          ) ?? null,
+      );
+    } catch (e) {
+      fail(e);
+      if (self) void listPendingInvites(self.id).then(setInvites, fail);
+    }
+  }
 
   return (
     <div className={s.page}>
@@ -232,10 +321,12 @@ export default function Dashboard() {
           </span>
           <span className={s.cardTitle}>내 할 일</span>
           <strong className={s.cardValue}>
-            {todos?.length ?? "–"}
+            {itemsLoading ? "–" : items.length}
             <small>건</small>
           </strong>
-          <span className={`${s.cardSub} ${urgent ? s.urgent : ""}`}>{urgent ? `마감 임박 ${urgent}건` : "마감 임박 없음"}</span>
+          <span className={`${s.cardSub} ${urgent ? s.urgent : ""}`}>
+            {urgent ? `마감 임박 ${urgent}건` : invites?.length ? `일정 응답 필요 ${invites.length}건` : "마감 임박 없음"}
+          </span>
         </button>
       </section>
 
@@ -324,27 +415,86 @@ export default function Dashboard() {
             <h2 id="dash-todos-title" tabIndex={-1}>
               <CheckIcon size={18} /> 내 할 일
             </h2>
-            {todos && todos.length > 0 && <span className={s.count}>{todos.length}건</span>}
+            {!itemsLoading && items.length > 0 && <span className={s.count}>{items.length}건</span>}
           </div>
-          {todos === null ? (
+          {invites && invites.length > 0 && (
+            <div className={s.invites}>
+              <button
+                type="button"
+                className={s.invitesHead}
+                aria-expanded={invitesOpen}
+                aria-controls="dash-invites"
+                onClick={() => setInvitesOpen((v) => !v)}
+              >
+                <ChevronIcon size={14} open={invitesOpen} /> 일정 초대 응답 필요 <strong>{invites.length}건</strong>
+              </button>
+              {(
+                <ul className={s.inviteList} id="dash-invites" hidden={!invitesOpen}>
+                  {invites.map((inv) => (
+                    <li key={inv.id}>
+                      <Link href={`/calendar?e=${encodeURIComponent(inv.id)}`} className={s.inviteText}>
+                        <strong>{inv.title}</strong>
+                        <span>{longWhen(inv.starts_at, inv.all_day)}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        id={`invite-yes-${inv.id}`}
+                        className={s.inviteBtn}
+                        aria-label={`${inv.title} 참석`}
+                        onClick={() => void answer(inv, "accepted")}
+                      >
+                        참석
+                      </button>
+                      <button
+                        type="button"
+                        className={`${s.inviteBtn} ${s.inviteNo}`}
+                        aria-label={`${inv.title} 불참`}
+                        onClick={() => void answer(inv, "declined")}
+                      >
+                        불참
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {itemsLoading ? (
             <p className={s.empty}>불러오는 중…</p>
-          ) : todos.length === 0 ? (
+          ) : items.length === 0 ? (
             <div className={s.emptyBox}>
               <p>맡은 할 일이 없습니다.</p>
-              <span>채팅에서 “할 일”로 저장하고 담당을 나로 정하면 여기에 모입니다.</span>
+              <span>채팅에서 “할 일”로 저장하고 담당을 나로 정하거나, 업무 유형 일정을 만들면 여기에 모입니다.</span>
             </div>
           ) : (
             <>
               <ul className={s.todos}>
-                {shownTodos.map((t) => {
-                  const due = dueOf(t.due, todayKey);
+                {shownItems.map(({ key, todo: t, work: e }) => {
+                  if (e) {
+                    const due = workDue(e, todayKey, nowMs);
+                    return (
+                      <li key={key}>
+                        <span className={s.workIcon} style={{ color: colorVar(e.kind) }} aria-hidden="true">
+                          <CalendarIcon size={16} />
+                        </span>
+                        <Link href={`/calendar?e=${encodeURIComponent(e.id)}`} className={`${s.todoText} ${s.workLink}`}>
+                          <strong>{e.title}</strong>
+                          <span>
+                            {subtypeLabel(e.kind, e.subtype) || KIND_LABEL[e.kind]} · {longWhen(e.starts_at, e.all_day)}
+                          </span>
+                        </Link>
+                        <span className={`${s.chip} ${due.tone === "ok" ? s.chipOk : due.tone === "warn" ? s.chipWarn : ""}`}>{due.text}</span>
+                      </li>
+                    );
+                  }
+                  const due = dueOf(t!.due, todayKey);
                   return (
-                    <li key={t.id}>
-                      <input type="checkbox" aria-label={`${t.task} 끝냄`} onChange={() => void done(t)} />
+                    <li key={key}>
+                      <input type="checkbox" aria-label={`${t!.task} 끝냄`} onChange={() => void done(t!)} />
                       <span className={s.todoText}>
-                        <strong>{t.task}</strong>
+                        <strong>{t!.task}</strong>
                         <span>
-                          {t.evidence_message_id ? <Link href={`/chat?m=${t.evidence_message_id}`}>{t.channel_name}</Link> : t.channel_name}
+                          {t!.evidence_message_id ? <Link href={`/chat?m=${t!.evidence_message_id}`}>{t!.channel_name}</Link> : t!.channel_name}
                           {!due.tone && ` · ${due.text}`}
                         </span>
                       </span>
@@ -353,16 +503,16 @@ export default function Dashboard() {
                   );
                 })}
               </ul>
-              {todos.length > TODO_SHOWN && (
+              {items.length > TODO_SHOWN && (
                 <button type="button" className={s.moreBtn} onClick={() => setAllTodos((v) => !v)}>
-                  {allTodos ? "접기" : `${todos.length - TODO_SHOWN}건 더 보기`}
+                  {allTodos ? "접기" : `${items.length - TODO_SHOWN}건 더 보기`}
                 </button>
               )}
             </>
           )}
         </section>
 
-        <RoomStatus rooms={rooms} />
+        <RoomStatus rooms={rooms} mine={myMeetings} />
       </div>
 
       <section className={s.box} aria-labelledby="dash-recent">
