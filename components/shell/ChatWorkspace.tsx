@@ -27,7 +27,9 @@ export default function ChatWorkspace() {
   );
 }
 
-/** ?c= 를 읽어 그 대화로 바꾸고 주소에서 지운다. 볼 수 없는 채널이면(RLS 0행) 그대로 둔다 */
+/** ?c= 를 읽어 그 대화로 바꾸고 주소에서 지운다. 볼 수 없는 채널이면(RLS 0행) 그대로 둔다.
+ *  주소는 채널을 다 읽고 연 **뒤에** 지운다 — 먼저 지우면 c 가 바뀌어 이 effect 가 정리되면서(alive=false) 읽은 결과를 버리고,
+ *  목록 칸이 기본값(즐겨찾기 채널)을 열어 버린다 (2026-10-01, 일정의 [참석자와 대화]에서 발견) */
 function ChannelFromUrl() {
   const params = useSearchParams();
   const router = useRouter();
@@ -37,16 +39,19 @@ function ChannelFromUrl() {
 
   useEffect(() => {
     if (!c) return;
-    const rest = new URLSearchParams(params.toString());
-    rest.delete("c");
-    const qs = rest.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    const clearUrl = () => {
+      const rest = new URLSearchParams(params.toString());
+      rest.delete("c");
+      const qs = rest.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    };
 
     let alive = true;
     const supabase = getSupabase();
     void (async () => {
       const { data: ch } = await supabase.from("channels").select("id, name, type").eq("id", c).maybeSingle();
-      if (!alive || !ch) return;
+      if (!alive) return;
+      if (!ch) return clearUrl();
       let name: string = ch.name ?? "DM";
       if (ch.type === "dm") {
         const { data: session } = await supabase.auth.getSession();
@@ -57,7 +62,9 @@ function ChannelFromUrl() {
           .neq("user_id", session.session?.user.id ?? "");
         name = (others?.[0]?.profiles as { display_name?: string } | null)?.display_name ?? "DM";
       }
-      if (alive) setChannel({ id: ch.id, name, type: ch.type });
+      if (!alive) return;
+      setChannel({ id: ch.id, name, type: ch.type });
+      clearUrl();
     })();
     return () => {
       alive = false;

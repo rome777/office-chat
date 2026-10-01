@@ -44,7 +44,7 @@ function PanelBody({ panel }: { panel: PanelState }) {
     case "event":
       return <EventPanel eventId={panel.eventId} />;
     case "eventNew":
-      return <EventEditor mode="new" date={panel.date} time={panel.time} withIds={panel.withIds} />;
+      return <EventEditor mode="new" date={panel.date} time={panel.time} withIds={panel.withIds} fromMessage={panel.fromMessage} />;
     case "eventEdit":
       return <EventEditor mode="edit" eventId={panel.eventId} />;
     case "teamEvent":

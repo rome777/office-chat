@@ -6,6 +6,7 @@ import type { ChatMessage, MessageAttachment, PendingMessage } from "@/lib/types
 import PersonAvatar from "@/components/profile/PersonAvatar"; // ② 사진·상태 점 (2026-09-30)
 import { useMyProfile } from "@/components/profile/profileSource";
 import { useState } from "react";
+import Link from "next/link";
 import { openProfileCard } from "@/components/shell/cardStore";
 import AttachmentView from "./AttachmentView";
 import { REACTIONS } from "./useReactions";
@@ -145,6 +146,12 @@ export function MessageItem({
             >
               📌
             </button>
+          )}
+          {extras && (
+            // ② 일정 (2026-10-01): 이 메시지로 일정 만들기 — 내용·채널을 채운 만들기 패널을 연다
+            <Link href={`/calendar?new=1&from=${message.id}`} className={s.tool} aria-label="일정으로 만들기" title="일정으로 만들기">
+              📅
+            </Link>
           )}
           {picking && extras && (
             <div className={s.picker} role="group" aria-label="리액션 고르기">

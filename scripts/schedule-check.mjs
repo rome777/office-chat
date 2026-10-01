@@ -3,7 +3,8 @@
 // 시험용 팀 T(회사 아래)를 만들고 가상 사용자 A·B 를 넣는다. C 는 조직이 없다. A 가 일반 채널 X 를 만든다.
 // 확인: 분류(팀 전원·일반 채널·부서 채널), category 를 사용자가 못 고침, 남의 채널을 못 걺,
 //       list_team_events 가 공개 범위만큼만 주는지(바쁨은 유형도 없음, 병가 → 휴가, 휴직 → 부재), 다른 부서는 못 봄,
-//       종일 일정 초대자는 알림 없음. 끝나면 사용자·채널·팀을 모두 지운다.
+//       종일 일정 초대자는 알림 없음, 반복(만들기·이후 모두 고치기·취소·초대 한 번), 참석자와 대화(DM·비공개 채널).
+//       끝나면 사용자·채널·팀을 모두 지운다.
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
@@ -115,11 +116,55 @@ try {
   check("종일 일정의 초대자는 알림 없음", remB.data?.remind_minutes?.length === 0, JSON.stringify(remB.data?.remind_minutes));
   const bad = await A.sb.from("event_attendees").update({ remind_minutes: [0] }).eq("event_id", alone).eq("user_id", A.id).select("event_id");
   check("알림은 5·10·30·60·1440분 전만", bad.error?.code === "23514", `(${bad.error?.code})`);
+
+  // ── 반복 (20261001120000) ──
+  // 종료일은 한국 날짜로 (시작의 한국 날짜 + 21일 → 4회차)
+  const until = new Date(day.getTime() + 9 * 3600000 + 21 * 86400000).toISOString().slice(0, 10);
+  const first = await A.sb.rpc("create_event_series", { ...base, p_title: "반복 검사", p_repeat: "weekly", p_until: until, p_attendee_ids: [B.id] });
+  if (first.error) throw new Error(`create_event_series: ${first.error.message}`);
+  const sid = (await admin.from("events").select("series_id").eq("id", first.data).single()).data.series_id;
+  const occ = (await admin.from("events").select("id, starts_at").eq("series_id", sid).order("starts_at")).data;
+  check("매주 반복 3주 → 4회차", occ.length === 4, `(${occ.length})`);
+  const invB = (await admin.from("notifications").select("id").eq("user_id", B.id).eq("type", "event_invite").in("event_id", occ.map((o) => o.id))).data;
+  check("반복 초대 알림은 한 번", invB.length === 1, `(${invB.length})`);
+  const upd = await A.sb.rpc("update_event_series", {
+    p_event: occ[2].id, p_title: "반복 검사(변경)", p_description: null, p_kind: "meeting", p_subtype: null, p_all_day: false,
+    p_location: null, p_visibility: "public", p_room_id: null, p_channel_id: null, p_start_time: "15:00", p_end_time: "16:00",
+    p_attendee_ids: [B.id], p_remind_minutes: [30],
+  });
+  check("이후 모두 고치기 → 뒤 2회차", upd.data === 2, `(${upd.error?.message ?? upd.data})`);
+  const byB = await B.sb.rpc("cancel_event_series", { p_event: occ[1].id });
+  check("참석자는 이후 모두 취소 못 함", byB.error?.code === "42501", `(${byB.error?.code})`);
+  const can = await A.sb.rpc("cancel_event_series", { p_event: occ[1].id });
+  check("이후 모두 취소 → 3회차, 첫 회차는 남음", can.data === 3 && (await admin.from("events").select("canceled_at").eq("id", occ[0].id).single()).data.canceled_at === null);
+
+  // ── 참석자와 대화 ──
+  const pair = await mk(A, { p_title: "둘이 회의", p_attendee_ids: [B.id] });
+  const dm = await A.sb.rpc("open_event_chat", { p_event: pair });
+  const dmType = (await admin.from("channels").select("type").eq("id", dm.data).single()).data?.type;
+  check("상대가 한 명이면 DM 을 연다", dmType === "dm", `(${dm.error?.message ?? dmType})`);
+  if (dm.data) made.channels.push(dm.data);
+  const group = await mk(A, { p_title: "여럿 회의", p_attendee_ids: [B.id, C.id] });
+  const g1 = await B.sb.rpc("open_event_chat", { p_event: group });
+  if (g1.data) made.channels.push(g1.data);
+  const gm = (await admin.from("memberships").select("user_id").eq("channel_id", g1.data)).data ?? [];
+  check("여럿이면 참석자 모두가 멤버인 비공개 채널", gm.length === 3, `(${g1.error?.message ?? gm.length})`);
+  const g2 = await C.sb.rpc("open_event_chat", { p_event: group });
+  check("다시 열면 같은 대화방", g2.data === g1.data);
+  const stranger = await makeUser("D");
+  const g3 = await stranger.sb.rpc("open_event_chat", { p_event: group });
+  check("참석자가 아니면 대화를 못 연다", g3.error?.code === "42501", `(${g3.error?.code})`);
 } catch (e) {
   results.push(`FAIL  검사 오류: ${e.message ?? e}`);
 } finally {
   const errors = [];
-  // 사용자를 지우면 그 사람이 만든 일정·참석·알림·멤버십이 같이 지워진다. 팀은 사람이 빠진 뒤, 부서 채널은 팀 뒤에
+  // 채널(대화방·DM)을 먼저 지운다 (메시지가 없어 바로 지워진다). 사용자를 지우면 그 사람이 만든 일정·참석·알림·멤버십이 같이 지워진다.
+  // 팀은 사람이 빠진 뒤, 부서 채널은 팀 뒤에
+  if (made.channels.length) {
+    const { error } = await admin.from("channels").delete().in("id", made.channels);
+    if (error) errors.push(error.message);
+    made.channels = [];
+  }
   for (const id of made.users) {
     const { error } = await admin.auth.admin.deleteUser(id);
     if (error) errors.push(error.message);
@@ -134,7 +179,7 @@ try {
     const { error: e2 } = await admin.from("channels").delete().eq("id", made.unitChannel);
     if (e2) errors.push(e2.message);
   }
-  console.log(errors.length ? `정리 실패: ${errors.join(" / ")}` : `정리: 사용자 ${made.users.length}명, 채널 ${made.channels.length + 1}개, 시험 팀 1개`);
+  console.log(errors.length ? `정리 실패: ${errors.join(" / ")}` : `정리: 사용자 ${made.users.length}명, 시험 채널·팀 1개`);
 }
 
 console.log(results.join("\n"));

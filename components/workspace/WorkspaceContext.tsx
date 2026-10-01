@@ -18,7 +18,7 @@ export type PanelState =
   | { kind: "profile" } // ② 내 프로필 (2026-09-30, 헤더의 내 이름 메뉴에서 연다)
   // ② 일정 (2026-09-30 일정 개편) — 상세·만들기·고치기·팀원 일정. /calendar 를 떠나면 닫힌다
   | { kind: "event"; eventId: string }
-  | { kind: "eventNew"; date: string; time?: string; withIds?: string[] }
+  | { kind: "eventNew"; date: string; time?: string; withIds?: string[]; fromMessage?: number }
   | { kind: "eventEdit"; eventId: string }
   | {
       kind: "teamEvent";

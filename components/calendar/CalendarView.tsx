@@ -5,6 +5,7 @@
 // 주소:
 //   /calendar?e=<일정 id>        그 일정의 상세를 연다 (일정 알림 ③ 이 이 주소로 보낸다)
 //   /calendar?new=1&with=<사람>   일정 만들기를 그 사람을 참석자로 넣어 연다 (대시보드·프로필 카드의 "일정 잡기")
+//   /calendar?new=1&from=<메시지>  메시지 ⋯ "일정으로 만들기" — 그 메시지 내용·채널을 채워 연다
 //   /calendar#rooms               회의실 예약(/rooms)으로 넘긴다 (예전 주소)
 // 보이는 것은 내가 만들었거나 초대받은 일정 + 같은 부서 팀원이 공개 범위만큼 보여 준 일정뿐이다 (DB 가 지킨다).
 
@@ -171,6 +172,7 @@ export default function CalendarView() {
   const openId = params.get("e");
   const wantNew = params.get("new") === "1";
   const withId = params.get("with");
+  const fromId = params.get("from");
   useEffect(() => {
     if (window.location.hash === "#rooms") {
       router.replace(wantNew ? "/rooms?new=1" : "/rooms");
@@ -182,9 +184,14 @@ export default function CalendarView() {
       openPanel({ kind: "event", eventId: openId });
       void getEvent(openId).then((e) => e && focusCalendarDate(kstDateKey(e.starts_at)), () => {});
     } else {
-      openPanel({ kind: "eventNew", date: kstDateKey(new Date()), withIds: withId ? [withId] : [] });
+      openPanel({
+        kind: "eventNew",
+        date: kstDateKey(new Date()),
+        withIds: withId ? [withId] : [],
+        fromMessage: fromId ? Number(fromId) : undefined,
+      });
     }
-  }, [openId, wantNew, withId, router, openPanel]);
+  }, [openId, wantNew, withId, fromId, router, openPanel]);
 
   const items = useMemo(() => {
     const all: CalItem[] = [

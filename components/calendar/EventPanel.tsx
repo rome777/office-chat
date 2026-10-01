@@ -1,10 +1,14 @@
 "use client";
 
 // ② 일정 상세 (오른쪽 패널). 유형·분류·일시·회의실·참석자별 응답, 초대받은 사람은 참석·불참,
-// 누구나 자기 시작 전 알림, 만든 사람은 고치기·취소. 같은 부서 팀원의 일정은 TeamEventPanel (DB 가 준 칸만).
+// 누구나 자기 시작 전 알림, 만든 사람은 고치기·취소(반복이면 "이 일정만 / 이후 모두").
+// [참석자와 대화](DM 또는 일정에 이은 비공개 채널)·[채팅에 공유](고른 대화방에 링크 메시지). 같은 부서 팀원의 일정은 TeamEventPanel (DB 가 준 칸만).
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMyChannels, useMyDms } from "@/components/sidebar/useChannels";
+import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import type { AttendeeResponse, Room } from "@/lib/types/calendar";
 import PersonAvatar from "@/components/profile/PersonAvatar";
 import { getPeople } from "@/components/people/directory";
@@ -12,7 +16,22 @@ import { useWorkspace } from "@/components/workspace/WorkspaceContext";
 import { bumpCalendar, useCalendarVersion } from "./calendarBus";
 import { CATEGORY_LABEL, KIND_LABEL, REMINDERS, VISIBILITIES, colorVar, reminderLabel, subtypeLabel, teamPreview } from "./kinds";
 import { dayLabel } from "./EventLists";
-import { cancelEvent, getCategoryNames, getEvent, getMyId, listRooms, respond, setMyReminders, type EventWithAttendees } from "./source";
+import {
+  cancelEvent,
+  cancelEventSeries,
+  getCategoryNames,
+  getEvent,
+  getMyId,
+  getSeriesRange,
+  listRooms,
+  openEventChat,
+  respond,
+  setMyReminders,
+  shareEventToChannel,
+  type EventWithAttendees,
+} from "./source";
+import type { Recurrence } from "@/lib/types/calendar";
+import { weekdayOf } from "./items";
 import { formatKstRange, kstDateKey, toMs } from "./time";
 import s from "./schedule.module.css";
 
@@ -39,6 +58,14 @@ export default function EventPanel({ eventId }: { eventId: string }) {
   const [catName, setCatName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const router = useRouter();
+  const [series, setSeries] = useState<{ first: string; last: string; count: number } | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareTo, setShareTo] = useState("");
+  const [shared, setShared] = useState<string | null>(null);
+  const { channels } = useMyChannels();
+  const { dms } = useMyDms();
 
   useEffect(() => {
     void getMyId().then(setMyId, () => {});
@@ -48,11 +75,16 @@ export default function EventPanel({ eventId }: { eventId: string }) {
   useEffect(() => {
     let alive = true;
     setEvent(undefined);
+    setSeries(null);
+    setConfirmCancel(false);
+    setSharing(false);
+    setShared(null);
     void getEvent(eventId).then(
       async (e) => {
         if (!alive) return;
         setEvent(e);
         if (!e) return;
+        if (e.series_id) void getSeriesRange(e.series_id).then((r) => alive && setSeries(r), () => {});
         const [list, names] = await Promise.all([
           getPeople(e.attendees.map((a) => a.user_id)).catch(() => []),
           getCategoryNames(e.team_unit_id ? [e.team_unit_id] : [], e.channel_id ? [e.channel_id] : []).catch(() => null),
@@ -105,6 +137,48 @@ export default function EventPanel({ eventId }: { eventId: string }) {
   }
 
   const reminders = mine?.remind_minutes ?? [];
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const startKey = kstDateKey(event.starts_at);
+  const RULE: Record<Recurrence, string> = {
+    daily: "매일",
+    weekly: `매주 ${DOW[weekdayOf(startKey)]}요일`,
+    weekdays: "평일 (월~금)",
+    monthly: `매월 ${Number(startKey.slice(8))}일`,
+  };
+  const shareTargets = [
+    ...(channels ?? []).filter((c) => c.type !== "dm" && c.id !== GENERAL_ID).map((c) => ({ id: c.id, label: `#${c.name}` })),
+    ...(dms ?? []).map((d) => ({ id: d.id, label: `DM · ${d.other.display_name}` })),
+  ];
+
+  async function openChat() {
+    setWorking(true);
+    setError(null);
+    try {
+      const ch = await openEventChat(event!.id);
+      bumpCalendar();
+      router.push(`/chat?c=${encodeURIComponent(ch)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setWorking(false);
+    }
+  }
+
+  async function share() {
+    if (!shareTo) return;
+    const where = room?.name ?? event!.location ?? "";
+    const body = `📅 ${event!.title}\n${whenText(event!.starts_at, event!.ends_at, event!.all_day)}${where ? ` · ${where}` : ""}\n${window.location.origin}/calendar?e=${event!.id}`;
+    setWorking(true);
+    setError(null);
+    try {
+      await shareEventToChannel(shareTo, body);
+      setShared(shareTo);
+      setSharing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setWorking(false);
+    }
+  }
   const categoryWhy =
     event.category === "team"
       ? `${catName || "한 조직"} 사람이 모두 참석자라 팀 일정입니다`
@@ -138,6 +212,15 @@ export default function EventPanel({ eventId }: { eventId: string }) {
           <span>일시</span>
           <span>{whenText(event.starts_at, event.ends_at, event.all_day)}</span>
         </div>
+        {event.recurrence && (
+          <div className={s.kv}>
+            <span>반복</span>
+            <span>
+              {RULE[event.recurrence]}
+              {series && ` · ${dayLabel(kstDateKey(series.first))} ~ ${dayLabel(kstDateKey(series.last))} (${series.count}회)`}
+            </span>
+          </div>
+        )}
         {event.room_id && (
           <div className={s.kv}>
             <span>회의실</span>
@@ -262,10 +345,81 @@ export default function EventPanel({ eventId }: { eventId: string }) {
         </div>
       )}
 
+      {!canceled && mine && event.attendees.length > 1 && (
+        <div className={s.field}>
+          <div className={s.chips}>
+            <button type="button" className={s.secondary} disabled={working} onClick={() => void openChat()}>
+              참석자와 대화
+            </button>
+            <button type="button" className={s.secondary} disabled={working} aria-expanded={sharing} onClick={() => setSharing((v) => !v)}>
+              채팅에 공유
+            </button>
+          </div>
+          <p className={s.hint}>
+            {event.attendees.length === 2 ? "상대와의 DM 을 엽니다." : event.chat_channel_id ? "이 일정의 대화방을 엽니다." : "참석자로 비공개 채널을 만들어 이 일정에 이어 둡니다."}
+          </p>
+        </div>
+      )}
+      {!canceled && mine && event.attendees.length <= 1 && (
+        <div className={s.chips}>
+          <button type="button" className={s.secondary} disabled={working} aria-expanded={sharing} onClick={() => setSharing((v) => !v)}>
+            채팅에 공유
+          </button>
+        </div>
+      )}
+      {sharing && (
+        <div className={s.field}>
+          <label className={s.fieldLabel} htmlFor="ev-share">
+            공유할 대화방
+          </label>
+          <div className={s.inline}>
+            <select id="ev-share" className={s.inlineSelect} value={shareTo} onChange={(e) => setShareTo(e.target.value)}>
+              <option value="">고르세요</option>
+              {shareTargets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className={s.primary} disabled={!shareTo || working} onClick={() => void share()}>
+              보내기
+            </button>
+          </div>
+          <p className={s.hint}>제목·일시와 이 일정 링크를 보냅니다. 참석자가 아닌 사람이 누르면 "찾을 수 없음"으로 보입니다.</p>
+        </div>
+      )}
+      {shared && (
+        <p className={s.note} role="status">
+          보냈습니다. <Link href={`/chat?c=${encodeURIComponent(shared)}`} className="link">대화방에서 보기</Link>
+        </p>
+      )}
+
       {error && (
         <p className={s.error} role="alert">
           {error}
         </p>
+      )}
+
+      {confirmCancel && !canceled && isCreator && (
+        <div className={s.note} role="alertdialog" aria-label="일정 취소 확인">
+          <p style={{ margin: "0 0 8px" }}>
+            {event.series_id ? "반복 일정입니다. 어디까지 취소할까요?" : "이 일정을 취소할까요?"}
+            {event.attendees.length > 1 ? " 참석자에게 취소 알림이 갑니다." : ""}
+          </p>
+          <div className={s.chips}>
+            <button type="button" className={s.danger} disabled={working} onClick={() => void run(() => cancelEvent(event.id))}>
+              {event.series_id ? "이 일정만 취소" : "취소하기"}
+            </button>
+            {event.series_id && (
+              <button type="button" className={s.danger} disabled={working} onClick={() => void run(async () => void (await cancelEventSeries(event.id)))}>
+                이후 모두 취소
+              </button>
+            )}
+            <button type="button" className={s.secondary} disabled={working} onClick={() => setConfirmCancel(false)}>
+              그만두기
+            </button>
+          </div>
+        </div>
       )}
 
       {!canceled && isCreator && (
@@ -274,10 +428,7 @@ export default function EventPanel({ eventId }: { eventId: string }) {
             type="button"
             className={s.danger}
             disabled={working}
-            onClick={() => {
-              const who = event.attendees.length > 1 ? " 참석자에게 취소로 보입니다." : "";
-              if (window.confirm(`이 일정을 취소할까요?${who}`)) void run(() => cancelEvent(event.id));
-            }}
+            onClick={() => setConfirmCancel(true)}
           >
             일정 취소
           </button>
