@@ -19,7 +19,8 @@
     "check:chat": "node --env-file=.env.local scripts/chat-extras-check.mjs",
     "check:schedule": "node --env-file=.env.local scripts/schedule-check.mjs",
     "seed:company": "node --env-file=.env.local scripts/seed-company.mjs",
-    "seed:10k": "node --env-file=.env.local scripts/seed-10k.mjs"
+    "seed:10k": "node --env-file=.env.local scripts/seed-10k.mjs",
+    "seed:avatars": "node --env-file=.env.local scripts/seed-company/avatars.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

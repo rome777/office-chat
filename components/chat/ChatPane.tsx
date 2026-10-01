@@ -12,6 +12,7 @@ import { useSelf } from "./useSelf";
 import { focusReply } from "./threadFocus";
 import { useReactions } from "./useReactions";
 import { togglePin, usePins } from "./pins";
+import { usePostRight } from "./usePostRight";
 import MessageList, { type Focus } from "./MessageList";
 import Composer from "./Composer";
 import JumpToMessage from "./JumpToMessage";
@@ -47,6 +48,7 @@ export default function ChatPane() {
   const { markRead, unreadCount } = useReadStatus(channel.id, self?.id ?? null, memberIds);
   const { reactions, toggle: toggleReaction } = useReactions(channel.id, messages[0]?.id ?? null);
   const pins = usePins(channel.id);
+  const postRight = usePostRight(channel.id);
   const pinned = useMemo(() => new Set(pins.map((p) => p.message_id)), [pins]);
   const [sendTick, setSendTick] = useState(0);
   // 주소로 받은 이동 요청. 그 채널의 처음 불러오기가 끝난 뒤에 처리한다.
@@ -160,12 +162,18 @@ export default function ChatPane() {
         onReact={react}
         onPin={pin}
       />
-      <Composer
-        placeholder={`${where} 에 메시지 입력…`}
-        members={members}
-        selfId={self?.id ?? null}
-        onSend={(body, file) => sendNow(body, undefined, file)}
-      />
+      {postRight.canPost ? (
+        <Composer
+          placeholder={postRight.notice ? `${where} 에 공지 입력…` : `${where} 에 메시지 입력…`}
+          members={members}
+          selfId={self?.id ?? null}
+          onSend={(body, file) => sendNow(body, undefined, file)}
+        />
+      ) : (
+        <p className={s.noticeOnly} role="note">
+          📢 공지 채널입니다. 새 공지는 {postRight.unitName ?? "공지 담당 부서"}에서 올립니다. 궁금한 점은 공지에 답글로 남겨 주세요.
+        </p>
+      )}
     </section>
   );
 }
