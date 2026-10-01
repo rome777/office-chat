@@ -881,7 +881,7 @@ npx supabase db push --db-url $env:DBURL
 
 ### 알아 둘 함정
 
-- **남이 적용만 하고 올리지 않은 마이그레이션이 원격에 있으면 `db push` 가 거부된다** (2026-10-01 `20261001160000_notice_channel`): 급하면 같은 SQL 을 트랜잭션으로 적용하고 `supabase_migrations.schema_migrations`(version·name·statements)에 기록을 넣는다 — CLI 가 하는 일과 같다. 내 파일 번호는 원격의 마지막 번호보다 뒤로 정한다. 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 로 원격에만 있는 것을 본다
+- **남이 적용만 하고 올리지 않은 마이그레이션이 원격에 있으면 `db push` 가 거부된다** (2026-10-01 `20261001160000_notice_channel`): 급하면 같은 SQL 을 트랜잭션으로 적용하고 `supabase_migrations.schema_migrations`(version·name·statements)에 기록을 넣는다 — CLI 가 하는 일과 같다. 내 파일 번호는 원격의 마지막 번호보다 뒤로 정한다. **같은 번호로 두 사람이 따로 만들면** 늦게 올린 쪽은 원격에서 적용된 것으로 보이고 건너뛰어진다 — 적용 전인 쪽 번호를 바꾼다 (2026-10-01 `close_step1_anon` 을 `190000` → `200000`, 원격 `190000` 은 `rooms_policy_fix`) 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 로 원격에만 있는 것을 본다
 - **Next.js 16 은 같은 폴더에 `next dev` 를 둘 띄우지 못한다** (2026-10-01): 다른 창의 개발 서버가 있으면 "Another next dev server is already running" 으로 끝난다. 그 서버(`localhost:3000`)가 같은 폴더라 바뀐 코드가 그대로 보이니 그 주소로 확인한다
 
 - **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
