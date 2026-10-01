@@ -205,6 +205,73 @@
   color: var(--muted);
 }
 
+/* 줄마다 즐겨찾기 별 — 마우스를 올리거나 키보드로 오면 오른쪽 끝에 나온다 (2026-10-01) */
+.rowItem {
+  position: relative;
+}
+
+.rowStar {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rowItem:hover .rowStar,
+.rowItem:focus-within .rowStar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rowItem:hover .row,
+.rowItem:focus-within .row {
+  padding-right: 36px;
+}
+
+.rowStar:hover,
+.rowStar:focus-visible {
+  background: var(--surface);
+  color: var(--warn);
+}
+
+.rowStarOn {
+  color: var(--warn);
+}
+
+/* 손가락 화면에는 마우스 올리기가 없다 → 대화 위쪽 이름 옆 별만 쓴다 */
+@media (hover: none) {
+  .rowStar {
+    display: none;
+  }
+
+  .rowItem:hover .row,
+  .rowItem:focus-within .row {
+    padding-right: 10px;
+  }
+}
+
+.favHint {
+  padding: 6px 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.favHint svg {
+  vertical-align: -2px;
+  color: var(--warn);
+}
+
 .rowBadge {
   margin-left: auto;
   min-width: 22px;
@@ -292,17 +359,46 @@
   text-decoration: underline;
 }
 
+/* 채팅 머리의 즐겨찾기 — 찾기 쉽게 글자와 테두리를 붙였다 (2026-10-01 사용자 "즐겨찾기 등록 기능을 못 찾겠음") */
 .star {
-  display: grid;
-  place-items: center;
-  border: none;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: none;
   color: var(--muted);
-  padding: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.star:hover,
+.star:focus-visible {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--border));
+  color: var(--warn-text);
+  background: var(--warn-soft);
 }
 
 .starOn {
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--border));
+  color: var(--warn-text);
+  background: var(--warn-soft);
+}
+
+.starOn svg {
   color: var(--warn);
+}
+
+.starText {
+  line-height: 1;
+}
+
+/* 휴대폰 폭의 채널 이름 옆 (글자 없이 별만) */
+.starIconOnly {
+  padding: 4px;
 }
 
 .headDesc {
@@ -356,7 +452,9 @@
   }
 
   .mobileTitle {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     min-width: 0;
   }
 

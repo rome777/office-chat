@@ -15,7 +15,7 @@ import { LockIcon } from "@/components/sidebar/ActionIcons";
 import { GENERAL_ID } from "@/components/sidebar/channelSource";
 import { useMyChannels, useMyDms, useUnread } from "@/components/sidebar/useChannels";
 import { useWorkspace } from "@/components/workspace/WorkspaceContext";
-import { useFavorites } from "./favorites";
+import { toggleFavorite, useFavorites } from "./favorites";
 import { BellOffIcon, ChevronIcon, ComposeIcon, HashIcon, PlusIcon, SearchIcon, StarIcon } from "./icons";
 import s from "./chat.module.css";
 
@@ -32,6 +32,7 @@ export default function MessageNav() {
   const filterRef = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const [favError, setFavError] = useState<string | null>(null);
   const current = useRef(channel);
   current.current = channel;
 
@@ -93,6 +94,10 @@ export default function MessageNav() {
   };
   const openDm = (d: DmSummary) => setChannel({ id: d.id, name: d.other.display_name, type: "dm" });
   const toggle = (key: string) => setClosed((v) => ({ ...v, [key]: !v[key] }));
+  const star = (id: string) => {
+    setFavError(null);
+    void toggleFavorite(id).catch((e: unknown) => setFavError(`즐겨찾기를 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`));
+  };
 
   const channelRow = (c: ChannelSummary) => (
     <Row
@@ -101,6 +106,8 @@ export default function MessageNav() {
       active={c.id === channel.id}
       muted={muted.has(c.id)}
       label={c.type === "private" ? `${c.name} (비공개)` : c.name}
+      fav={favorites.has(c.id)}
+      onFav={() => star(c.id)}
       onClick={() => openChannel(c)}
       icon={<HashIcon size={16} />}
     >
@@ -120,6 +127,8 @@ export default function MessageNav() {
       active={d.id === channel.id}
       muted={muted.has(d.id)}
       label={`${d.other.display_name} 님과 DM`}
+      fav={favorites.has(d.id)}
+      onFav={() => star(d.id)}
       onClick={() => openDm(d)}
       icon={<PersonAvatar userId={d.other.id} name={d.other.display_name} size={24} />}
     >
@@ -164,11 +173,18 @@ export default function MessageNav() {
       <div className={s.msgNavBody}>
         {(channelError || dmError) && <p className="error-text">목록을 못 불러왔습니다: {channelError ?? dmError}</p>}
         {nothing && <p className={s.navEmpty}>“{query.trim()}” 와 맞는 대화가 없습니다</p>}
+        {favError && <p className="error-text">{favError}</p>}
 
-        {(favChannels.length > 0 || favDms.length > 0) && (
+        {/* 비어 있어도 보여 둔다 — 즐겨찾기를 어디서 넣는지 알 수 있게 (2026-10-01 사용자 "즐겨찾기 등록 기능을 못 찾겠음") */}
+        {(favChannels.length > 0 || favDms.length > 0 || !q) && (
           <Section title="즐겨찾기" icon={<StarIcon size={15} />} open={!closed.fav} onToggle={() => toggle("fav")}>
             {favChannels.map(channelRow)}
             {favDms.map(dmRow)}
+            {favChannels.length + favDms.length === 0 && (
+              <li className={s.favHint}>
+                대화 이름에 마우스를 올려 <StarIcon size={13} /> 를 누르거나, 대화 위쪽 이름 옆 <StarIcon size={13} /> 즐겨찾기를 누르면 여기에 모입니다
+              </li>
+            )}
           </Section>
         )}
 
@@ -252,6 +268,8 @@ function Row({
   muted,
   label,
   icon,
+  fav,
+  onFav,
   onClick,
   children,
 }: {
@@ -260,13 +278,16 @@ function Row({
   muted: boolean;
   label: string;
   icon: React.ReactNode;
+  /** 즐겨찾기인가 — 줄에 마우스를 올리면 별이 나와 바로 넣고 뺀다 */
+  fav: boolean;
+  onFav: () => void;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   const n = useUnread(id);
   const show = !active && n > 0;
   return (
-    <li>
+    <li className={s.rowItem}>
       <button
         type="button"
         className={`${s.row} ${active ? s.rowActive : ""} ${show ? s.rowUnread : ""}`}
@@ -286,6 +307,16 @@ function Row({
             {n > 99 ? "99+" : n}
           </span>
         )}
+      </button>
+      <button
+        type="button"
+        className={`${s.rowStar} ${fav ? s.rowStarOn : ""}`}
+        aria-pressed={fav}
+        aria-label={fav ? `${label} 즐겨찾기에서 빼기` : `${label} 즐겨찾기에 넣기`}
+        title={fav ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기"}
+        onClick={onFav}
+      >
+        <StarIcon filled={fav} size={15} />
       </button>
     </li>
   );

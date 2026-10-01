@@ -5,8 +5,9 @@
 // 연결 상태(①)는 재연결 중·끊김일 때만 뜬다.
 // DM 이면 상대 사진과 소속을 보이고, 이름을 누르면 프로필 카드가 뜬다.
 // 좁은 화면에서는 메시지 목록 칸이 숨으므로 ② 의 채널 전환(ChannelTitle)을 대신 보인다.
+// 즐겨찾기 버튼은 "☆ 즐겨찾기" 인데, 오른쪽 패널(채널 정보 등)이 열리거나 이름이 길어 이름이 다 안 보이면 "☆" 만 둔다 (2026-10-01 사용자 요청).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ConnectionStatus from "@/components/chat/ConnectionStatus"; // ①
 import HeaderActions from "@/components/panel/HeaderActions"; // ③
 import PersonAvatar from "@/components/profile/PersonAvatar";
@@ -32,6 +33,7 @@ export default function ChatHeader() {
   const count = channels?.find((c) => c.id === channel.id)?.member_count ?? null;
   const fav = favorites.has(channel.id);
   const presence = useChannelPresence(isDm ? "" : channel.id); // DM 은 세지 않는다 (빈 id 면 불러오지 않음)
+  const fit = useStarFit(channel.name, fav);
 
   async function star() {
     setError(null);
@@ -45,32 +47,47 @@ export default function ChatHeader() {
   const infoOpen = panel?.kind === "channelInfo";
 
   return (
-    <header className={s.chatHead}>
+    <header className={s.chatHead} ref={fit.head}>
       <div className={s.mobileTitle}>
         <ChannelTitle />
+        <button
+          type="button"
+          className={`${s.star} ${s.starIconOnly} ${fav ? s.starOn : ""}`}
+          aria-pressed={fav}
+          aria-label={fav ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기"}
+          onClick={() => void star()}
+        >
+          <StarIcon filled={fav} size={16} />
+        </button>
       </div>
       <div className={s.headMain}>
-        <span className={s.tile} aria-hidden="true">
+        <span className={s.tile} aria-hidden="true" ref={fit.tile}>
           {isDm && other ? <PersonAvatar userId={other.id} name={other.display_name} size={40} /> : <HashIcon size={22} />}
         </span>
         <div className={s.headText}>
           <div className={s.headNameRow}>
             {isDm && other ? (
               <button type="button" className={s.headNameButton} onClick={() => openProfileCard(other.id)}>
-                <h1 className={s.headName}>{channel.name}</h1>
+                <h1 className={s.headName} ref={fit.name}>
+                  {channel.name}
+                </h1>
               </button>
             ) : (
-              <h1 className={s.headName}>{channel.name}</h1>
+              <h1 className={s.headName} ref={fit.name}>
+                {channel.name}
+              </h1>
             )}
             <button
               type="button"
-              className={`${s.star} ${fav ? s.starOn : ""}`}
+              ref={fit.star}
+              className={`${s.star} ${fav ? s.starOn : ""} ${fit.compact ? s.starIconOnly : ""}`}
               aria-pressed={fav}
               aria-label={fav ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기"}
               title={fav ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기"}
               onClick={() => void star()}
             >
-              <StarIcon filled={fav} size={17} />
+              <StarIcon filled={fav} size={15} />
+              {!fit.compact && <span className={s.starText}>{fav ? "즐겨찾기됨" : "즐겨찾기"}</span>}
             </button>
           </div>
           <p className={s.headDesc}>
@@ -92,7 +109,7 @@ export default function ChatHeader() {
           </p>
         </div>
       </div>
-      <div className={s.headTools}>
+      <div className={s.headTools} ref={fit.tools}>
         <ConnectionStatus />
         {!isDm && (
           <button
@@ -115,6 +132,45 @@ export default function ChatHeader() {
       </div>
     </header>
   );
+}
+
+/**
+ * 즐겨찾기 버튼에 글자를 붙여도 채널 이름이 다 보이는가. 보이지 않으면 compact = true ("☆" 만).
+ * 이름 칸의 폭은 내용에 따라 줄었다 늘었다 해서 그것으로 재면 글자를 뺐다 붙였다 깜빡인다 →
+ * 머리 전체 폭에서 오른쪽 도구·아이콘 칸을 뺀 "쓸 수 있는 폭"과, 이름 원래 폭 + 글자 붙은 버튼 폭을 비교한다
+ */
+function useStarFit(name: string, fav: boolean) {
+  const head = useRef<HTMLElement>(null);
+  const tools = useRef<HTMLDivElement>(null);
+  const tile = useRef<HTMLSpanElement>(null);
+  const nameEl = useRef<HTMLHeadingElement>(null);
+  const star = useRef<HTMLButtonElement>(null);
+  const full = useRef(0); // 글자가 붙은 버튼 폭 (글자가 보일 때 잰다)
+  const [compact, setCompact] = useState(false);
+  const compactNow = useRef(compact);
+  compactNow.current = compact;
+
+  useLayoutEffect(() => {
+    const h = head.current;
+    if (!h) return;
+    const check = () => {
+      if (!nameEl.current || !star.current || !tools.current) return;
+      if (!compactNow.current) full.current = star.current.offsetWidth;
+      const cs = getComputedStyle(h);
+      const gap = parseFloat(cs.columnGap) || 12; // 머리 칸 사이 = 아이콘·이름 사이 간격
+      const room =
+        h.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - tools.current.offsetWidth - gap - (tile.current?.offsetWidth ?? 44) - gap;
+      const need = nameEl.current.scrollWidth + 6 + (full.current || 96); // 6 = 이름과 버튼 사이
+      setCompact(nameEl.current.offsetParent !== null && need > room);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(h);
+    if (tools.current) ro.observe(tools.current);
+    return () => ro.disconnect();
+  }, [name, fav]);
+
+  return { head, tools, tile, name: nameEl, star, compact };
 }
 
 /** 패널 버튼(③ 요약·할 일·잡무·채널 정보)을 "⋯" 안에 둔다 — 오른쪽 패널을 열면 채팅 칸이 좁아져서 */

@@ -98,7 +98,7 @@ erDiagram
 | `profiles` | `id`(= auth.users.id), `handle`(멘션용, 유일), `display_name`, `department`, `title`(직급), `role`(`admin`·`member`), `org_unit_id`(소속, 2026-09-29), `avatar`·`status`·`status_message`(내 프로필, 2026-09-30) | 로그인한 사람은 모두 조회 가능 (조직도 검색). **본인이 고칠 수 있는 것은 `avatar`·`status`·`status_message` 뿐** — 이름·아이디·부서·직급·`role`·`org_unit_id` 는 서버·시드만 (아래 "내 프로필") |
 | `profile_contacts` | `user_id`(기본 키, = profiles.id), `phone`, `is_public`, `updated_at` | 연락처 (2026-09-30). 공개면 로그인한 누구나, 비공개면 본인·관리자만 읽는다. 쓰기는 본인 행만 |
 | `org_units` | `id`, `name`, `kind`(`company`·`division`·`hq`·`team` = 회사·사업부·본부·팀), `parent_id`, `leader_id`(조직의 장), `channel_id`(유일), `sort_order` | 조직도 (2026-09-29 추가, 아래 "조직도·부서 채널"). 조직마다 대화방이 하나. 회사는 `#일반` |
-| `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at` | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값 |
+| `channels` | `id`, `name`, `type`(`public`·`private`·`dm`), `dm_key`(유일), `created_by`, `created_at`, `notice_unit_id`(공지 담당 부서, 2026-10-01) | DM 은 멤버 2명인 채널. `dm_key` = 두 사용자 ID 를 정렬해 이은 값. `notice_unit_id` 가 있으면 공지 채널 (5절 "공지 채널") |
 | `memberships` | `channel_id`, `user_id`, `joined_at`, `role`, `role_at`, `can_invite` | 기본 키 (channel_id, user_id). `role` = `leader`·`sub`(부리더)·`member` — 일반 채널에만 리더 1명(유일 인덱스)·부리더를 둔다, `role_at` = 리더·부리더가 된 시각 (2026-09-30 WU-39). `can_invite` 는 2026-09-29 초대 권한 칸인데 2026-09-30 부터 쓰지 않는다 (고치지 못하게 막음) |
 | `messages` | `id`(bigint identity), `client_id`(uuid, 유일), `channel_id`, `user_id`, `parent_id`, `body`, `created_at`, `edited_at`, `deleted_at` | **순서는 `id` 로 정한다** (시각은 같을 수 있음). `parent_id` 가 있으면 스레드 답글 |
 | `attachments` | `id`, `message_id`, `channel_id`, `storage_path`, `mime`, `size`, `file_name` | |
@@ -109,7 +109,11 @@ erDiagram
 | `ai_usage_logs` | `id`, `user_id`, `feature`, `input_tokens`, `output_tokens`, `cost_usd`, `status`, `created_at` | 요청량·비용 제출용 |
 | `chore_lists` | `id`, `channel_id`, `title`, `place`, `memo`, `created_by`, `updated_by`, `created_at`, `updated_at` | 잡무 수첩의 목록 (예: 커피 — 1층 카페). 2026-09-29 추가 (`20260929160000_chore_notes.sql`, WU-28). 만든 사람이 탈퇴해도 남는다 (`on delete set null`) |
 | `chore_entries` | `id`, `list_id`, `person_name`, `detail`, `updated_by`, `created_at`, `updated_at` | 목록 아래 사람별 기록 (예: 이부장님 — 아아 얼음 많이). 사람은 **글자로** 적는다 (호칭으로 부르고, 계정 없는 사람도 있어서) |
+<<<<<<< HEAD
+| `rooms` | `id`, `name`(유일), `capacity`, `location` | 회의실. 시드로 넣는다 — 2026-10-01 부터 8개 `C1 상생`·`C2 신뢰`·`C3 열정`·`C4 이끔`(큰 방)·`M1 확산`·`M2 공유`·`M3 가치`·`M4 연구`(작은 방, 2~8명). 옵션(층·장비·용도)은 따로 칸이 없어 `location` 글자에 적는다 (화면이 "이름 · N명 · location" 으로 보인다) |
+=======
 | `rooms` | `id`, `name`(유일), `capacity`, `location`(층), `facilities`(monitor·video·whiteboard·projector·mic), `description`, `sort_order` | 회의실 8개 (C1 상생 ~ M4 연구). 관리자·시드만 넣는다. 2026-10-01 시설·설명·순서 추가 (아래 "회의실 예약 개편") |
+>>>>>>> 7b972a0a2d3aebd31fe8032ac759cd9cd9ef9a66
 | `events` | `id`(uuid), `title`, `description`, `starts_at`, `ends_at`(timestamptz), `room_id`(nullable), `created_by`, `created_at`, `updated_at`, `canceled_at`, `kind`, `subtype`, `all_day`, `location`, `visibility`, `channel_id`, `category`, `team_unit_id` | 일정 (2026-10-01 개편 — 아래 "일정 개편"). `ends_at > starts_at`. **회의실 이중 예약 금지 제약** (아래). 삭제하지 않고 `canceled_at` 으로 취소 |
 | `event_attendees` | `event_id`, `user_id`, `response`(`pending`·`accepted`·`declined`), `responded_at`, `remind_minutes` | 기본 키 (event_id, user_id). 만든 사람도 `accepted` 로 넣는다. `remind_minutes` 는 사람마다 시작 전 알림 (5·10·30·60·1440분 전, 기본 `{10}`) |
 
@@ -186,9 +190,9 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 화면 개편(대시보드·메시지 목록·채널 정보) 때 **사용자 요청으로 추가한** 것이다. 2026-09-30 원격 적용, `npm run check:chat` 27개 통과.
 
-- `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별
+- `channel_favorites(user_id, channel_id)`: 내 즐겨찾기. 본인 것만 읽고, 멤버인 채널만 넣는다. 메시지 목록 맨 위 "즐겨찾기"와 채팅 머리의 별. **넣는 곳 세 군데** (2026-10-01 WU-47, 사용자 "즐겨찾기 등록 기능을 못 찾겠음"): 메시지 목록의 줄에 마우스를 올리면 오른쪽 끝에 나오는 별(손가락 화면은 없음) · 채팅 머리 이름 옆 "☆ 즐겨찾기" 버튼(휴대폰 폭은 채널 이름 옆 별. 오른쪽 패널이 열리거나 이름이 길어 "이름 + 글자 붙은 버튼"이 머리에 다 안 들어가면 글자를 빼고 "☆" 만 — `ChatHeader` 의 `useStarFit` 이 머리 폭에서 오른쪽 도구·아이콘 칸을 뺀 폭과 비교한다. 이름 칸 폭으로 재면 글자를 뺐다 붙였다 깜빡인다) · 즐겨찾기 칸은 비어 있어도 보이고 넣는 방법을 안내한다
 - `channels.description`(120자까지): 채널 설명. **이름·설명은 그 채널의 리더와 관리자만** 고친다 (2026-09-30 WU-39, 처음엔 만든 사람·관리자). **부서 채널 이름은 사람이 못 바꾼다** — 트리거 `channels_guard_org_name` 이 사용자 요청(`current_user = 'authenticated'`)일 때 거부한다. 조직 이름을 따라 바꾸는 org_units 트리거(security definer)는 그대로 된다
-- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다
+- `pinned_messages(message_id, channel_id, pinned_by)`: 고정 메시지. 멤버 누구나 `toggle_pin(message_id)` 로 고정·해제한다 (표에 직접 넣는 권한은 없다). 실시간은 없고 고치면 다시 불러온다. **대화 위쪽 막대에 늘 보인다** (① `PinnedBar`, 2026-10-01 WU-47): 가장 최근에 고정한 것 한 줄 + 여러 개면 "1/4" 로 넘기기, ▾ 로 펼치면 전체(누르면 그 메시지로 이동·강조, 고정 해제). 메시지 목록 밖이라 스크롤해도 그대로 있다
 - `message_reactions(message_id, user_id, emoji, channel_id, removed_at)`: 리액션. 이모지는 정해진 10개. `toggle_reaction(message_id, emoji)` 로만 단다. **떼도 행을 지우지 않고 `removed_at` 을 채운다** — Realtime 의 DELETE 이벤트는 필터(`channel_id=eq.`)가 안 되고 RLS 도 안 거쳐서, 지우면 떼는 것을 채널 멤버에게만 보낼 방법이 없다. INSERT·UPDATE 만 채널로 걸러 받는다
 - `channel_mutes(user_id, channel_id)`: 채널별 알림 끄기. `notifications` BEFORE INSERT 트리거 `notifications_skip_muted` 가 끈 채널의 메시지 알림(멘션·답글·DM)을 **아예 만들지 않는다**. 미읽음 배지는 그대로다. 일정 알림(`channel_id` 없음)은 상관없다
 - 채널에서 나가면(memberships 삭제) 그 채널의 즐겨찾기·알림 끄기를 트리거가 지운다
@@ -258,7 +262,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 | 테이블 | 읽기 | 쓰기 |
 |---|---|---|
-| `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만 |
+| `messages` | 그 채널의 멤버 | 멤버이고 `user_id = auth.uid()` 일 때만 추가. 수정·삭제는 본인 것만. 공지 채널의 새 글(최상위)은 담당 부서·리더·부리더·관리자만 (트리거, 2026-10-01) |
 | `memberships` | 같은 채널 멤버 | 공개 채널은 본인 가입 가능. 남을 넣는 것은 `has_invite_right` — 관리자, 일반 채널에서 공개면 멤버 누구나·비공개면 리더·부리더 (부서 채널은 관리자만). 내보내기는 관리자(누구나)·리더(부리더·멤버)·부리더(멤버만), 역할(`role`)은 `set_sub_leader`·`transfer_leader` 함수로만 바꾼다 (2026-09-30 WU-39). 예전: 초대 권한 주기·빼기는 관리자만. **부서 채널(`#일반` 포함)은 본인이 나갈 수 없다** (2026-09-29) |
 | `org_units` | 로그인 사용자 모두 | 서버·시드만 (클라이언트 쓰기 권한 없음). 소속(`profiles.org_unit_id`)도 update 컬럼 권한이 없어 서버만 바꾼다 — 소속이 곧 부서 채널 멤버십이라서 |
 | `channels` | 공개 채널은 모두, 비공개·DM 은 멤버만 | 생성은 로그인 사용자. DM 은 `create_dm(other_user_id)` 함수로만 (채널 + 멤버 2명을 한 번에). `name`·`description` 수정은 일반 채널의 리더·관리자만, DM 제외 (2026-09-30 WU-39), 부서 채널 이름은 거부 (2026-09-30) |
@@ -317,6 +321,15 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 정책끼리 서로를 조회하는 곳(`memberships`, `events`↔`event_attendees`)은 `is_member()`·`is_event_participant()` 같은 security definer 함수로 끊었다.
 
 모든 항목은 `npm run check:db` 가 가상 사용자 A·B·C·관리자로 확인한다 (48개, 2026-09-29 전부 통과). 초대 권한 항목 14개를 더해 **62개, 2026-09-29 전부 통과** (WU-27). 2026-09-30 초대 권한 항목을 리더·부리더 항목으로 바꿔 **76개 전부 통과** (WU-39, 원격 적용 뒤).
+
+**공지 채널** (2026-10-01, `20261001160000_notice_channel.sql`, WU-46, 사용자 요청 "사내 공지를 담당하는 부서의 담당자가 전체에 공지할 수 있는 공지 채널"):
+`channels.notice_unit_id`(공지 담당 부서)가 있는 공개·비공개 채널이 공지 채널이다. 지금은 시드의 `#공지사항` 하나 (담당 경영지원본부, 리더 노영훈·부리더 정대현).
+- **새 글(최상위 메시지)**: 담당 부서(하위 부서 포함) 사람·그 채널 리더·부리더·회사 관리자만. 트리거 `messages_check_notice` 가 **쓴 사람(`user_id`) 기준**으로 검사하므로 RLS 를 건너뛰는 service role(첨부 API·시드·검사 스크립트)에도 걸린다 → 42501
+- **답글·리액션·고정**은 멤버 누구나 (공지에 대한 질문은 답글로)
+- **멤버**: 공지 채널이 되면(`notice_unit_id` 를 넣거나 바꾸면) 모든 사람을 넣고, 새로 가입한 사람도 넣는다 (#일반 과 같게). **본인이 나가지 못한다** (`memberships_keep_notice`, 관리자·리더가 내보내는 것과 채널을 지울 때는 된다)
+- 담당 부서는 화면에서 바꾸지 않는다 — `notice_unit_id` 에 수정 권한을 주지 않았다 (SQL·시드로만)
+- 화면(① `ChatPane`): `can_post_in(channel)` 이 false 면 입력창 대신 "📢 공지 채널입니다…" 안내 (`components/chat/usePostRight.ts`). 스레드 답글 입력창은 그대로
+- 다음 작업: 대시보드 회사 공지 위젯 — `notice_unit_id` 가 있는 채널의 최상위 메시지를 읽으면 된다 (모든 사람이 멤버라 RLS 로 읽힌다)
 
 **관리자 권한 상승 방지**: `profiles.role` 은 사용자가 수정할 수 없게 컬럼 권한이나 트리거로 막는다.
 
@@ -689,7 +702,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ shell/                      공통 틀 (2026-09-30, 이호섭) — AppFrame · AppShell(배치) · NavRail(왼쪽 메뉴) · ChatWorkspace(/chat) · MessageNav(메시지 목록 칸) · ChatHeader · ProfileCard · favorites · channelDetails · cardStore · useUnreadTotals · icons
 │  ├─ org/                        ③ 조직도 페이지 (2026-09-30) — OrgPage · OrgDiagram(다이어그램) · OrgTree(계층 목록) · orgSource(org_units)
 │  ├─ dashboard/                  ③ 대시보드 (2026-09-30, 이호섭) — Dashboard · source.ts
-│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins
+│  ├─ chat/                       ① ChatPane · MessageList · MessageItem · Composer · ConnectionStatus · ThreadPanel · SafeText · JumpToMessage(`?m=` 이동) · AttachmentView · useMessages · useReadStatus(읽음·안 읽은 사람 수) · useReactions · pins · PinnedBar(대화 위 고정 메시지 막대) · usePostRight(공지 채널 쓰기 권한)
 │  ├─ auth/                       ② AuthGate(입장 관문) · LoginForm(이메일 로그인) · signUp(가입 처리 — 2026-09-30 화면에서 빼고 따로 남김, 지금은 안 씀)
 │  ├─ sidebar/                    ② 채널·DM 목록 데이터(channelSource·useChannels·unread) · 대화상자 · ChannelList·DmList(좁은 화면의 채널 전환) · ChannelTitle · UserMenu · MyMenu(내 메뉴 — 위 막대 내 이름과 왼쪽 메뉴 내 카드가 같이 씀, 2026-09-30)
 │  ├─ search/                     ② SearchBox
@@ -708,7 +721,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 ├─ supabase/
 │  ├─ migrations/
 │  └─ seed.sql
-├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · profile-check.mjs(내 프로필 권한) · chat-extras-check.mjs(즐겨찾기·고정·리액션·알림 끄기 권한) · seed-10k · seed-company(시연 회사)
+├─ scripts/                       step1-check.mjs · db-v1-check.mjs(권한 검사) · attachments-check.mjs(첨부 검사) · profile-check.mjs(내 프로필 권한) · chat-extras-check.mjs(즐겨찾기·고정·리액션·알림 끄기 권한) · seed-10k · seed-company(시연 회사) · seed-company/(시연 회사 데이터 — roster·chats/·schedule·avatars/)
 └─ .env.example
 ```
 
@@ -811,6 +824,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
 | `supabase/migrations/20260930230000_schedule_v2.sql` | 일정 개편: `events` 유형·세부 유형·종일·장소·공개 범위·채널·분류, 사람별 알림 `remind_minutes`, 분류 트리거, `create_event` 새 판, `list_team_events` (4절 "일정 개편", WU-42) |
 | `supabase/migrations/20261001130000_event_chat_series.sql` | 반복 일정은 대화방 하나를 같이 쓴다 (`open_event_chat` 고침, WU-44) |
+| `supabase/migrations/20261001160000_notice_channel.sql` | 공지 채널 `channels.notice_unit_id` — 새 글은 담당 부서·리더·부리더·관리자만(트리거 `messages_check_notice`), 모든 사람 자동 가입·나가기 막기, 화면용 `can_post_in()` (WU-46, 2026-10-01 트랜잭션 시험 18개 뒤 원격 적용. 파일 머리말의 "WU-45" 는 같은 날 대시보드 개편이 먼저 WU-45 를 써서 바뀐 번호 — 적용한 파일이라 고치지 않았다) |
 | `supabase/migrations/20261001120000_schedule_series_chat.sql` | 반복 일정(`series_id`·`recurrence`, `create_event_series`·`update_event_series`·`cancel_event_series`, 묶음 알림 한 번)과 참석자와 대화(`chat_channel_id`, `open_event_chat`) (4절 "일정 개편", WU-43·44) |
 | `supabase/migrations/20261001090000_schedule_fixes.sql` | 일정 개편 검토 반영: "바쁨"은 `kind` 도 가림, 1시간·하루 전 알림은 제때(5분 안)만, 종일 일정 초대자는 알림 없음 (WU-42) |
 | `supabase/migrations/20260930210000_channel_leaders.sql` | 일반 채널 리더·부리더 `memberships.role`, 수정·초대·내보내기 정책, `set_sub_leader`·`transfer_leader`, 리더 자동 위임 트리거 (5절 "리더·부리더", WU-39) |
@@ -822,7 +836,11 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 21개 — 불참 알림 6개 포함). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
-| `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명·프로젝트 채널 2개·샘플 대화·샘플 회의·회의실. 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD` (6자 이상 — Supabase 최소 길이). 여러 번 돌려도 된다. 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다) |
+| `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명(프로필 사진·연락처)·프로젝트 채널 4개·#공지사항·DM 12개·9월 대화(2,446건)·회의실 8개·9~10월 일정(219건). 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD` (6자 이상 — Supabase 최소 길이). 여러 번 돌려도 된다 (대화·일정은 없는 것만). 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다). `-- --reset-chats`·`-- --reset-events` 는 시드 메시지(`client_id` 0c000000-)·시드 일정(id 0e000000-)만 지우고 다시 넣는다, `-- --contacts-only` 는 연락처만, `-- --avatars-overwrite` 는 이미 고른 사진·캐릭터도 시드 사진으로 |
+| `scripts/seed-company/roster.mjs` | 조직·사람·프로젝트 채널(공지 채널 포함) 명단 |
+| `scripts/seed-company/chats.mjs` · `chats/*.mjs` | 대화 데이터(채널별 날짜·시각·스레드·리액션·고정)와 검사 — `node scripts/seed-company/chats.mjs` 가 DB 없이 멤버·멘션·시각·공지 권한을 검사한다 (2026-10-01 34채널 2,446건) |
+| `scripts/seed-company/schedule.mjs` | 회의실 8개와 일정(반복 17묶음·한 번 있는 일정) — `node scripts/seed-company/schedule.mjs` 가 회의실·사람 겹침, 정원, 공휴일, 휴가 중 대화를 검사한다 |
+| `scripts/seed-company/avatars.mjs` · `avatars/*.webp` | 프로필 사진 만들기 (`npm run seed:avatars`, OpenAI 이미지 생성 — **비용이 든다**, 없는 파일만 만든다). 만든 사진(512px webp)은 저장소에 두고 시드가 올린다 |
 | `scripts/schedule-check.mjs` | 일정 개편 검사 (`npm run check:schedule`, 29개 — 반복 만들기·이후 모두 고치기·취소·초대 한 번, 참석자와 대화 DM·비공개 채널 포함): 분류, 남의 채널 거부, category 못 고침, 팀원에게 보이는 칸(바쁨·외근·병가·휴직·나만 보기), 다른 부서 못 봄, 종일 초대자 알림 없음. 시험 팀·가상 사용자 3명을 끝나면 지운다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
@@ -863,7 +881,7 @@ npx supabase db push --db-url $env:DBURL
 
 ### 알아 둘 함정
 
-- **남이 적용만 하고 올리지 않은 마이그레이션이 원격에 있으면 `db push` 가 거부된다** (2026-10-01 `20261001160000_notice_channel`): 급하면 같은 SQL 을 트랜잭션으로 적용하고 `supabase_migrations.schema_migrations`(version·name·statements)에 기록을 넣는다 — CLI 가 하는 일과 같다. 내 파일 번호는 원격의 마지막 번호보다 뒤로 정한다. 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 로 원격에만 있는 것을 본다
+- **남이 적용만 하고 올리지 않은 마이그레이션이 원격에 있으면 `db push` 가 거부된다** (2026-10-01 `20261001160000_notice_channel`): 급하면 같은 SQL 을 트랜잭션으로 적용하고 `supabase_migrations.schema_migrations`(version·name·statements)에 기록을 넣는다 — CLI 가 하는 일과 같다. 내 파일 번호는 원격의 마지막 번호보다 뒤로 정한다. **같은 번호로 두 사람이 따로 만들면** 늦게 올린 쪽은 원격에서 적용된 것으로 보이고 건너뛰어진다 — 적용 전인 쪽 번호를 바꾼다 (2026-10-01 `close_step1_anon` 을 `190000` → `200000`, 원격 `190000` 은 `rooms_policy_fix`) 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 로 원격에만 있는 것을 본다
 - **Next.js 16 은 같은 폴더에 `next dev` 를 둘 띄우지 못한다** (2026-10-01): 다른 창의 개발 서버가 있으면 "Another next dev server is already running" 으로 끝난다. 그 서버(`localhost:3000`)가 같은 폴더라 바뀐 코드가 그대로 보이니 그 주소로 확인한다
 
 - **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
@@ -891,6 +909,11 @@ npx supabase db push --db-url $env:DBURL
 - **같은 그림에서 두 effect 가 모두 `setChannel` 하면 뒤의 것이 이긴다**: `/chat` 을 처음 열 때 "첫 채널 열기"와 "종류 채우기"를 따로 두었더니 뒤의 것이 기본값 `#일반` 에 종류를 채워 숨긴 `#일반` 이 열렸다 (2026-09-30). 한 effect 로 합쳤다 (`MessageNav`)
 - **페이지 파일을 옮기면 `.next/types` 에 옛 경로가 남아 `tsc` 가 실패한다**: `app/page.tsx` 를 `app/(app)/page.tsx` 로 옮긴 뒤 `Cannot find module '../../app/page.js'`. `.next/types` 를 지우면 된다. 개발 서버도 다시 띄운다 (옮기는 동안 열려 있던 탭은 `Router action dispatched before initialization` 을 쏟아낸다)
 - **supabase-js 로 여러 행을 한 번에 넣을 때 어떤 행에만 없는 컬럼은 기본값이 아니라 null 이 들어간다**: 행마다 키가 다르면 모든 키를 합친 컬럼 목록으로 insert 하기 때문이다. `event_attendees` 에 만든 사람만 `response` 를 주고 나머지는 빼서 `23502 null value in column "response"` 가 났다 (2026-09-29 회사 시드). 모든 행에 같은 키를 적는다
+- **시드 대화는 시각 순으로 넣어야 한다** (2026-10-01 겪음): 화면 순서·읽음 위치·안 읽은 사람 수가 모두 `messages.id` 로 정해진다. 과거 시각의 대화를 나중에 넣으면 이미 있는 메시지 뒤에 보이고, 답글을 최상위 메시지 뒤에 몰아 넣으면 답글 id 가 모두 커져 읽음 위치가 끝까지 가 버린다 (이서연 안 읽음 0건). `seed-company.mjs` 는 최상위·답글을 함께 시각 순으로 넣는다. 대화 파일에 줄을 끼워 넣었으면 `--reset-chats` 로 다시 넣는다
+- **`--reset-chats` 는 시드 메시지에 단 사람의 답글도 지운다**: 답글은 부모를 따라 cascade 로 지워진다 (2026-10-01 영업1팀 시험 답글 1건). 시드 채널에 사람이 쓴 최상위 메시지는 남지만, id 가 작아 9월 대화보다 위에 보인다 (지우면 순서는 저절로 맞는다)
+- **공지 채널 트리거는 service role 에도 걸린다**: 검사 스크립트가 `#공지사항` 에 최상위 메시지를 넣으려면 담당 부서(경영지원본부) 계정을 써야 한다. 시드 대화 검사(`chats.mjs`)도 같은 규칙으로 막는다
+- **회의실 이름을 바꿨다** (2026-10-01 사용자 결정): `회의실 1 (소)`→`M2 공유`, `회의실 2 (중)`→`M1 확산`, `회의실 3 (대)`→`C1 상생` (행은 그대로라 예약이 이어진다). 옛 이름은 지난 기록에만 남는다
+- **2026-10-05(월)은 대체 공휴일이다** (개천절이 토요일): 시드 일정·대화의 마감을 이날에 두지 않는다 (`components/calendar/kinds.ts` 의 `HOLIDAYS`)
 - **시드 비밀번호를 파일에 안 남기면 아무도 로그인 못 한다**: 2026-09-29 회사 시드를 터미널의 `$env:SEED_PASSWORD` 로 돌려서 값이 어디에도 남지 않았다. 시드는 기존 계정 비밀번호를 다시 바꾸지 않으므로, 다시 돌려도 소용없다. 2026-09-30 에 service role(`auth.admin.updateUserById`)로 37명을 새 값으로 바꿨다. 값은 `.env.local` 의 `SEED_PASSWORD` 에 적어 두고 팀원에게 따로 전달한다.
 - **비밀번호는 6자 미만이면 거부된다**: Supabase 기본 최소 길이가 6자라 관리자 API 로 바꿔도 `422 weak_password` 가 난다 (2026-09-30, `1234` 시도). 대시보드 Authentication → Sign In / Providers → Email 의 **Minimum password length** 가 이 값이다. Supabase 대시보드는 Vercel → Storage → `office-chat-db` → **Open in Supabase** 로 들어간다.
 - **메시지를 쓴 계정은 그대로 지워지지 않는다**: `messages.user_id` 에만 `on delete` 규칙이 없다 (`20260929100000_db_v1.sql` 70행). 그 사람의 첨부 파일(저장소 `attachments`)과 메시지를 먼저 지우고 계정을 지운다. 메시지를 지우면 거기 달린 남의 스레드 답글도 함께 지워진다. 2026-09-30 시드가 아닌 계정 7개(사용자A·B·비회원C·관리자·측정봇·팀원 테스트 계정 2개)를 이 순서로 지웠다 (메시지 57건·첨부 1개, 측정봇은 `1만건-측정` 채널을 지워 메시지 1만 건이 함께 지워짐)
