@@ -3,6 +3,7 @@
 // 회의실 8개와 9~10월 일정(반복 회의·업무 마감·외근·개인 일정·휴가)을 만든다. 운영 DB 에도 이것을 넣는다 (2026-09-29).
 // 실행: .env.local 에 SEED_PASSWORD=<비밀번호 6자 이상> 을 넣고 npm run seed:company
 //       대화를 지우고 처음부터 다시 넣기: npm run seed:company -- --reset-chats   (일정은 --reset-events, 둘 다 줘도 된다)
+//       시연 직전(리허설 뒤)에: npm run seed:company -- --demo-reset   (demoReset 참고 — 10/2 아침 대화도 이때 들어간다)
 //       DB 없이 검사만: node scripts/seed-company/chats.mjs · node scripts/seed-company/schedule.mjs
 //
 // 데이터는 seed-company/ 에 있다: roster.mjs(조직·사람·프로젝트 채널) · chats/*.mjs(대화, 모양은 chats.mjs 머리말) ·
@@ -54,6 +55,10 @@ const RESET_EVENTS = process.argv.includes("--reset-events");
 const OVERWRITE_AVATARS = process.argv.includes("--avatars-overwrite");
 /** 이 시각보다 앞선 메시지·초대는 읽은 것으로 둔다 (그 뒤는 안 읽음·알림으로 남아 시연에 쓴다) */
 const READ_UNTIL = new Date("2026-09-29T12:00:00+09:00");
+/** --demo-reset: 리허설로 바뀐 것을 시연 시작 상태로 되돌린다 (PRD "시연 순서"). 시연 전에 한 번 더 돌린다 */
+const DEMO_RESET = process.argv.includes("--demo-reset");
+/** 이서연은 이 시각 뒤의 대화를 못 본 채 시연을 맞는다 (시연 순서 5 따라잡기 — 요약·할 일 추출 재료) */
+const DEMO_READ_UNTIL = new Date("2026-10-01T12:00:00+09:00");
 
 const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -81,11 +86,10 @@ async function readAll(build) {
 
 /** 회의실 (seed-company/schedule.mjs 의 ROOMS). 예전 이름(was)의 행이 있으면 이름을 바꿔 쓴다 — 그 방의 예약이 그대로 이어진다 */
 async function seedRooms() {
-<<<<<<< HEAD
   const byName = new Map(must(await admin.from("rooms").select("id, name")).map((r) => [r.name, r]));
   const out = new Map();
   for (const r of ROOMS) {
-    const row = { name: r.name, capacity: r.capacity, location: r.location };
+    const row = { name: r.name, capacity: r.capacity, location: r.location, facilities: r.facilities, description: r.description, sort_order: r.sort_order };
     const hit = byName.get(r.name) ?? (r.was ? byName.get(r.was) : undefined);
     const saved = hit
       ? must(await admin.from("rooms").update(row).eq("id", hit.id).select("id").single())
@@ -93,24 +97,6 @@ async function seedRooms() {
     out.set(r.name, saved.id);
   }
   return out;
-=======
-  // 원격(팀·운영 공용) DB 의 회의실 8개와 같다 — supabase/seed.sql · 마이그레이션 20261001180000_rooms_data (2026-10-01 층·시설·설명)
-  must(
-    await admin.from("rooms").upsert(
-      [
-        { name: "C1 상생", capacity: 30, location: "5층", facilities: ["projector", "video", "mic"], description: "대회의실 · 무선 마이크 2개 · 타운홀·행사", sort_order: 10 },
-        { name: "C2 신뢰", capacity: 12, location: "5층", facilities: ["monitor", "video"], description: "보안 회의 · 임원·고객 미팅 우선", sort_order: 20 },
-        { name: "C3 열정", capacity: 20, location: "3층", facilities: ["projector"], description: "교육실 · 노트북 대여 6대 · 교육·온보딩", sort_order: 30 },
-        { name: "C4 이끔", capacity: 12, location: "6층", facilities: ["monitor", "video"], description: "85인치 TV · 스프린트·배포 상황실", sort_order: 40 },
-        { name: "M1 확산", capacity: 8, location: "5층", facilities: ["video", "mic", "whiteboard"], description: "화상회의 카메라·스피커폰", sort_order: 50 },
-        { name: "M2 공유", capacity: 4, location: "5층", facilities: ["monitor"], description: "C1 옆 · 55인치 TV·화면 공유", sort_order: 60 },
-        { name: "M3 가치", capacity: 4, location: "6층", facilities: ["monitor", "whiteboard"], description: "소회의실 · 면접 가능", sort_order: 70 },
-        { name: "M4 연구", capacity: 2, location: "6층", facilities: ["video"], description: "2인 화상회의 부스 · 방음 · 1:1 면담", sort_order: 80 },
-      ],
-      { onConflict: "name", ignoreDuplicates: true },
-    ),
-  );
->>>>>>> 7b972a0a2d3aebd31fe8032ac759cd9cd9ef9a66
 }
 
 /** 조직을 넣거나 맞춘다. upsert 는 쓰지 않는다 — 충돌해도 before insert 트리거가 채널을 먼저 만들어 버린다 */
@@ -496,7 +482,6 @@ async function seedEvents(events, ids, rooms, projects) {
   return { removed, inserted: fresh.length, attendees: attendees.length, noRoom, series: new Set(fresh.map((e) => e.seriesId).filter(Boolean)).size, byId };
 }
 
-<<<<<<< HEAD
 /**
  * 프로필 사진 (seed-company/avatars/<handle>.webp). avatars 버킷 <user id>/seed-<내용 해시>.webp 에 올리고 profiles.avatar 를 정한다.
  * 이미 사진·캐릭터를 고른 사람은 그대로 둔다 (--avatars-overwrite 면 바꾼다). 시드 사진이 바뀌면 옛 파일은 지운다
@@ -529,29 +514,41 @@ async function seedAvatars(ids) {
     set++;
   }
   return { set, kept, missing };
-=======
-async function insertEvent(id, ids) {
-  const kst = new Date(Date.now() + 9 * 3600_000);
-  do kst.setUTCDate(kst.getUTCDate() + 1);
-  while (kst.getUTCDay() === 0 || kst.getUTCDay() === 6);
-  const day = kst.toISOString().slice(0, 10);
-  const starts_at = `${day}T14:00:00+09:00`;
-  const ends_at = `${day}T15:00:00+09:00`;
-  const room = must(await admin.from("rooms").select("id").eq("name", "M1 확산").single());
+}
 
-  const event = {
-    id,
-    title: "모바일앱 주간 회의",
-    description: "요구사항 초안 검토와 화면 흐름도 일정 맞추기",
-    starts_at,
-    ends_at,
-    room_id: room.id,
-    created_by: ids.get("dhkim"),
-  };
-  let { error } = await admin.from("events").insert(event);
-  if (error?.code === "23P01") ({ error } = await admin.from("events").insert({ ...event, room_id: null }));
-  if (error) throw error;
->>>>>>> 7b972a0a2d3aebd31fe8032ac759cd9cd9ef9a66
+/**
+ * 시연 준비 (--demo-reset). 리허설을 하면 이서연이 대화를 읽고, 김도현이 10/8 모바일앱 주간 회의를 잡는다 — 그것을 되돌린다.
+ * ① 이서연의 #프로젝트-모바일앱·#백엔드팀·김도현 DM 읽음 위치를 DEMO_READ_UNTIL 앞으로 (읽음 위치는 앞으로만 가는 트리거라 지우고 다시 넣는다)
+ *    그 뒤 메시지에서 온 이서연의 알림도 안 읽음으로
+ * ② 김도현이 화면에서 만든 10/8 이후 "모바일앱 주간 회의"(시드 일정이 아닌 것)를 지운다 — 그대로 두면 시연에서 M1 확산이 겹쳐 거부된다
+ * 리허설에서 보낸 메시지·저장한 할 일은 지우지 않는다 (사람이 쓴 것이라 화면에서 지운다)
+ */
+async function demoReset(ids, units, projects, dms) {
+  const me = ids.get("sylee");
+  const channels = [projects.get(1), units.get("backend").channel_id, dms.get("dm:dhkim:sylee")];
+  let unread = 0;
+  for (const ch of channels) {
+    const before = must(
+      await admin.from("messages").select("id").eq("channel_id", ch).lt("created_at", DEMO_READ_UNTIL.toISOString()).order("id", { ascending: false }).limit(1),
+    ).at(0);
+    if (!before) continue;
+    must(await admin.from("read_positions").delete().eq("channel_id", ch).eq("user_id", me));
+    must(await admin.from("read_positions").insert({ channel_id: ch, user_id: me, last_read_message_id: before.id }));
+    must(await admin.from("notifications").update({ read_at: null }).eq("user_id", me).eq("channel_id", ch).gt("message_id", before.id));
+    const { count } = await admin.from("messages").select("id", { count: "exact", head: true }).eq("channel_id", ch).gt("id", before.id).neq("user_id", me);
+    unread += count ?? 0;
+  }
+  const rehearsal = must(
+    await admin
+      .from("events")
+      .select("id, starts_at")
+      .eq("created_by", ids.get("dhkim"))
+      .eq("title", "모바일앱 주간 회의")
+      .gte("starts_at", "2026-10-08T00:00:00+09:00")
+      .or(`id.lt.${SEED_EVENT_RANGE[0]},id.gt.${SEED_EVENT_RANGE[1]}`),
+  );
+  if (rehearsal.length) must(await admin.from("events").delete().in("id", rehearsal.map((e) => e.id)));
+  return { unread, removedEvents: rehearsal.length };
 }
 
 // --contacts-only: 계정·채널·대화는 건드리지 않고 연락처만 채운다
@@ -583,6 +580,7 @@ const dms = await seedDMs(ids, chats.channels);
 const chat = await seedChats(chats.messages, ids, units, projects, dms);
 const ev = await seedEvents(schedule.events, ids, rooms, projects);
 const av = await seedAvatars(ids);
+const demo = DEMO_RESET ? await demoReset(ids, units, projects, dms) : null;
 
 console.log(`조직 ${UNITS.length}개 (부서 채널 ${UNITS.length - 1}개 + #일반)`);
 console.log(`직원 ${PEOPLE.length}명 (새로 만든 계정 ${created}명), 연락처 ${contacts}명 새로 넣음`);
@@ -603,5 +601,10 @@ console.log(
     `, 참석자 ${ev.attendees}명` +
     (ev.noRoom.length ? `, 시드 밖 예약과 겹쳐 회의실 없이 넣은 것 ${ev.noRoom.length}건: ${ev.noRoom.join(" / ")}` : ""),
 );
+if (demo) {
+  console.log(
+    `시연 준비: 이서연 안 읽은 메시지 ${demo.unread}건으로 되돌림 (모바일앱·백엔드팀·김도현 DM), 리허설에서 만든 10/8 모바일앱 주간 회의 ${demo.removedEvents}건 지움`,
+  );
+}
 console.log("\n로그인: <handle>@example.com + .env.local 의 SEED_PASSWORD (명단은 seed-company/roster.mjs 의 PEOPLE)");
 console.log("예) 백엔드팀 사원 이서연(sylee@example.com) → #일반·#공지사항·플랫폼사업부·개발본부·백엔드팀·프로젝트-모바일앱·잡담");

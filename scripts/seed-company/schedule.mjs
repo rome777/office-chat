@@ -4,7 +4,8 @@
 // 원래 있던 회의실 3개는 지우지 않고 이름을 바꾼다 (was) — 이미 그 방에 잡힌 일정(김송이 시연용 반복 일정 등)이 그대로 이어진다.
 // 일정은 2026년 9~10월: 반복 회의(팀 주간 회의·데일리 스크럼·1:1·멘토링), 한 번 있는 회의·업무 마감·외근·개인 일정·휴가.
 // 대화(chats/*.mjs)와 사실을 맞췄다 — 타운홀 9/3, 킥오프 9/14, 핫픽스 9/15 10시, 회고 9/18 14시, 리허설 9/30 14시, 기념식 10/1 14시,
-// 1차 배포 10/2 오전, 면접 10/7·10/8 오후 M3 가치, 이서연 연차 10/8, 웨비나 10/22 등. 공휴일(추석·개천절 대체·한글날)은 건너뛴다.
+// 1차 배포 10/2 오전, 면접 10/7·10/8 오후 M3 가치, 이서연 연차 10/16, 웨비나 10/22 등. 공휴일(추석·개천절 대체·한글날)은 건너뛴다.
+// 시연일 10/2(금)는 회의실 8개가 고루 차고, 시연 인물(이서연·김도현·정하늘)의 하루가 꽉 차게 둔다 (2026-10-01).
 //
 // 일정 id 는 key·날짜로 정해진다 (다시 돌려도 같은 행). 시드 일정 id 는 모두 0e000000- 로 시작한다 (--reset-events 가 이 범위만 지운다).
 // 참석 응답을 정하지 않으면 key·사람으로 정한다: 지난 일정은 대부분 수락, 앞으로의 일정은 수락·대기가 섞인다.
@@ -15,15 +16,16 @@ import { fileURLToPath } from "node:url";
 import { PEOPLE } from "./roster.mjs";
 import { channelMembers, unitMembers, loadChats } from "./chats.mjs";
 
+// 층(location)·시설·설명은 원격 DB 와 같다 — 마이그레이션 20261001180000_rooms_data · supabase/seed.sql
 export const ROOMS = [
-  { name: "C1 상생", was: "회의실 3 (대)", capacity: 30, location: "5층 대회의실 · 빔프로젝터·무선 마이크 2개·화상회의 · 타운홀·행사" },
-  { name: "C2 신뢰", capacity: 12, location: "5층 · 화상회의·보안 회의 · 임원·고객 미팅 우선" },
-  { name: "C3 열정", capacity: 20, location: "3층 교육실 · 빔프로젝터·노트북 대여 6대 · 교육·온보딩" },
-  { name: "C4 이끔", capacity: 12, location: "6층 · 85인치 TV·화상회의 · 스프린트·배포 상황실" },
-  { name: "M1 확산", was: "회의실 2 (중)", capacity: 8, location: "5층 · 화상회의 카메라·스피커폰·화이트보드" },
-  { name: "M2 공유", was: "회의실 1 (소)", capacity: 4, location: "5층 C1 옆 · 55인치 TV·화면 공유" },
-  { name: "M3 가치", capacity: 4, location: "6층 소회의실 · TV·화이트보드 · 면접 가능" },
-  { name: "M4 연구", capacity: 2, location: "6층 · 2인 화상회의 부스 · 방음 · 1:1 면담" },
+  { name: "C1 상생", was: "회의실 3 (대)", capacity: 30, location: "5층", facilities: ["projector", "video", "mic"], description: "대회의실 · 무선 마이크 2개 · 타운홀·행사", sort_order: 10 },
+  { name: "C2 신뢰", capacity: 12, location: "5층", facilities: ["monitor", "video"], description: "보안 회의 · 임원·고객 미팅 우선", sort_order: 20 },
+  { name: "C3 열정", capacity: 20, location: "3층", facilities: ["projector"], description: "교육실 · 노트북 대여 6대 · 교육·온보딩", sort_order: 30 },
+  { name: "C4 이끔", capacity: 12, location: "6층", facilities: ["monitor", "video"], description: "85인치 TV · 스프린트·배포 상황실", sort_order: 40 },
+  { name: "M1 확산", was: "회의실 2 (중)", capacity: 8, location: "5층", facilities: ["video", "mic", "whiteboard"], description: "화상회의 카메라·스피커폰", sort_order: 50 },
+  { name: "M2 공유", was: "회의실 1 (소)", capacity: 4, location: "5층", facilities: ["monitor"], description: "C1 옆 · 55인치 TV·화면 공유", sort_order: 60 },
+  { name: "M3 가치", capacity: 4, location: "6층", facilities: ["monitor", "whiteboard"], description: "소회의실 · 면접 가능", sort_order: 70 },
+  { name: "M4 연구", capacity: 2, location: "6층", facilities: ["video"], description: "2인 화상회의 부스 · 방음 · 1:1 면담", sort_order: 80 },
 ];
 
 /** 쉬는 날 (주말 말고) — components/calendar/kinds.ts 의 HOLIDAYS 와 같다 */
@@ -53,8 +55,9 @@ const SERIES = [
   { key: "planning-weekly", title: "서비스기획팀 주간 회의", kind: "meeting", subtype: "team_meeting", repeat: "weekly", from: "2026-09-02", until: "2026-10-28", start: "10:00", end: "10:40", room: "M3 가치", by: "thkwon", who: ["unit:planning"], description: "개선 요청 우선순위·문서 진행" },
   { key: "mentoring", title: "배준영 멘토링", kind: "meeting", subtype: "one_on_one", repeat: "weekly", from: "2026-09-09", until: "2026-10-28", start: "16:00", end: "16:30", room: "M4 연구", by: "hekang", who: ["jybae"], description: "한 주 동안 막힌 것·코드 리뷰 피드백" },
   { key: "ux-review", title: "UX디자인팀 디자인 리뷰", kind: "meeting", subtype: "team_meeting", repeat: "weekly", from: "2026-09-03", until: "2026-10-29", start: "11:00", end: "12:00", room: "M3 가치", by: "jmryu", who: ["unit:ux"], description: "시안 리뷰 · 디자인 시스템 토큰 점검" },
-  { key: "mobile-weekly", title: "모바일앱 주간 회의", kind: "meeting", subtype: "project_talk", repeat: "weekly", from: "2026-09-17", until: "2026-10-29", start: "14:00", end: "15:00", room: "M1 확산", by: "dhkim", who: ["project:1"], channel: "project:1", cancel: ["2026-10-01"], answers: { "2026-10-08": { declined: ["sylee"] } }, description: "요구사항·화면 흐름도·개발 진행 점검 (10/1 은 창립 기념식으로 쉼)" },
-  { key: "running", title: "러닝 모임", kind: "personal", subtype: "appointment", repeat: "weekly", from: "2026-09-10", until: "2026-10-29", start: "19:00", end: "20:00", location: "회사 앞 하천 산책로", by: "sylee", who: ["shbaek", "dyim", "ysjo", "gyyu", "wjjeon"], visibility: "public", cancel: ["2026-10-08"], description: "사내 러닝 동호회 — 5km 가볍게" },
+  { key: "mobile-weekly", title: "모바일앱 주간 회의", kind: "meeting", subtype: "project_talk", repeat: "weekly", from: "2026-09-17", until: "2026-10-01", start: "14:00", end: "15:00", room: "M1 확산", by: "dhkim", who: ["project:1"], channel: "project:1", cancel: ["2026-10-01"], description: "요구사항·화면 흐름도·개발 진행 점검 (10/1 은 창립 기념식으로 쉼)" },
+  // ↑ 10/8 부터는 시연에서 김도현이 화면으로 새로 잡는다 (PRD 시연 순서 7 — 10/8 목 14시 M1 확산, 이서연·문지아). 그래서 10/1 에서 끝낸다
+  { key: "running", title: "러닝 모임", kind: "personal", subtype: "appointment", repeat: "weekly", from: "2026-09-10", until: "2026-10-29", start: "19:00", end: "20:00", location: "회사 앞 하천 산책로", by: "sylee", who: ["shbaek", "dyim", "ysjo", "gyyu", "wjjeon"], visibility: "public", description: "사내 러닝 동호회 — 5km 가볍게" },
   { key: "oneonone-sylee", title: "윤재혁·이서연 1:1", kind: "meeting", subtype: "one_on_one", repeat: "weekly", from: "2026-09-04", until: "2026-10-30", start: "16:30", end: "17:00", room: "M4 연구", by: "jhyoon", who: ["sylee"], cancel: ["2026-09-18", "2026-10-02"], description: "업무 적응·성장 이야기" },
   { key: "onboarding-sep", title: "신규 입사자 온보딩 교육", kind: "meeting", subtype: "meeting", repeat: "daily", from: "2026-09-07", until: "2026-09-09", start: "10:00", end: "12:00", room: "C3 열정", by: "jwha", who: ["jybae", "jysim", "mjgu"], description: "9/7 회사 소개·계정 발급 · 9/8 보안·제품 교육 · 9/9 부서별 업무 소개" },
   { key: "deploy-tf-daily", title: "배포 TF 데일리 점검", kind: "meeting", subtype: "project_talk", repeat: "weekdays", from: "2026-09-28", until: "2026-10-02", start: "17:00", end: "17:20", room: "C4 이끔", by: "sjoh", who: ["project:4"], channel: "project:4", cancel: ["2026-10-01"], description: "블로커 버그·체크리스트 진행률" },
@@ -105,6 +108,29 @@ const EVENTS = [
   { key: "freeze-duty", title: "배포 동결일 당번", kind: "work", subtype: "focus", date: "2026-10-01", start: "15:00", end: "19:00", by: "dyim", who: ["hekang"], created: "2026-09-28 11:00" },
   { key: "deploy", title: "고객포털 1차 배포", kind: "work", subtype: "deadline", date: "2026-10-02", start: "08:00", end: "12:00", room: "C4 이끔", by: "sjoh", who: ["project:4", "sylee"], channel: "project:4", created: "2026-09-21 10:10", description: "검색 개선·로그인 개선·대시보드 개편. 상황실 C4 이끔" },
   { key: "deploy-review", title: "1차 배포 결과 공유", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "16:00", end: "16:30", room: "C4 이끔", by: "sjoh", who: ["unit:dev", "yjshin", "thkwon"], created: "2026-09-30 10:00" },
+  // 10/2 (금) 시연일 — 이서연(오후 내내 회의)·김도현·정하늘의 하루, 백엔드팀 부재 2건(대시보드 "오늘 팀 부재"), 회의실 8개가 고루 찬다
+  { key: "half-dyim-1002", title: "오후 반차", kind: "leave", subtype: "half", date: "2026-10-02", start: "13:00", end: "18:00", by: "dyim", created: "2026-09-25 10:00" },
+  { key: "gaon-aftercare", title: "가온물산 배포 후 현장 확인", kind: "outside", subtype: "site_visit", date: "2026-10-02", start: "14:00", end: "17:30", location: "가온물산 본사", by: "jhyoon", who: ["wjjeon"], created: "2026-09-29 17:10", description: "개편 검색·로그인 실사용 확인, 담당자 질문 받기" },
+  { key: "yhno-jhpark-1on1", title: "노영훈·박지훈 1:1", kind: "meeting", subtype: "one_on_one", date: "2026-10-02", start: "09:00", end: "09:30", room: "M4 연구", by: "yhno", who: ["jhpark"], created: "2026-09-28 09:00" },
+  { key: "finance-month-open", title: "재무팀 월초 결산 점검", kind: "meeting", subtype: "team_meeting", date: "2026-10-02", start: "09:00", end: "09:40", room: "M2 공유", by: "hwcha", who: ["unit:finance"], created: "2026-09-28 14:00", description: "9월 법인카드 마감분 확인 · 3분기 부가세 자료 진행" },
+  { key: "sales-q4-kickoff", title: "영업사업부 4분기 킥오프", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "09:30", end: "11:00", room: "C1 상생", by: "tskim", who: ["unit:sales"], created: "2026-09-21 09:00", description: "3분기 실적 · 4분기 목표(신규 6곳·재계약 4곳) · 고객포털 개편 영업 포인트" },
+  { key: "exec-q4-plan", title: "4분기 사업 계획 점검", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "10:00", end: "11:00", room: "C2 신뢰", by: "dhjung", who: ["swhan", "yhno"], created: "2026-09-25 18:00" },
+  { key: "hr-eval-prep", title: "하반기 평가 설명회 자료 점검", kind: "meeting", subtype: "team_meeting", date: "2026-10-02", start: "10:00", end: "11:00", room: "M2 공유", by: "jhpark", who: ["jwha", "mjgu"], created: "2026-09-29 14:40", description: "10/8 팀장 설명회 자료 · 자기평가 양식 초안" },
+  { key: "planning-triage", title: "고객 개선 요청 분류", kind: "meeting", subtype: "project_talk", date: "2026-10-02", start: "11:00", end: "12:00", room: "M3 가치", by: "sjhong", who: ["yjshin", "cwyang"], channel: "project:2", created: "2026-09-29 11:20", description: "#프로젝트-고객포털 요청 9월분 — 2차 배포 후보 고르기" },
+  { key: "webinar-speakers", title: "웨비나 연사·순서 확정", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "11:00", end: "12:00", room: "M1 확산", by: "sbhwang", who: ["ebko", "shbaek", "gyyu"], created: "2026-09-29 17:20" },
+  { key: "sclee-hnjung-1on1", title: "이상철·정하늘 1:1", kind: "meeting", subtype: "one_on_one", date: "2026-10-02", start: "11:00", end: "11:30", room: "M4 연구", by: "sclee", who: ["hnjung"], created: "2026-09-25 09:30", description: "미르건설 보안 인증 자료 진행 · 4분기 담당 고객" },
+  { key: "deploy-monitor", title: "1차 배포 모니터링 점검", kind: "meeting", subtype: "project_talk", date: "2026-10-02", start: "13:00", end: "13:40", room: "C4 이끔", by: "dhkim", who: ["sylee", "hekang", "mhseo"], channel: "project:4", created: "2026-09-30 18:00", description: "오전 배포 뒤 오류율·응답 시간·고객 문의 확인" },
+  { key: "security-edu-q4", title: "정보보안 정기 교육 (마케팅·경영지원)", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "13:00", end: "14:30", room: "C3 열정", by: "jhpark", who: ["unit:marketing", "mjgu", "yrjoo", "jysim"], created: "2026-09-22 10:00", description: "피싱 메일 사례 · 고객 자료 공유 규칙 · 노트북 잠금" },
+  { key: "jmpark-msjang-1on1", title: "박정민·장민석 1:1", kind: "meeting", subtype: "one_on_one", date: "2026-10-02", start: "13:30", end: "14:00", room: "M4 연구", by: "jmpark", who: ["msjang"], created: "2026-09-28 11:00" },
+  { key: "push-poc-check", title: "모바일앱 푸시 PoC 중간 점검", kind: "meeting", subtype: "project_talk", date: "2026-10-02", start: "14:00", end: "14:50", room: "M2 공유", by: "dhkim", who: ["sylee", "hekang"], channel: "project:1", created: "2026-09-30 10:30", description: "안드로이드 결과 · iOS 인증 키 연결 · 10/8 PR 범위" },
+  { key: "hamil-q3-review", title: "해밀캐피탈 분기 리뷰 (고객 방문)", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "14:00", end: "15:00", room: "C2 신뢰", by: "sclee", who: ["ynchoi", "hnjung"], created: "2026-09-24 16:00", description: "고객사 담당자 2명 방문 · 3분기 사용 현황 · 추가 라이선스 20석 논의" },
+  { key: "search-feedback", title: "검색 개선 고객 피드백 정리", kind: "meeting", subtype: "project_talk", date: "2026-10-02", start: "15:00", end: "15:45", room: "M1 확산", by: "msjang", who: ["dhkim", "sylee", "desong"], channel: "project:2", created: "2026-09-30 15:00", description: "배포 당일 고객사 문의 · 검색 결과 순서 요청" },
+  { key: "portal-sales-edu", title: "고객포털 개편 기능 영업 교육", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "15:00", end: "16:00", room: "C3 열정", by: "jamoon", who: ["hnjung", "ynchoi", "sjhong"], created: "2026-09-29 16:30", description: "검색·로그인·대시보드 개편 — 고객에게 설명하는 법" },
+  { key: "budget-qa", title: "2027 예산 템플릿 질의응답", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "15:00", end: "16:00", room: "M3 가치", by: "hwcha", who: ["yrjoo", "ebko", "jhpark"], created: "2026-09-29 10:00" },
+  { key: "ux-flow-prereview", title: "모바일앱 화면 흐름도 사전 리뷰", kind: "meeting", subtype: "team_meeting", date: "2026-10-02", start: "16:00", end: "17:00", room: "M1 확산", by: "jmryu", who: ["syahn", "cwyang"], created: "2026-09-30 11:00" },
+  { key: "webinar-pre-rehearsal", title: "웨비나 사전 리허설 (연사)", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "16:00", end: "17:30", room: "C1 상생", by: "ebko", who: ["shbaek", "gyyu", "sbhwang"], created: "2026-09-29 17:30" },
+  { key: "dasom-terms", title: "다솜제약 재계약 조건 검토", kind: "meeting", subtype: "meeting", date: "2026-10-02", start: "16:00", end: "17:00", room: "C2 신뢰", by: "msjang", who: ["desong"], created: "2026-09-29 09:40" },
+  { key: "sales1-weekly-wrap", title: "영업1팀 주간 정리", kind: "meeting", subtype: "team_meeting", date: "2026-10-02", start: "17:00", end: "17:40", room: "M2 공유", by: "sclee", who: ["unit:sales1"], created: "2026-09-25 09:40" },
   { key: "req-draft", title: "모바일앱 요구사항 초안 마감", kind: "work", subtype: "deadline", date: "2026-10-04", allDay: true, weekend: true, by: "jamoon", who: ["dhkim"], created: "2026-09-14 11:00" },
   // 10월 둘째 주
   { key: "checkup-jamoon", title: "건강검진", kind: "personal", subtype: "hospital", date: "2026-10-06", start: "08:00", end: "10:00", by: "jamoon", created: "2026-09-22 09:40" },
@@ -118,7 +144,6 @@ const EVENTS = [
   { key: "sebom-visit", title: "새봄식품 정기 방문", kind: "outside", subtype: "client_visit", date: "2026-10-07", start: "14:00", end: "16:00", location: "새봄식품 본사", by: "wjjeon", who: ["msjang"], created: "2026-09-29 10:00" },
   { key: "interview-b", title: "백엔드 경력 1차 면접 (지원자 B)", kind: "meeting", subtype: "meeting", date: "2026-10-07", start: "15:30", end: "16:30", room: "M3 가치", by: "jwha", who: ["jhyoon", "dhkim"], answers: { accepted: ["jhyoon", "dhkim"] }, created: "2026-09-28 09:31", description: "면접관 윤재혁·김도현 · 과제 리뷰 20분 + 질의응답 40분" },
   { key: "interview-c", title: "백엔드 경력 1차 면접 (지원자 C)", kind: "meeting", subtype: "meeting", date: "2026-10-07", start: "17:00", end: "18:00", room: "M3 가치", by: "jwha", who: ["jhyoon", "dhkim"], answers: { accepted: ["jhyoon", "dhkim"] }, created: "2026-09-28 09:32", description: "면접관 윤재혁·김도현 · 과제 리뷰 20분 + 질의응답 40분" },
-  { key: "leave-sylee-1008", title: "연차", kind: "leave", subtype: "annual", date: "2026-10-08", allDay: true, by: "sylee", created: "2026-09-21 14:40" },
   { key: "eval-briefing", title: "하반기 평가 기준 설명회 (팀장)", kind: "meeting", subtype: "meeting", date: "2026-10-08", start: "10:00", end: "11:00", room: "C2 신뢰", by: "jhpark", who: ["jhyoon", "mhseo", "thkwon", "jmryu", "sclee", "msjang", "ebko", "hwcha", "jwha"], created: "2026-09-29 14:30", description: "평가 일정(자기평가 10/19~23 · 1차 10/26~30 · 2차 11/2~6)과 기준 설명" },
   { key: "eval-form-due", title: "자기평가 양식 초안 마감", kind: "work", subtype: "deadline", date: "2026-10-08", allDay: true, by: "jwha", who: ["jhpark"], created: "2026-09-29 14:15" },
   { key: "casebook-draft", title: "바른교육 사례집 시안 마감", kind: "work", subtype: "design", date: "2026-10-08", allDay: true, by: "syahn", who: ["ebko", "shbaek"], created: "2026-09-28 16:00" },
@@ -137,6 +162,7 @@ const EVENTS = [
   { key: "yearend-due", title: "연말정산 사전 서류 마감", kind: "work", subtype: "deadline", date: "2026-10-15", allDay: true, by: "jwha", who: ["jhpark", "mjgu"], created: "2026-09-29 14:25" },
   { key: "checkup-sclee", title: "건강검진", kind: "personal", subtype: "hospital", date: "2026-10-16", start: "08:00", end: "10:00", by: "sclee", created: "2026-09-25 20:00" },
   { key: "budget-due", title: "2027 예산안 제출 마감", kind: "work", subtype: "deadline", date: "2026-10-16", allDay: true, by: "hwcha", who: ["yrjoo", "jysim", "yhno"], created: "2026-09-21 14:40" },
+  { key: "leave-sylee-1016", title: "연차", kind: "leave", subtype: "annual", date: "2026-10-16", allDay: true, by: "sylee", created: "2026-09-21 14:40" },
   { key: "leave-dyim-1016", title: "연차", kind: "leave", subtype: "annual", date: "2026-10-16", allDay: true, by: "dyim", created: "2026-09-28 17:30" },
   { key: "brand-guide", title: "브랜드 가이드 개정 완료", kind: "work", subtype: "design", date: "2026-10-16", allDay: true, by: "jmryu", who: ["ebko"], created: "2026-09-17 15:00" },
   // 10월 넷째 주 이후
