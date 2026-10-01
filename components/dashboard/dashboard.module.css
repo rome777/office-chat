@@ -1,4 +1,6 @@
-/* 대시보드 (/) */
+/* 대시보드 (/) — 2026-10-01 개편 (WU-45).
+   색: 카드는 흰 바탕(--surface)에 아이콘 동그라미만 기능색(시안 B). 상태(진행 중·마감·회의실)는 --ok·--warn·--bad 의 -soft 바탕 + -text 글자.
+   기능색 넷: 일정 = info(파랑), 메시지 = ok(초록), 회의 예약 = warn(호박), 할 일 = bad(빨강). globals.css 의 토큰을 쓴다 */
 
 .page {
   width: 100%;
@@ -7,24 +9,21 @@
   padding: 24px 28px 40px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
+/* ── 인사말 ── */
 .hero {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
-  padding: 8px 4px;
-}
-
-.heroIcon {
-  font-size: 40px;
-  line-height: 1;
+  padding: 4px 2px;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
 }
 
 .hero p {
@@ -32,82 +31,145 @@
   color: var(--muted);
 }
 
+.heroSide {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--idle-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.st_online {
+  background: var(--ok-soft);
+  color: var(--ok-text);
+}
+
+.st_away {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.st_dnd {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+
+.heroNext {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.heroNext:hover {
+  color: var(--accent);
+}
+
 .error {
   margin: 0;
   padding: 10px 14px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--bad) 10%, transparent);
-  color: var(--bad);
+  background: var(--bad-soft);
+  color: var(--bad-text);
   font-size: 14px;
 }
 
-/* 카드 색: 색 토큰에 섞어서 라이트·다크 모두 맞춘다.
-   2026-09-30 WorkOn 팔레트(라이트 = 네이비·화이트 단색)로 네 가지 분류색을 없애고 모두 --accent 로 통일했다.
-   카드는 아이콘·제목으로 구분한다. 다시 나누려면 아래 네 줄만 바꾸면 된다 */
-.blue,
-.violet,
-.green,
-.orange {
-  --tone: var(--accent);
+/* ── 요약 카드 ── */
+.info {
+  --tone: var(--info);
+  --tone-soft: var(--info-soft);
 }
 
-/* ── 요약 카드 ── */
+.ok {
+  --tone: var(--ok-text);
+  --tone-soft: var(--ok-soft);
+}
+
+.warn {
+  --tone: var(--warn-text);
+  --tone-soft: var(--warn-soft);
+}
+
+.bad {
+  --tone: var(--bad-text);
+  --tone-soft: var(--bad-soft);
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
 .card {
-  position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
     "icon title"
-    ". value"
-    ". sub";
-  column-gap: 14px;
-  row-gap: 2px;
-  padding: 18px 20px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--border));
-  background: color-mix(in srgb, var(--tone) 7%, var(--surface));
+    "value value"
+    "sub sub";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: inherit;
   text-align: left;
   text-decoration: none;
   font: inherit;
+  transition: border-color 0.15s;
 }
 
 .card:hover {
-  border-color: color-mix(in srgb, var(--tone) 50%, var(--border));
-}
-
-.card > svg:last-child {
-  position: absolute;
-  top: 22px;
-  right: 16px;
-  color: var(--muted);
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--border));
 }
 
 .cardIcon {
   grid-area: icon;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  background: var(--tone-soft);
   color: var(--tone);
 }
 
 .cardTitle {
   grid-area: title;
-  align-self: center;
-  font-weight: 700;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .cardValue {
   grid-area: value;
+  margin-top: 6px;
   font-size: 30px;
   line-height: 1.1;
 }
@@ -122,28 +184,30 @@
   grid-area: sub;
   color: var(--muted);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.urgent {
+  color: var(--bad-text);
+  font-weight: 700;
 }
 
 /* ── 상자 ── */
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
 }
 
 .box {
   min-width: 0;
   padding: 18px 20px;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--surface);
-}
-
-/* 회의실 사용현황은 RoomBoard(②) 가 자기 테두리를 그린다 */
-.box > section[aria-label="회의실 예약 현황"] {
-  border: none;
-  padding: 0;
-  background: none;
 }
 
 .boxHead {
@@ -162,22 +226,41 @@
   font-size: 17px;
 }
 
-.more {
+.boxHead h2 svg {
+  color: var(--muted);
+}
+
+/* 가벼운 동작 (Tertiary) — 배경 없이 글자만 */
+.more,
+.moreBtn {
+  border: none;
+  background: none;
+  padding: 0;
   color: var(--muted);
   font-size: 13px;
   text-decoration: none;
   white-space: nowrap;
 }
 
-.more:hover {
+.moreBtn {
+  margin-top: 8px;
+}
+
+.box > .more {
+  display: inline-block;
+  margin-top: 10px;
+}
+
+.more:hover,
+.moreBtn:hover {
   color: var(--accent);
 }
 
-.hint {
+.count {
   color: var(--muted);
-  font-size: 12px;
-  text-align: right;
+  font-size: 13px;
 }
+
 
 .empty {
   margin: 8px 0;
@@ -185,10 +268,99 @@
   font-size: 14px;
 }
 
-/* 오늘의 일정 */
-.schedule,
+/* 비어 있을 때 — 안내 한 줄 + 할 수 있는 동작 */
+.emptyBox {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+}
+
+.emptyBox p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.emptyBox > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.emptyAction:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 상태 칩 — 옅은 바탕 + 진한 글자 */
+.chip {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chipOk {
+  background: var(--ok-soft);
+  color: var(--ok-text);
+}
+
+.chipWarn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+
+.chipBad {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+
+.chipIdle {
+  background: var(--idle-soft);
+  color: var(--idle-text);
+}
+
+/* ── 오늘의 일정 (시간 | 카드) ── */
+.pastToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pastToggle:hover {
+  color: var(--accent);
+}
+
+.timeline,
 .todos,
-.recent {
+.recent,
+.rooms {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -196,76 +368,81 @@
   flex-direction: column;
 }
 
-.schedule li + li,
-.recent li + li,
-.todos li + li {
-  border-top: 1px solid var(--border);
+.timeline {
+  gap: 8px;
 }
 
-.event {
+.timeline li {
   display: grid;
-  grid-template-columns: 116px minmax(0, 1fr) auto;
+  grid-template-columns: 64px minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  padding: 12px 4px;
+  gap: 12px;
+}
+
+.tlTime {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+}
+
+.tlTime strong {
+  font-size: 16px;
+}
+
+.tlTime span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 왼쪽 색 줄 = 일정 유형 색(--k-*). 한쪽 테두리라 모서리를 둥글게 하지 않는다 */
+.tlCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  background: var(--nav);
   color: inherit;
   text-decoration: none;
-  border-left: 3px solid var(--accent);
-  padding-left: 12px;
-  margin: 4px 0;
 }
 
-.event:hover strong {
-  color: var(--accent);
+.tlCard:hover {
+  background: var(--mine);
+}
+
+.tlLive {
+  background: var(--ok-soft);
 }
 
 .past {
   opacity: 0.55;
 }
 
-.eventTime {
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.eventText {
+.tlText {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
+  gap: 2px;
 }
 
-.eventText strong {
+.tlText strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.eventText span {
+.tlText span {
   color: var(--muted);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.chip {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.chipLive {
-  background: color-mix(in srgb, var(--ok) 18%, transparent);
-  color: var(--ok);
-}
-
-.chipDone {
-  background: var(--bg);
-  color: var(--muted);
-}
-
-/* 빠른 실행 */
+/* ── 빠른 실행 (보조 버튼 줄) ── */
 .quick {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -274,40 +451,35 @@
 
 .quickItem {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 20px 10px;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--tone) 8%, var(--surface));
-  color: inherit;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
-  text-align: center;
+  font-weight: 600;
   text-decoration: none;
 }
 
+.quickItem svg {
+  color: var(--accent);
+}
+
 .quickItem:hover {
-  border-color: color-mix(in srgb, var(--tone) 40%, transparent);
+  border-color: var(--accent);
+  background: var(--brand-soft);
 }
 
-.quickItem span:last-child {
-  color: var(--muted);
-  font-size: 13px;
+/* ── 내 할 일 ── */
+.todos li + li,
+.recent li + li,
+.rooms li + li {
+  border-top: 1px solid var(--border);
 }
 
-.quickIcon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 6px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--tone) 16%, transparent);
-  color: var(--tone);
-}
-
-/* 오늘 할 일 */
 .todos li {
   display: flex;
   align-items: center;
@@ -316,9 +488,10 @@
 }
 
 .todos input {
+  flex: none;
   width: 18px;
   height: 18px;
-  accent-color: var(--accent);
+  accent-color: var(--primary);
 }
 
 .todoText {
@@ -340,34 +513,34 @@
   font-size: 12px;
 }
 
-.due {
-  flex: none;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--bg);
+/* ── 회의실 현황 ── */
+.rooms li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+}
+
+.roomName {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roomName span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.dueToday {
-  background: color-mix(in srgb, var(--warn) 20%, transparent);
-  color: var(--warn);
-  font-weight: 700;
-}
-
-.dueLate {
-  background: color-mix(in srgb, var(--bad) 15%, transparent);
-  color: var(--bad);
-  font-weight: 700;
-}
-
-/* 최근 대화 */
+/* ── 최근 대화 ── */
 .recentRow {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 4px;
+  gap: 12px;
+  padding: 10px 4px;
   border: none;
   background: none;
   color: inherit;
@@ -383,10 +556,10 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: var(--bg);
+  background: var(--nav);
   color: var(--muted);
 }
 
@@ -395,12 +568,16 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+}
+
+.recentText strong {
+  font-weight: 600;
 }
 
 .recentText span {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -410,6 +587,15 @@
   color: var(--text);
   font-weight: 600;
   margin-right: 4px;
+}
+
+/* 안 읽은 대화는 이름·미리보기를 진하게 */
+.unread .recentText strong {
+  font-weight: 800;
+}
+
+.unread .recentText span {
+  color: var(--text);
 }
 
 .recentSide {
@@ -446,16 +632,45 @@
     padding: 16px;
   }
 
-  .cards,
-  .quick {
-    grid-template-columns: minmax(0, 1fr);
+  .hero {
+    flex-direction: column;
   }
 
-  .event {
-    grid-template-columns: minmax(0, 1fr) auto;
+  .heroSide {
+    align-items: flex-start;
   }
 
-  .eventTime {
-    grid-column: 1 / -1;
+  .cards {
+    gap: 10px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .cardIcon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .cardTitle {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .cardValue {
+    font-size: 26px;
+  }
+
+  .timeline li {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .quickItem {
+    flex-direction: column;
+    gap: 4px;
+    height: 64px;
+    font-size: 13px;
   }
 }

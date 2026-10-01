@@ -23,9 +23,24 @@
   --mine: #e4eaf3;
   --logo-ink: #001c49;
   --logo-accent: #1975fb;
-  --ok: #2f9e44;
-  --warn: #e8a100;
-  --bad: #e03131;
+  /* 기능·상태색 (2026-10-01 대시보드 개편, 사용자가 준 팔레트). 꽉 찬 색(--ok·--warn·--bad)은 상태 점·알림 배지 바탕이라
+     라이트·다크 같은 값이다. 흰 글자를 얹어도 되는 것은 --bad 뿐이다 (--ok 3.3·--warn 2.6 — 점·선에만 쓴다).
+     작은 글자는 -text, 옅은 바탕은 -soft 를 쓴다 (라이트 -text 는 흰 바탕 명암비 4.5 를 넘게 한 단계 진하다) */
+  --ok: #22a06b;
+  --ok-soft: #e5f4ef;
+  --ok-text: #17784f;
+  --warn: #d99100;
+  --warn-soft: #fff2dc;
+  --warn-text: #8a5c00;
+  --bad: #d14343; /* 팔레트 #D64545 는 흰 글자와 4.38 이라 4.5 를 넘게 한 단계 진하게 */
+  --bad-soft: #fcebec;
+  --bad-text: #b83232;
+  --info: #3977cc;
+  --info-soft: #eaf2ff;
+  --brand-soft: #e8f0ff;
+  --idle: #7c8798; /* 예약 없음·운영 종료 (점·선) */
+  --idle-text: #5b6577;
+  --idle-soft: #eef1f5;
   /* 일정 유형 색 (② 일정, 2026-09-30) — 회의·업무·개인·외근·휴가·부재·바쁨 */
   --k-meeting: #1f6feb;
   --k-work: #2b8a3e;
@@ -55,6 +70,18 @@
     --accent: #8eb8ff;
     --mine: #173a6b;
     --logo-ink: #ffffff;
+    --ok-soft: #12382d;
+    --ok-text: #4ccb91;
+    --warn-soft: #3a2f1a;
+    --warn-text: #f3bd4f;
+    --bad-soft: #3c2026;
+    --bad-text: #f07878;
+    --info: #8eb8ff;
+    --info-soft: #142e51;
+    --brand-soft: #102b50;
+    --idle: #8595ad;
+    --idle-text: #a3b1c6;
+    --idle-soft: #13294a;
   --k-meeting: #74aaff;
   --k-work: #69db7c;
   --k-personal: #b197fc;
@@ -80,6 +107,18 @@
   --accent: #8eb8ff;
   --mine: #173a6b;
   --logo-ink: #ffffff;
+  --ok-soft: #12382d;
+  --ok-text: #4ccb91;
+  --warn-soft: #3a2f1a;
+  --warn-text: #f3bd4f;
+  --bad-soft: #3c2026;
+  --bad-text: #f07878;
+  --info: #8eb8ff;
+  --info-soft: #142e51;
+  --brand-soft: #102b50;
+  --idle: #8595ad;
+  --idle-text: #a3b1c6;
+  --idle-soft: #13294a;
   --k-meeting: #74aaff;
   --k-work: #69db7c;
   --k-personal: #b197fc;
