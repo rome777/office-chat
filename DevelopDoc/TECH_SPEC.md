@@ -226,7 +226,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
   - `create_event_series(p_repeat, p_until, …create_event 와 같은 인자)`: 회의실이 겹치는 회차가 하나라도 있으면 전체를 거부하고 날짜를 알려 준다 (`P0001`, hint `room_conflict`, "회의실이 이미 예약된 날이 있습니다: 12월 6일, …"). 휴가·부재와 하루를 넘는 일정은 반복하지 않는다
   - `update_event_series(p_event, …)` = "이후 모두" 고치기: 그 회차와 뒤 회차의 내용·시각·참석자·내 알림. 날짜(며칠)는 회차마다 그대로. `cancel_event_series(p_event)` = "이후 모두" 취소. 만든 사람만. "이 일정만"은 그 행 하나를 예전처럼 고친다 (묶음에는 남는다)
   - **묶음으로 처리할 때 알림은 사람마다 한 번**: 함수가 `app.bulk_event` 를 켜면 초대·변경·취소 트리거가 회차마다 알림을 만들지 않고(시작 전 알림 지우기는 그대로), 함수가 끝에 그 회차로 한 번씩 넣는다. 원래 있던 사람은 변경, 새로 든 사람은 초대
-- **참석자와 대화** (WU-44): `open_event_chat(p_event)` — 참석자만. 상대가 한 명이면 DM(`create_dm`), 여럿이면 일정 이름의 비공개 채널을 만들어 `events.chat_channel_id` 에 잇고, 다시 부르면 같은 방을 쓰며 그 뒤에 들어온 참석자도 멤버로 넣는다. **분류용 `channel_id`(일정을 만든 채널)와 따로 둔다** — 대화방을 만들었다고 프로젝트 일정이 되지 않게
+- **참석자와 대화** (WU-44): `open_event_chat(p_event)` — 참석자만. 상대가 한 명이면 DM(`create_dm`), 여럿이면 일정 이름의 비공개 채널을 만들어 `events.chat_channel_id` 에 잇고, 다시 부르면 같은 방을 쓰며 그 뒤에 들어온 참석자도 멤버로 넣는다. **반복 일정은 묶음 전체가 방 하나를 쓴다** — 어느 회차에서 열어도 묶음에 이미 이어진 방을 찾아 모든 회차에 잇는다 (`20261001130000`, 전에는 회차마다 방이 따로 생겼다). **분류용 `channel_id`(일정을 만든 채널)와 따로 둔다** — 대화방을 만들었다고 프로젝트 일정이 되지 않게
 - **확인**: `npm run check:schedule` (29개 — 시험 팀·가상 사용자 4명을 만들고 끝나면 지운다)
 - **`create_event` 새 판**: 인자 13개 (뒤 7개는 기본값) — 예전 6개 인자 호출(운영 화면·검사 스크립트)이 그대로 된다
 
@@ -438,6 +438,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - **회의 고치기는 한 번에 저장되지 않는다**: `events` 수정 뒤 `event_attendees` 추가·삭제를 따로 부른다 (한 번에 고치는 DB 함수가 없다). 참석자 저장이 실패하면 회의 내용만 바뀐 채 남으므로 화면에 "회의는 고쳤지만 참석자를 …하지 못했습니다"를 띄운다. 자주 문제가 되면 `update_event(...)` 함수를 만든다.
 - **여러 행을 한 번에 넣을 때 빠진 칸은 null 이 된다** (4절 함정과 같은 것, 2026-10-01 화면 시험 데이터에서 또 겪음): `all_day` 를 한 행에만 주면 나머지가 null 이라 not null 제약에 걸린다. 모든 행에 같은 키를 적는다
+- **`/chat?c=` 는 채널을 다 읽고 연 뒤에 주소를 지운다** (2026-10-01, `shell/ChatWorkspace`): 먼저 지우면 `c` 가 바뀌어 effect 정리(`alive=false`)로 읽은 결과를 버리고, 목록 칸(`MessageNav`)이 기본값(즐겨찾기 채널)을 열어 버렸다. 일정의 [참석자와 대화]에서 새로 만든 방으로 가지 않고 #개발본부가 열려 발견
 - **DB 시각 문자열은 `+00:00` 형식이다**: 화면에서 만든 `toISOString()`(`Z`)과 글자로 비교하면 같은 시각도 다르게 나온다. 시각 비교는 밀리초(`Date.getTime()`)로만 한다 (`components/calendar/time.ts` 의 `toMs`).
 - **RLS 가 서로를 부르면 무한 재귀 오류가 난다**: `events` 읽기 정책은 `event_attendees` 를 보고, `event_attendees` 읽기 정책은 `events` 를 본다. 둘 다 정책으로 쓰면 `infinite recursion detected in policy` 가 난다. `is_event_participant(event_id)` 같은 security definer 함수로 한쪽을 끊는다. `memberships`("같은 채널 멤버만 읽기")도 자기 자신을 보므로 같은 방식으로 푼다.
 - **시간대**: DB 는 `timestamptz`, 화면은 `Asia/Seoul` 로 보여 준다. Vercel 서버는 UTC 라서 서버에서 날짜를 문자열로 만들면 9시간 어긋난다. 날짜 표시는 `Intl.DateTimeFormat(..., { timeZone: 'Asia/Seoul' })` 로만 한다. 회의 폼의 날짜(`<input type="date">`)와 시·분 목록 값은 한국 시각으로 보고 변환한다 (`time.ts` 의 `fromKstInput`).
@@ -768,6 +769,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `components/shell/` | 공통 틀 (2026-09-30 개편: 대시보드 `/`·채팅 `/chat`·캘린더가 같은 메뉴·위 막대·오른쪽 패널을 쓴다) — 7절 "화면 틀·대시보드" |
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
 | `supabase/migrations/20260930230000_schedule_v2.sql` | 일정 개편: `events` 유형·세부 유형·종일·장소·공개 범위·채널·분류, 사람별 알림 `remind_minutes`, 분류 트리거, `create_event` 새 판, `list_team_events` (4절 "일정 개편", WU-42) |
+| `supabase/migrations/20261001130000_event_chat_series.sql` | 반복 일정은 대화방 하나를 같이 쓴다 (`open_event_chat` 고침, WU-44) |
 | `supabase/migrations/20261001120000_schedule_series_chat.sql` | 반복 일정(`series_id`·`recurrence`, `create_event_series`·`update_event_series`·`cancel_event_series`, 묶음 알림 한 번)과 참석자와 대화(`chat_channel_id`, `open_event_chat`) (4절 "일정 개편", WU-43·44) |
 | `supabase/migrations/20261001090000_schedule_fixes.sql` | 일정 개편 검토 반영: "바쁨"은 `kind` 도 가림, 1시간·하루 전 알림은 제때(5분 안)만, 종일 일정 초대자는 알림 없음 (WU-42) |
 | `supabase/migrations/20260930210000_channel_leaders.sql` | 일반 채널 리더·부리더 `memberships.role`, 수정·초대·내보내기 정책, `set_sub_leader`·`transfer_leader`, 리더 자동 위임 트리거 (5절 "리더·부리더", WU-39) |
