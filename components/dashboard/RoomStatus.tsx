@@ -17,7 +17,7 @@ import s from "./dashboard.module.css";
 const SOON_MIN = 15; // 이 안에 예약이 시작하면 "곧 사용"
 const RELOAD_MS = 5 * 60_000; // 남이 새로 잡은 예약을 받아 오는 간격 (탭이 보일 때만)
 const TICK_MS = 30_000; // 상태(남은 분)를 다시 계산하는 간격
-const SHOWN = 4; // 대시보드에 보이는 회의실 수 (옆 "내 할 일" 칸과 높이를 맞춘다)
+const SHOWN = 4; // 대시보드에 보이는 회의실 수 (아래 줄 회사 공지·최근 대화 칸과 높이를 맞춘다)
 
 type Tone = "ok" | "warn" | "bad" | "idle";
 /** until: 정렬용 — 사용 가능은 비어 있는 끝 시각(없으면 Infinity), 사용 중은 끝나는 시각 */

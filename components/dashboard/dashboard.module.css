@@ -199,7 +199,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch; /* 나란한 상자 높이를 맞춘다 (WU-50) */
 }
 
 .box {
@@ -340,17 +340,12 @@
   color: var(--idle-text);
 }
 
-/* ── 오늘의 일정 | 회사 공지 (WU-50) — 두 상자 높이를 맞춘다. 공지 채널이 없으면 오늘의 일정 혼자 전체 폭 ── */
-.top {
+/* ── 아래 줄: 회사 공지 | 최근 대화 | 회의실 현황 (WU-50) — 세 상자 높이를 맞춘다 ── */
+.trio {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-items: stretch;
-}
-
-.topSolo {
-  display: flex;
-  flex-direction: column;
 }
 
 /* ── 회사 공지 ── */
@@ -404,6 +399,9 @@
 .noticeText > span {
   color: var(--muted);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 안 읽은 공지는 제목을 진하게 (최근 대화와 같은 규칙) */
@@ -816,6 +814,13 @@
   gap: 2px;
 }
 
+.roomName strong,
+.roomName span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .roomName span {
   color: var(--muted);
   font-size: 12px;
@@ -908,8 +913,12 @@
   gap: 2px;
 }
 
+/* 이름·미리보기 모두 한 줄, 넘치면 말줄임 (WU-50 세 칸에서 좁아져서) */
 .recentText strong {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recentText span {
@@ -960,7 +969,7 @@
   }
 
   .grid,
-  .top {
+  .trio {
     grid-template-columns: minmax(0, 1fr);
   }
 }

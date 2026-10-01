@@ -2,10 +2,10 @@
 
 // 대시보드 (/, 로그인 뒤 첫 화면, 2026-09-30 WU-35 · 2026-10-01 개편 WU-45).
 // 정보 우선순위대로 위에서 아래로: 인사말(내 상태·다음 일정) → 요약 카드 4개(오늘의 일정·안 읽은 메시지·내 회의 예약·내 할 일)
-// → 오늘의 일정 | 회사 공지(공지 채널이 없으면 오늘의 일정이 전체 폭, 지난 일정은 접음) → 빠른 실행(버튼 줄) → 내 할 일 | 회의실 현황 → 최근 대화.
+// → 오늘의 일정 | 내 할 일 → 빠른 실행(일정 추가·새 메시지·회의실 예약) → 회사 공지 | 최근 대화 | 회의실 현황 (2026-10-01 WU-50 사용자 배치, 지난 일정은 접음).
 // 내 할 일 (WU-47): 맨 위 "일정 초대 응답 필요 N건" 묶음([참석]·[불참]) + 할 일(todos)과 7일 안 업무 유형 일정을 기한순으로 섞은 한 목록.
-// 회사 공지 (WU-50): 오늘의 일정 오른쪽 상자 — 공지 채널(notice_unit_id)의 고정 공지(최대 2) + 최근 공지, 안 읽은 공지는 진하게 + N. 누르면 /chat?m=.
-//   공지 채널이 없으면 상자를 그리지 않고 오늘의 일정이 전체 폭.
+// 회사 공지 (WU-50): 공지 채널(notice_unit_id)의 고정 공지(최대 2) + 최근 공지, 안 읽은 공지는 진하게 + N. 누르면 /chat?m=.
+//   공지 채널이 없으면 상자를 그리지 않고 아래 줄은 최근 대화 | 회의실 현황 두 칸. 공지·최근 대화의 긴 글은 한 줄에서 말줄임(…).
 // 오늘 팀 부재 (WU-49): 오늘의 일정 상자 맨 위 한 줄 — 같은 부서 팀원의 휴가·부재·외근(list_team_events, 공개 범위대로 가려 옴). 없으면 줄을 숨긴다.
 // 새 표는 없다. 쓰는 것은 할 일 끝냄(done_at)과 일정 초대 응답(respond)뿐. 누르면 해당 화면으로 주소 이동 (/chat?c=, /chat?m=, /calendar?e=).
 
@@ -423,7 +423,8 @@ export default function Dashboard() {
         </button>
       </section>
 
-      <div className={notices === null ? s.topSolo : s.top}>
+      {/* 오늘의 일정 | 내 할 일 (2026-10-01 WU-50 사용자 배치) */}
+      <div className={s.grid}>
         <section className={s.box} aria-labelledby="dash-schedule">
           <div className={s.boxHead}>
             <h2 id="dash-schedule">
@@ -520,70 +521,6 @@ export default function Dashboard() {
           )}
         </section>
 
-        {notices !== null && (
-          <section className={s.box} aria-labelledby="dash-notice">
-            <div className={s.boxHead}>
-              <h2 id="dash-notice">
-                <MegaphoneIcon size={18} /> 회사 공지
-              </h2>
-              {notices && (
-                <Link href={`/chat?c=${encodeURIComponent(notices.channelId)}`} className={s.more}>
-                  전체 보기 ›
-                </Link>
-              )}
-            </div>
-            {notices === undefined ? (
-              <p className={s.empty}>불러오는 중…</p>
-            ) : notices.notices.length === 0 ? (
-              <div className={s.emptyBox}>
-                <p>아직 올라온 공지가 없습니다.</p>
-                <span>#{notices.channelName} 에 공지가 올라오면 여기에 모입니다.</span>
-              </div>
-            ) : (
-              <ul className={s.notices}>
-                {notices.notices.map((n) => (
-                  <li key={n.id}>
-                    <Link href={`/chat?m=${n.id}`} className={`${s.noticeRow} ${n.unread ? s.unread : ""}`}>
-                      <span className={s.noticeText}>
-                        <strong>
-                          {n.pinned && <span className={s.pinTag}>고정</span>}{n.pinned && " "}
-                          {showMentions(n.title, labels)}
-                        </strong>
-                        <span>
-                          {n.author ?? "알 수 없는 사람"} · <time dateTime={n.at}>{when(n.at)}</time>
-                          {n.replies > 0 && ` · 답글 ${n.replies}`}
-                        </span>
-                      </span>
-                      {n.unread && (
-                        <>
-                          <span className={s.newTag} aria-hidden="true">
-                            N
-                          </span>
-                          <span className={s.srOnly}>안 읽음</span>
-                        </>
-                      )}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-      </div>
-
-      <section className={s.quick} aria-label="빠른 실행">
-        <button type="button" className={s.quickItem} onClick={() => setDmOpen(true)}>
-          <ChatIcon size={20} /> 새 메시지
-        </button>
-        <Link href="/calendar?new=1" className={s.quickItem}>
-          <PlusIcon size={20} /> 일정 추가
-        </Link>
-        <Link href="/rooms?new=1" className={s.quickItem}>
-          <RoomIcon size={20} /> 회의실 예약
-        </Link>
-      </section>
-
-      <div className={s.grid}>
         <section className={s.box} aria-labelledby="dash-todos-title" id="dash-todos">
           <div className={s.boxHead}>
             <h2 id="dash-todos-title" tabIndex={-1}>
@@ -685,36 +622,101 @@ export default function Dashboard() {
             </>
           )}
         </section>
+      </div>
+
+      <section className={s.quick} aria-label="빠른 실행">
+        <Link href="/calendar?new=1" className={s.quickItem}>
+          <PlusIcon size={20} /> 일정 추가
+        </Link>
+        <button type="button" className={s.quickItem} onClick={() => setDmOpen(true)}>
+          <ChatIcon size={20} /> 새 메시지
+        </button>
+        <Link href="/rooms?new=1" className={s.quickItem}>
+          <RoomIcon size={20} /> 회의실 예약
+        </Link>
+      </section>
+
+      {/* 회사 공지 | 최근 대화 | 회의실 현황 — 공지 채널이 없으면 두 칸 */}
+      <div className={notices === null ? s.grid : s.trio}>
+        {notices !== null && (
+          <section className={s.box} aria-labelledby="dash-notice">
+            <div className={s.boxHead}>
+              <h2 id="dash-notice">
+                <MegaphoneIcon size={18} /> 회사 공지
+              </h2>
+              {notices && (
+                <Link href={`/chat?c=${encodeURIComponent(notices.channelId)}`} className={s.more}>
+                  전체 보기 ›
+                </Link>
+              )}
+            </div>
+            {notices === undefined ? (
+              <p className={s.empty}>불러오는 중…</p>
+            ) : notices.notices.length === 0 ? (
+              <div className={s.emptyBox}>
+                <p>아직 올라온 공지가 없습니다.</p>
+                <span>#{notices.channelName} 에 공지가 올라오면 여기에 모입니다.</span>
+              </div>
+            ) : (
+              <ul className={s.notices}>
+                {notices.notices.map((n) => (
+                  <li key={n.id}>
+                    <Link href={`/chat?m=${n.id}`} className={`${s.noticeRow} ${n.unread ? s.unread : ""}`}>
+                      <span className={s.noticeText}>
+                        <strong>
+                          {n.pinned && <span className={s.pinTag}>고정</span>}{n.pinned && " "}
+                          {showMentions(n.title, labels)}
+                        </strong>
+                        <span>
+                          {n.author ?? "알 수 없는 사람"} · <time dateTime={n.at}>{when(n.at)}</time>
+                          {n.replies > 0 && ` · 답글 ${n.replies}`}
+                        </span>
+                      </span>
+                      {n.unread && (
+                        <>
+                          <span className={s.newTag} aria-hidden="true">
+                            N
+                          </span>
+                          <span className={s.srOnly}>안 읽음</span>
+                        </>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        <section className={s.box} aria-labelledby="dash-recent">
+          <div className={s.boxHead}>
+            <h2 id="dash-recent">
+              <ChatIcon size={18} /> 최근 대화
+            </h2>
+            <Link href="/chat" className={s.more}>
+              전체 보기 ›
+            </Link>
+          </div>
+          {recent === null ? (
+            <p className={s.empty}>불러오는 중…</p>
+          ) : recent.length === 0 ? (
+            <div className={s.emptyBox}>
+              <p>아직 대화가 없습니다.</p>
+              <button type="button" className={s.emptyAction} onClick={() => setDmOpen(true)}>
+                <ChatIcon size={16} /> 새 메시지
+              </button>
+            </div>
+          ) : (
+            <ul className={s.recent}>
+              {recent.map((r) => (
+                <RecentRow key={r.id} r={r} preview={showMentions(r.body, labels).replace(/\s+/g, " ").trim() || "(첨부)"} onOpen={() => openChat(r)} />
+              ))}
+            </ul>
+          )}
+        </section>
 
         <RoomStatus rooms={rooms} mine={myMeetings} />
       </div>
-
-      <section className={s.box} aria-labelledby="dash-recent">
-        <div className={s.boxHead}>
-          <h2 id="dash-recent">
-            <ChatIcon size={18} /> 최근 대화
-          </h2>
-          <Link href="/chat" className={s.more}>
-            전체 보기 ›
-          </Link>
-        </div>
-        {recent === null ? (
-          <p className={s.empty}>불러오는 중…</p>
-        ) : recent.length === 0 ? (
-          <div className={s.emptyBox}>
-            <p>아직 대화가 없습니다.</p>
-            <button type="button" className={s.emptyAction} onClick={() => setDmOpen(true)}>
-              <ChatIcon size={16} /> 새 메시지
-            </button>
-          </div>
-        ) : (
-          <ul className={s.recent}>
-            {recent.map((r) => (
-              <RecentRow key={r.id} r={r} preview={showMentions(r.body, labels).replace(/\s+/g, " ").trim() || "(첨부)"} onOpen={() => openChat(r)} />
-            ))}
-          </ul>
-        )}
-      </section>
 
       {dmOpen && (
         <NewDmDialog
