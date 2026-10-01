@@ -340,6 +340,83 @@
   color: var(--idle-text);
 }
 
+/* ── 오늘 팀 부재 (오늘의 일정 상자 맨 위 한 줄, WU-49) — 칩마다 사진·이름·유형 색 점·"연차"/"외근 13:30~17:30" ── */
+.away {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: -2px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.awayHead {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.awayHead strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.awayList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 좁은 폭에서 칩이 줄 폭을 넘으면 글자를 말줄임 */
+.awayList li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.awayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.awayChip:hover {
+  border-color: var(--accent);
+}
+
+.awayChip strong {
+  font-weight: 600;
+}
+
+.awayChip i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.awayChip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
 /* ── 오늘의 일정 (시간 | 카드) ── */
 .pastToggle {
   display: inline-flex;
