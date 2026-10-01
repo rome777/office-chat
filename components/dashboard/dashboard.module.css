@@ -199,7 +199,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch; /* 나란한 상자 높이를 맞춘다 (WU-50) */
 }
 
 .box {
@@ -338,6 +338,112 @@
 .chipIdle {
   background: var(--idle-soft);
   color: var(--idle-text);
+}
+
+/* ── 아래 줄: 회사 공지 | 최근 대화 | 회의실 현황 (WU-50) — 세 상자 높이를 맞춘다 ── */
+.trio {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* ── 회사 공지 ── */
+.notices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.notices li + li {
+  border-top: 1px solid var(--border);
+}
+
+.noticeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.noticeRow:hover strong,
+.noticeRow:focus-visible strong {
+  color: var(--accent);
+}
+
+.noticeRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.noticeText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.noticeText strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.noticeText > span {
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 안 읽은 공지는 제목을 진하게 (최근 대화와 같은 규칙) */
+.unread .noticeText strong {
+  font-weight: 800;
+}
+
+.pinTag {
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.newTag {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* 화면 읽기에만 들리는 글자 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ── 오늘 팀 부재 (오늘의 일정 상자 맨 위 한 줄, WU-49) — 칩마다 사진·이름·유형 색 점·"연차"/"외근 13:30~17:30" ── */
@@ -708,6 +814,13 @@
   gap: 2px;
 }
 
+.roomName strong,
+.roomName span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .roomName span {
   color: var(--muted);
   font-size: 12px;
@@ -800,8 +913,12 @@
   gap: 2px;
 }
 
+/* 이름·미리보기 모두 한 줄, 넘치면 말줄임 (WU-50 세 칸에서 좁아져서) */
 .recentText strong {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recentText span {
@@ -851,7 +968,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .grid {
+  .grid,
+  .trio {
     grid-template-columns: minmax(0, 1fr);
   }
 }

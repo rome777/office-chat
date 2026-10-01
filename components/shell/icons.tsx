@@ -57,6 +57,15 @@ export const BellIcon = (p: P) => (
   </Svg>
 );
 
+/** 확성기 — 회사 공지 (2026-10-01 대시보드) */
+export const MegaphoneIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 10v4a1 1 0 0 0 1 1h2l8 4.5V4.5L7 9H5a1 1 0 0 0-1 1Z" />
+    <path d="M7 15l1.2 4.5h2.3L9.5 15" />
+    <path d="M18.5 9.5a3.5 3.5 0 0 1 0 5" />
+  </Svg>
+);
+
 export const BellOffIcon = (p: P) => (
   <Svg {...p}>
     <path d="M8.5 5.6A6 6 0 0 1 18 11v4" />

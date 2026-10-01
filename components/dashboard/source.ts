@@ -103,6 +103,87 @@ export async function listTeamAway(from: Date, to: Date): Promise<TeamAway[]> {
   }));
 }
 
+export type Notice = {
+  id: number;
+  /** 첫 줄 (멘션 글자는 화면에서 이름으로 바꾼다) */
+  title: string;
+  author: string | null;
+  at: string;
+  replies: number;
+  pinned: boolean;
+  unread: boolean;
+};
+
+export type NoticeBoard = { channelId: string; channelName: string; notices: Notice[] };
+
+const NOTICE_PINNED = 2; // 고정 공지는 최근에 고정한 것부터 이만큼만 위에
+
+/** 회사 공지 (2026-10-01 WU-50): 내가 멤버인 공지 채널(`notice_unit_id` 가 있는 채널, 모든 사람이 멤버)의 최상위 메시지.
+ *  고정 공지(최근 고정 순, 최대 2건)를 위에, 나머지는 최근 순으로 채워 limit 건. 내 읽음 위치보다 뒤이고 남이 쓴 것이면 안 읽음
+ *  (안 읽은 수 배지와 같은 규칙). 답글 수는 채팅과 같은 `messages.reply_count`.
+ *  공지 채널이 없거나 `notice_unit_id` 칸이 없는 예전 DB 면 null, 그 밖의 오류는 던진다 (화면이 받아 둔 것을 지키게) */
+export async function listNotices(me: string, limit: number): Promise<NoticeBoard | null> {
+  const supabase = getSupabase();
+  const { data: ch, error: chError } = await supabase
+    .from("channels")
+    .select("id, name, memberships!inner(user_id)")
+    .not("notice_unit_id", "is", null)
+    .eq("memberships.user_id", me)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (chError) {
+    if (chError.code === "42703") return null; // 칸 없음 (공지 채널 마이그레이션 전)
+    throw new Error(chError.message);
+  }
+  if (!ch) return null;
+  const channelId = ch.id as string;
+  const COLS = "id, user_id, body, created_at, reply_count";
+  const [recent, pins, read] = await Promise.all([
+    supabase
+      .from("messages")
+      .select(COLS)
+      .eq("channel_id", channelId)
+      .is("parent_id", null)
+      .is("deleted_at", null)
+      .order("id", { ascending: false })
+      .limit(limit),
+    supabase
+      .from("pinned_messages")
+      .select(`message_id, messages!inner(${COLS}, parent_id, deleted_at)`)
+      .eq("channel_id", channelId)
+      .is("messages.parent_id", null)
+      .is("messages.deleted_at", null)
+      .order("pinned_at", { ascending: false })
+      .limit(NOTICE_PINNED),
+    supabase.from("read_positions").select("last_read_message_id").eq("channel_id", channelId).eq("user_id", me).maybeSingle(),
+  ]);
+  if (recent.error) throw new Error(recent.error.message);
+  if (pins.error) throw new Error(pins.error.message);
+  type Row = { id: number; user_id: string | null; body: string; created_at: string; reply_count: number };
+  const pinned = (pins.data ?? []).map((p) => p.messages as unknown as Row);
+  const pinnedIds = new Set(pinned.map((m) => m.id));
+  const rows = [...pinned, ...((recent.data ?? []) as Row[]).filter((m) => !pinnedIds.has(m.id))].slice(0, limit);
+  const authorIds = [...new Set(rows.map((m) => m.user_id).filter((v): v is string => !!v))];
+  const people = authorIds.length ? await getPeople(authorIds) : [];
+  const nameOf = new Map(people.map((p) => [p.id, p.display_name]));
+  // 읽음 위치를 못 받으면 안 읽음 표시를 끈다 (0 으로 보면 남의 공지가 모두 "N")
+  const lastRead = read.error ? Infinity : Number(read.data?.last_read_message_id ?? 0);
+  return {
+    channelId,
+    channelName: ch.name as string,
+    notices: rows.map((m) => ({
+      id: m.id,
+      title: m.body.split("\n").find((l) => l.trim())?.trim() ?? "(첨부)",
+      author: m.user_id ? (nameOf.get(m.user_id) ?? null) : null,
+      at: m.created_at,
+      replies: m.reply_count ?? 0,
+      pinned: pinnedIds.has(m.id),
+      unread: m.id > lastRead && m.user_id !== me,
+    })),
+  };
+}
+
 export type Recent = {
   id: string;
   kind: "channel" | "dm";
