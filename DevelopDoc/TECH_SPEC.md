@@ -451,7 +451,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 
 - 틀은 일정과 같다: 서브 메뉴(`RoomsNav`: [+ 회의실 예약] · 미니 캘린더(내 예약 있는 날 점) · 인원 · 층 · 시설 · 지금 빈 곳만 · 예약 규칙 요약) | 본문(`RoomsView`: 툴바 오늘·‹ ›·**회의실 / 시간표** → `RoomCards` 또는 `RoomTimetable`, 아래 `MyBookings`) | 오른쪽 패널. 보기·필터는 `localStorage`(`workon.rooms.*`)
 - 데이터: 그날 `room_board` 한 번, 내 예약은 `listMyRoomBookings`(내가 만든 회의실 일정, 지난 30일 ~ 90일). 30초마다 상태·지금 선을 다시 그리고, 탭이 보일 때 5분마다(돌아올 때도) 다시 불러온다. 패널에서 저장하면 `calendarBus` 로 다시 불러온다
-- 카드: 배치 그림(탁자·의자 수, 사진 자리) · 상태 칩(`status.ts` — 대시보드 칩과 같은 기준) · 다음 예약 시각·예약자 · 수용 인원 · 층 · 설명 · 시설 아이콘 · [시간표] [지금 사용] [예약하기]. 한 줄 최대 4개, 버튼 줄은 카드 맨 아래
+- 카드: 회의실 사진(`photos.ts` — 회의실 이름 → `public/rooms/c1~m4.webp` 800×480, 2026-10-01. 사진이 없는 방은 배치 그림 — 탁자·의자 수) · 상태 칩(`status.ts` — 대시보드 칩과 같은 기준) · 다음 예약 시각·예약자 · 수용 인원 · 층 · 설명 · 시설 아이콘 · [시간표] [지금 사용] [예약하기]. 한 줄 최대 4개, 버튼 줄은 카드 맨 아래
 - 시간표: 회의실 × 30분 칸(08~21시), 지난 칸 빗금, 지금 빨간 선, 회의실 이름 칸 고정·가로 스크롤(패널이 열리면 본문이 약 590px). 예약 칸: 내 예약은 제목, 참석하는 회의는 제목·예약자, 남의 공개 회의는 이름·부서, 비공개는 "비공개 예약"
 - **시간표와 예약 패널은 `PanelState` `roomBook`(회의실·날짜·시작·종료·고칠 일정 id) 하나를 같이 본다**: 빈 칸을 누르면 패널이 열리고(1시간, 다음 예약 전까지), 패널이 열린 채 같은 줄을 누르면 거기까지 늘리거나 줄이고(4시간까지), 다른 줄이면 회의실을 옮긴다. 패널에서 회의실·날짜·시각을 바꾸면 `openPanel` 로 같은 값을 바꾸고, 같은 종류의 패널이라 제목·참석자 같은 입력은 남는다
 - 예약 패널(`RoomBookingPanel`): 회의 제목 · 회의실(시설·그날 빈 시간 막대) · 날짜 · 시작/종료(30분 목록, 찬 시각은 못 고름) · 공개/비공개 회의(남에게 보이는 모습 미리보기) · 반복(새로만, 90일까지) · 참석자(수용 인원 경고) · 관련 채널 · 알림 · 참석자 대화방 만들기 · 회의 목적 및 메모 · 예약 전 확인(`checkBooking`). 저장하면 유형 "회의" 일정 → 일정 상세 패널. 고치기(`eventId`)는 반복이면 "이 회차만 / 이후 모두", 진행 중이면 날짜·시작·회의실 잠금
@@ -706,7 +706,7 @@ v1 의 13개 테이블 뒤에 **사용자 요청으로 추가한** 테이블이�
 │  ├─ people/                     ② 사람 찾기 PeoplePicker · directory(profiles) — DM·캘린더·채널 정보가 가져다 씀
 │  ├─ profile/                    ② 내 프로필 (2026-09-30) — ProfilePanel(오른쪽 패널) · Avatar(사진·캐릭터·이름 글자 + 상태 점) · AvatarDialog · PasswordDialog · characters(SVG 12종) · profileSource(DB 창구, 헤더 메뉴와 패널이 나눠 씀) · PersonAvatar(사람 id 로 사진·상태 점, 채팅·조직도가 씀) · presence(회사 접속자 채널)
 │  ├─ calendar/                   ② 일정 화면 부품 · source.ts(DB 창구 — 회의실 예약도 여기) · kinds.ts(유형·공개 범위·공휴일) · items.ts(그릴 칸·날짜 키)
-│  ├─ rooms/                      ② 회의실 예약 (2026-10-01) — RoomsView · RoomsNav · RoomCards · RoomTimetable · MyBookings · RoomBookingPanel · RoomSlotPanel · policy.ts(정책 숫자·예약 전 확인) · status.ts(상태 칩) · facilities.tsx
+│  ├─ rooms/                      ② 회의실 예약 (2026-10-01) — RoomsView · RoomsNav · RoomCards · RoomTimetable · MyBookings · RoomBookingPanel · RoomSlotPanel · policy.ts(정책 숫자·예약 전 확인) · status.ts(상태 칩) · photos.ts(카드 사진, 사진 파일은 public/rooms/) · facilities.tsx
 │  ├─ panel/                      ③ RightPanel(오른쪽 패널 틀) · HeaderActions · SummaryPanel · TodosPanel · ChannelInfoPanel · ChoresPanel(잡무 수첩) · choreOrder(주문 정리 묶기)
 │  └─ notifications/              ③ NotificationBell(배지·목록·토스트·브라우저 알림·알림 켜기·탭 제목) · useNotifications(받기·띄우기 규칙) · bellStore(메뉴·대시보드와 숫자 나누기) · mutes(채널별 알림 끄기)
 ├─ lib/

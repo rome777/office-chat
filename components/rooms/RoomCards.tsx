@@ -1,13 +1,14 @@
 "use client";
 
 // ② 회의실 카드 — 지금 상태 칩, 다음 예약(시각 · 예약자), 수용 인원, 층, 시설 아이콘, [시간표] [지금 사용] [예약하기].
-// 사진 자리는 회의실 배치 그림(탁자와 의자 수)으로 대신한다. 한 줄 최대 4개, 버튼 줄은 카드 맨 아래.
+// 위쪽은 회의실 사진(photos.ts), 사진이 없는 회의실은 배치 그림(탁자와 의자 수). 한 줄 최대 4개, 버튼 줄은 카드 맨 아래.
 
 import type { ReactNode } from "react";
 import type { Room, RoomBooking } from "@/lib/types/calendar";
 import { formatKstTime } from "@/components/calendar/time";
 import cal from "@/components/calendar/schedule.module.css";
 import { RoomGlyph, facilityLabel } from "./facilities";
+import { roomPhoto } from "./photos";
 import { nowSlot } from "./policy";
 import { bookerText, roomState } from "./status";
 import s from "./rooms.module.css";
@@ -90,10 +91,14 @@ export default function RoomCards({
             </>
           );
         } else next = st.detail;
+        const photo = roomPhoto(room.name);
         return (
           <article key={room.id} className={`${s.card} ${pickedRoom === room.id ? s.picked : ""}`} aria-label={room.name}>
-            <div className={s.plan} style={{ ["--tint" as string]: TINTS[Math.max(0, floors.indexOf(room.location ?? "기타")) % TINTS.length] }}>
-              <Plan room={room} />
+            <div
+              className={`${s.plan} ${photo ? s.hasPhoto : ""}`}
+              style={{ ["--tint" as string]: TINTS[Math.max(0, floors.indexOf(room.location ?? "기타")) % TINTS.length] }}
+            >
+              {photo ? <img className={s.photo} src={photo} alt={`${room.name} 사진`} loading="lazy" decoding="async" /> : <Plan room={room} />}
               <span className={`${s.chip} ${s[st.tone]} ${s.planChip}`}>{st.label}</span>
               {room.location && <span className={s.floor}>{room.location}</span>}
             </div>
