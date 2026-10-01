@@ -811,7 +811,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20261001170000_rooms_v2.sql` | 회의실 시설·설명·순서, `room_policy()`, 정책 트리거 `events_room_policy`, `room_board()` (4절 "회의실 예약 개편", 2026-10-01 원격 적용) |
 | `supabase/migrations/20261001180000_rooms_data.sql` | 원격 회의실 8개(C1~M4)의 층·시설·설명 나누기, 잘못 들어간 회의실 5개 정리 (2026-10-01 원격 적용) |
 | `supabase/migrations/20261001200000_close_step1_anon.sql` | Step 1 임시 호환 1단계 — 익명 정책·권한 없앰, `user_id` not null (이호섭 작성, 2026-10-01 원격 적용) |
-| `supabase/migrations/20261001210000_drop_step1_author.sql` | Step 1 임시 호환 2단계 — `author` 칸·`messages_step1_anon` 제약 지움 (화면 배포 뒤 적용) |
+| `supabase/migrations/20261001210000_drop_step1_author.sql` | Step 1 임시 호환 2단계 — `author` 칸·`messages_step1_anon` 제약 지움 (화면 배포 뒤 2026-10-01 원격 적용) |
 | `supabase/migrations/20261001190000_rooms_policy_fix.sql` | 정책 트리거 고침 — 시작한 예약에서 회의실 빼기·종일 바꾸기 거부, 종료만 바꾸는 고치기는 시작 쪽 검사 안 함, 두 곳 확인 잠금 (별도 검토 반영, 2026-10-01 원격 적용) |
 | `lib/mentions.ts` | 멘션 규칙: 저장은 `@아이디`, 보이는 것은 `@이름` (이름표·표시·저장 변환). 채팅·알림·검색·AI 가 같이 쓴다 (7절 "멘션") |
 | `lib/supabase.ts` | 브라우저용 Supabase 클라이언트 (공개 키만 사용) |
