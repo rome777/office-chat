@@ -86,7 +86,7 @@ export async function listRecent(channels: ChannelSummary[], dms: DmSummary[], l
     targets.map((t) =>
       supabase
         .from("messages")
-        .select("user_id, author, body, created_at")
+        .select("user_id, body, created_at")
         .eq("channel_id", t.id)
         .is("parent_id", null)
         .is("deleted_at", null)
@@ -96,7 +96,7 @@ export async function listRecent(channels: ChannelSummary[], dms: DmSummary[], l
     ),
   );
   const found = targets
-    .map((t, i) => ({ t, m: rows[i].data as { user_id: string | null; author: string | null; body: string; created_at: string } | null }))
+    .map((t, i) => ({ t, m: rows[i].data as { user_id: string | null; body: string; created_at: string } | null }))
     .filter((x): x is { t: (typeof targets)[number]; m: NonNullable<typeof x.m> } => !!x.m)
     .sort((a, b) => b.m.created_at.localeCompare(a.m.created_at))
     .slice(0, limit);
@@ -107,7 +107,7 @@ export async function listRecent(channels: ChannelSummary[], dms: DmSummary[], l
   const nameOf = new Map((people ?? []).map((p) => [p.id, p.display_name]));
   return found.map(({ t, m }) => ({
     ...t,
-    author: m.author ?? (m.user_id ? (nameOf.get(m.user_id) ?? null) : null),
+    author: m.user_id ? (nameOf.get(m.user_id) ?? null) : null,
     body: m.body,
     at: m.created_at,
   }));

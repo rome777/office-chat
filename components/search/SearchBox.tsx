@@ -189,7 +189,7 @@ export default function SearchBox() {
           <ul id={listId} className={s.results} role="listbox" aria-label="검색 결과">
             {hits.map((h, i) => {
               const [before, match, after] = snippet(showMentions(h.body, mentionNames), found!.query);
-              const who = h.user_id ? (people.get(h.user_id)?.display_name ?? "…") : (h.author ?? "익명");
+              const who = h.user_id ? (people.get(h.user_id)?.display_name ?? "…") : "알 수 없음";
               return (
                 <li
                   key={h.id}

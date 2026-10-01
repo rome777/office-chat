@@ -74,9 +74,9 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
 
   const [messages, channels, events] = await Promise.all([
     messageIds.length
-      ? supabase.from("messages").select("id, body, user_id, author, parent_id").in("id", messageIds)
+      ? supabase.from("messages").select("id, body, user_id, parent_id").in("id", messageIds)
       : Promise.resolve({
-          data: [] as { id: number; body: string; user_id: string | null; author: string | null; parent_id: number | null }[],
+          data: [] as { id: number; body: string; user_id: string | null; parent_id: number | null }[],
         }),
     channelIds.length
       ? supabase.from("channels").select("id, name, type").in("id", channelIds)
@@ -118,7 +118,7 @@ async function describe(list: AppNotification[]): Promise<NotificationView[]> {
     }
     const m = n.message_id ? msgById.get(n.message_id) : undefined;
     const ch = n.channel_id ? chById.get(n.channel_id) : undefined;
-    const author = m ? (m.author ?? (m.user_id ? nameById.get(m.user_id) : undefined) ?? "알 수 없음") : "알 수 없음";
+    const author = (m?.user_id ? nameById.get(m.user_id) : undefined) ?? "알 수 없음";
     const where = ch?.type === "dm" ? "" : ch?.name ? ` · #${ch.name}` : "";
     const body = m ? showMentions(m.body, labels).replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS) || "(첨부)" : "볼 수 없는 메시지입니다";
     return { ...n, title: `${author}${where}`, preview: body, parentId: m?.parent_id ?? null };

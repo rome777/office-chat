@@ -21,8 +21,6 @@ export type SearchHit = {
   channel_id: string;
   parent_id: number | null;
   user_id: string | null;
-  /** Step 1 익명 메시지의 닉네임 */
-  author: string | null;
   body: string;
   created_at: string;
 };
@@ -46,7 +44,7 @@ function serverPiece(query: string): string {
     .sort((a, b) => b.length - a.length)[0];
 }
 
-const base = () => getSupabase().from("messages").select("id, channel_id, parent_id, user_id, author, body, created_at");
+const base = () => getSupabase().from("messages").select("id, channel_id, parent_id, user_id, body, created_at");
 
 export async function searchMessages(
   rawQuery: string,

@@ -5,15 +5,13 @@ export type ChatMessage = {
   id: number;
   client_id: string;
   channel_id: string;
-  /** 로그인한 사람. Step 1 익명 메시지는 null */
+  /** 쓴 사람 (2026-10-01 Step 1 익명을 닫아 늘 있다 — 타입은 예전 행 때문에 null 도 받는다) */
   user_id: string | null;
   parent_id: number | null;
   body: string;
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
-  /** Step 1 임시 호환의 닉네임. 로그인한 사람의 메시지는 null (이름은 profiles 에서 찾는다) */
-  author: string | null;
   /** 스레드 답글 수. 답글이 달리면 DB 트리거가 올린다 (최상위 메시지만) */
   reply_count: number;
   last_reply_at: string | null;

@@ -24,7 +24,7 @@ const SYSTEM = `너는 사내 메신저의 대화 요약기다. <대화> 안의 
 - 항목마다 근거가 된 메시지 번호(대괄호 안 숫자)를 message_ids 에 1개 이상 넣는다. 없는 번호를 지어내지 않는다.
 - JSON 으로만 답한다: {"items":[{"text":"...","message_ids":[123,124]}]}`;
 
-type Row = { id: number; user_id: string | null; author: string | null; parent_id: number | null; body: string; created_at: string };
+type Row = { id: number; user_id: string | null; parent_id: number | null; body: string; created_at: string };
 
 const json = (status: number, body: object) =>
   NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   }
   const query = supabase
     .from("messages")
-    .select("id, user_id, author, parent_id, body, created_at")
+    .select("id, user_id, parent_id, body, created_at")
     .eq("channel_id", channelId)
     .is("deleted_at", null);
   const { data: rows, error } =
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   ]);
   const labels = new Map([...mentionLabels(everyone ?? []), ...groupLabels((units ?? []) as MentionUnit[])]); // @모두·@부서도 이름으로
   const lines = messages.map((m) => {
-    const who = m.author ?? (m.user_id ? names.get(m.user_id) : undefined) ?? "알 수 없음";
+    const who = (m.user_id ? names.get(m.user_id) : undefined) ?? "알 수 없음";
     const reply = m.parent_id ? ` (↳ ${m.parent_id} 에 답글)` : "";
     return `[${m.id}] ${who} ${hhmm(m.created_at)}${reply}: ${showMentions(m.body, labels).replace(/\s+/g, " ").slice(0, 500)}`;
   });

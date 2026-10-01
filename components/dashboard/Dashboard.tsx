@@ -72,10 +72,24 @@ const longWhen = (iso: string, allDay: boolean) =>
     ...(allDay ? {} : { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
   }).format(new Date(iso));
 
-/** 업무 일정의 기한 칩 — 진행 중·오늘·내일은 색, 그 뒤는 D-n */
+/** 업무 일정이 이미 시작했나 (종일은 그날 0시에 시작한 것으로 본다) */
+const started = (e: EventWithAttendees, nowMs: number) => new Date(e.starts_at).getTime() <= nowMs;
+
+/** 업무 일정의 마감 날짜 — 끝 시각이 속한 날 (종일·자정에 끝나면 그 전날) */
+const endDay = (e: EventWithAttendees) => kstDateKey(new Date(new Date(e.ends_at).getTime() - 1));
+
+/** 정렬·마감 임박 기준 날짜: 아직 시작 전이면 시작하는 날, 이미 시작했으면 끝나는 날 */
+const workDate = (e: EventWithAttendees, nowMs: number) => (started(e, nowMs) ? endDay(e) : kstDateKey(e.starts_at));
+
+/** 업무 일정의 기한 칩 — 시작 전: 오늘·내일·D-n. 시작 후: 오늘 끝나면 "진행 중", 내일 끝나면 "내일 마감", 그 뒤면 "진행 중 · ~10월 5일" */
 function workDue(e: EventWithAttendees, todayKey: string, nowMs: number): { text: string; tone: "ok" | "warn" | null } {
-  const start = new Date(e.starts_at).getTime();
-  if (!e.all_day && start <= nowMs) return { text: "진행 중", tone: "ok" };
+  if (started(e, nowMs)) {
+    const end = endDay(e);
+    const left = dayDiff(todayKey, end);
+    if (left <= 0) return e.all_day ? { text: "오늘 마감", tone: "warn" } : { text: "진행 중", tone: "ok" };
+    if (left === 1) return { text: "내일 마감", tone: "warn" };
+    return { text: `진행 중 · ~${Number(end.slice(5, 7))}월 ${Number(end.slice(8, 10))}일`, tone: "ok" };
+  }
   const d = dayDiff(todayKey, kstDateKey(e.starts_at));
   if (d <= 0) return { text: e.all_day ? "오늘" : `오늘 ${formatKstTime(e.starts_at)}`, tone: "warn" };
   if (d === 1) return { text: "내일", tone: "warn" };
@@ -178,11 +192,8 @@ export default function Dashboard() {
   const liveWork = (work ?? []).filter((e) => new Date(e.ends_at).getTime() > nowMs);
   const items: Item[] = [
     ...(todos ?? []).map((t): Item => ({ key: `t:${t.id}`, date: t.due, at: "", todo: t })),
-    // 이미 시작해 이어지는 업무(여러 날 프로젝트 등)는 오늘 것으로 친다
-    ...liveWork.map((e): Item => {
-      const day = kstDateKey(e.starts_at);
-      return { key: `w:${e.id}`, date: day < todayKey ? todayKey : day, at: e.starts_at, work: e };
-    }),
+    // 이미 시작해 이어지는 업무(여러 날 프로젝트 등)는 끝나는 날로 친다 — 마감이 멀면 "마감 임박"에서 빠진다
+    ...liveWork.map((e): Item => ({ key: `w:${e.id}`, date: workDate(e, nowMs), at: e.starts_at, work: e })),
   ].sort((a, b) => {
     if (a.date !== b.date) return a.date === null ? 1 : b.date === null ? -1 : a.date.localeCompare(b.date);
     if (!!a.work !== !!b.work) return a.work ? -1 : 1; // 같은 날이면 시각이 정해진 업무 일정 먼저

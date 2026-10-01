@@ -26,7 +26,7 @@ export default function ThreadPanel({ messageId }: { messageId: number }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null);
 
-  const nameOf = (m: ChatMessage) => m.author ?? (m.user_id ? names[m.user_id] : undefined) ?? "…";
+  const nameOf = (m: ChatMessage) => (m.user_id ? names[m.user_id] : undefined) ?? "…";
 
   // 새 답글이 오면 맨 아래로 (답글로 이동할 때는 아래 효과가 그 답글로 다시 스크롤한다)
   useLayoutEffect(() => {
