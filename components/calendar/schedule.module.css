@@ -1043,6 +1043,22 @@
   background: color-mix(in srgb, var(--bad) 18%, transparent);
 }
 
+/* 회의실 정책에 걸린 것 (일정 만들기 패널, 2026-10-01) */
+.roomChecks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--warn-text);
+}
+
+.roomChecks .bad {
+  color: var(--bad-text);
+}
+
 .barScale {
   display: flex;
   justify-content: space-between;
@@ -1181,29 +1197,23 @@
 }
 
 /* ── 회의실 예약 (/rooms) ── */
-.roomsPage {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px;
+/* ── 시각 고르기 (TimeSelect — 시·분 목록 두 개) ── */
+.timeSelect {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  gap: 4px;
 }
 
-.roomsHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-}
-
-.roomsHead h1 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.roomsHead .primary {
-  margin-left: auto;
+.timeSelect select {
+  flex: 1;
+  min-width: 68px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  cursor: pointer;
 }
 
 @media (max-width: 1100px) {

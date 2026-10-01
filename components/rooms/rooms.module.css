@@ -1,0 +1,684 @@
+/* ② 회의실 예약 (/rooms, 2026-10-01 개편 WU-46). 틀(서브 메뉴 | 본문)·버튼·패널 입력은 일정 화면의
+   calendar/schedule.module.css 를 같이 쓰고, 여기에는 회의실 카드·통합 시간표·내 예약·예약 패널만의 것을 둔다.
+   상태색은 globals.css 의 --ok·--warn·--bad·--idle·--info (대시보드 회의실 칩과 같다) */
+
+.summary {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 0;
+}
+
+.viewNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── 상태 칩 ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ok { background: var(--ok-soft); color: var(--ok-text); }
+.warn { background: var(--warn-soft); color: var(--warn-text); }
+.bad { background: var(--bad-soft); color: var(--bad-text); }
+.idle { background: var(--idle-soft); color: var(--idle-text); }
+.info { background: var(--info-soft); color: var(--info); }
+
+/* ── 회의실 카드: 한 줄 최대 4개, 버튼 줄은 카드 맨 아래 (2026-10-01 사용자 결정) ── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(210px, calc((100% - 36px) / 4)), 1fr));
+  gap: 12px;
+}
+
+.card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.card.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.plan {
+  position: relative;
+  height: 96px;
+  background: var(--tint, var(--brand-soft));
+}
+
+.plan svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.planChip {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+}
+
+.floor {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cardBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 13px 13px;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.cap,
+.loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cap {
+  margin-left: auto;
+  flex: none;
+}
+
+.facs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 22px;
+}
+
+.fac {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--idle-soft);
+  color: var(--idle-text);
+}
+
+.next {
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.next strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cardActions {
+  margin-top: auto;
+  display: flex;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.cardActions > button {
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
+/* ── 통합 시간표: 회의실 이름 칸은 고정, 좁으면(오른쪽 패널이 열리면) 시간 칸을 가로로 민다 ── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.tt {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.ttScroll {
+  overflow-x: auto;
+}
+
+.ttInner {
+  min-width: calc(128px + 26 * 32px);
+}
+
+.ttRow {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.ttRow:last-child {
+  border-bottom: none;
+}
+
+.ttHead {
+  background: var(--bg);
+}
+
+.ttName {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 7px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ttHead .ttName {
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ttRow.focus .ttName {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.ttName strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.ttName span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(26, minmax(0, 1fr));
+  min-height: 46px;
+}
+
+.ttHead .track {
+  min-height: 26px;
+}
+
+.hour {
+  grid-row: 1;
+  padding: 5px 0 0 4px;
+  border-left: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell {
+  grid-row: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: none;
+  cursor: pointer;
+}
+
+.cell.onHour {
+  border-left-color: var(--border);
+}
+
+.cell:hover:not(:disabled) {
+  background: var(--mine);
+}
+
+.cell:disabled {
+  cursor: default;
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--border) 70%, transparent) 0 3px, transparent 3px 7px);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.cell.sel {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.cell.sel.first {
+  box-shadow: inset 2px 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.cell.sel.last {
+  box-shadow: inset -2px 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.cell.sel.first.last {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.blk {
+  grid-row: 1;
+  z-index: 1;
+  min-width: 0;
+  margin: 4px 1px;
+  padding: 2px 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: none;
+  border-left: 3px solid var(--idle);
+  border-radius: 5px;
+  background: var(--idle-soft);
+  color: var(--idle-text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.blk strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.blk span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.blk.mine {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+}
+
+.blk.priv {
+  border-left-style: dashed;
+  background: repeating-linear-gradient(135deg, var(--idle-soft) 0 5px, var(--surface) 5px 10px);
+}
+
+.blk.ended {
+  opacity: 0.55;
+}
+
+.blk.focused {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.blk:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nowLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 2px;
+  background: var(--bad);
+  pointer-events: none;
+}
+
+.nowTag {
+  position: absolute;
+  top: 3px;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 내 예약 (본문 아래 칸) ── */
+.mine {
+  margin: 16px 18px 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.mineHead {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mineHead h2 {
+  margin: 0 10px 6px 0;
+  font-size: 15px;
+}
+
+.mineHead button {
+  padding: 7px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mineHead button[aria-selected="true"] {
+  border-bottom-color: var(--primary);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mineBody {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.mineRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mineRow:hover {
+  background: var(--mine);
+}
+
+.mineRow.current {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.mineWhen {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+}
+
+.mineWhen strong {
+  font-size: 13px;
+}
+
+.mineWhen span,
+.mineSub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mineWhat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mineTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.mineRow.canceled .mineTitle {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.mineSub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.empty {
+  margin: 0;
+  padding: 22px 12px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ── 서브 메뉴 ── */
+.round {
+  border-radius: 50% !important;
+}
+
+.facIcon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.rules {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rules strong {
+  color: var(--text);
+}
+
+.count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 예약 패널 ── */
+.fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.fieldset legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.roomInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview .blk {
+  width: 140px;
+  height: 36px;
+  margin: 0;
+  cursor: default;
+}
+
+.precheck {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.precheck h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.precheck ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.precheck li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.precheck li i {
+  flex: none;
+  width: 14px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+
+.precheck .okLine i {
+  color: var(--ok-text);
+}
+
+.precheck .badLine {
+  color: var(--bad-text);
+}
+
+.precheck .warnLine {
+  color: var(--warn-text);
+}
+
+@media (max-width: 767px) {
+  .view {
+    padding: 12px 8px 0;
+  }
+
+  .rules {
+    display: none;
+  }
+
+  .mine {
+    margin: 12px 8px 20px;
+  }
+
+  .mineRow {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .mineRow > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

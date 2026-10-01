@@ -5,6 +5,27 @@ export type Room = {
   name: string;
   capacity: number | null;
   location: string | null;
+  /** 시설 (2026-10-01 회의실 개편, components/rooms/facilities.tsx) */
+  facilities: RoomFacility[];
+  /** 짧은 설명 (예: "1:1 · 전화 회의") */
+  description: string | null;
+};
+
+export type RoomFacility = "monitor" | "video" | "whiteboard" | "projector" | "mic";
+
+/** 회의실 시간표 한 칸 (DB room_board — 남의 예약은 공개 회의일 때만 예약자, 제목·id 는 참석자에게만) */
+export type RoomBooking = {
+  event_id: string | null;
+  room_id: string;
+  starts_at: string;
+  ends_at: string;
+  is_private: boolean;
+  booker_id: string | null;
+  booker_name: string | null;
+  booker_unit: string | null;
+  /** 내가 예약자(만든 사람) */
+  mine: boolean;
+  title: string | null;
 };
 
 /** 일정 유형 (2026-10-01 일정 개편). 세부 유형은 components/calendar/kinds.ts */

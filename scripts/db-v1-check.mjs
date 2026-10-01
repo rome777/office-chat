@@ -276,7 +276,9 @@ try {
   made.rooms.push(room.data.id);
   const ev = (who, start, end, attendees = [], roomId = room.data.id) =>
     who.sb.rpc("create_event", { p_title: `검사 회의 ${run}`, p_starts_at: start, p_ends_at: end, p_room_id: roomId, p_attendee_ids: attendees });
-  const T = (h, m = 0) => `2030-01-07T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`;
+  // 회의실 예약은 오늘부터 90일 안·30분 단위만 된다 (20261001170000_rooms_v2 정책) → 20일 뒤 날짜로 시험한다
+  const testDay = new Date(Date.now() + 9 * 3600e3 + 20 * 86400e3).toISOString().slice(0, 10);
+  const T = (h, m = 0) => `${testDay}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`;
   const e1 = await ev(B, T(10), T(11), [A.id]);
   if (e1.data) made.events.push(e1.data);
   const e2 = await ev(A, T(10, 30), T(11, 30));

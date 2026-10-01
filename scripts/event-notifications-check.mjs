@@ -50,12 +50,9 @@ try {
   const A = await makeUser("A");
   const B = await makeUser("B");
   const C = await makeUser("C");
-  const room = await admin.from("rooms").insert({ name: `일정검사실-${run}`, capacity: 4 }).select().single();
-  if (room.error) throw room.error;
-  made.rooms.push(room.data.id);
 
-  // ── 초대 ──
-  const ev = await A.sb.rpc("create_event", { p_title: `일정 검사 ${run}`, p_starts_at: inMin(60), p_ends_at: inMin(90), p_room_id: room.data.id, p_attendee_ids: [B.id] });
+  // ── 초대 ── (회의실 없이: 분 단위 시각으로 알림을 시험하는데 회의실 예약은 30분 단위만 된다 — 2026-10-01 회의실 정책)
+  const ev = await A.sb.rpc("create_event", { p_title: `일정 검사 ${run}`, p_starts_at: inMin(60), p_ends_at: inMin(90), p_attendee_ids: [B.id] });
   if (ev.error) throw ev.error;
   made.events.push(ev.data);
   let n = await notes(ev.data);

@@ -20,6 +20,19 @@ export type PanelState =
   | { kind: "event"; eventId: string }
   | { kind: "eventNew"; date: string; time?: string; withIds?: string[]; fromMessage?: number }
   | { kind: "eventEdit"; eventId: string }
+  // ② 회의실 예약 (2026-10-01 개편) — 예약·예약 고치기(eventId), 남의 예약 정보. /rooms 를 떠나면 닫힌다.
+  //   roomBook 의 회의실·날짜·시각은 시간표와 패널이 같이 쓴다 (시간표 빈 칸을 누르면 이 값만 바뀌고 패널의 다른 입력은 남는다)
+  | { kind: "roomBook"; roomId: string; date: string; start: string; end: string; eventId?: string }
+  | {
+      kind: "roomSlot";
+      roomId: string;
+      startsAt: string;
+      endsAt: string;
+      isPrivate: boolean;
+      bookerId: string | null;
+      bookerName: string | null;
+      bookerUnit: string | null;
+    }
   | {
       kind: "teamEvent";
       name: string;
@@ -39,14 +52,23 @@ export type PanelState =
 const GLOBAL_PANELS: ReadonlySet<PanelState["kind"]> = new Set(["profile"]);
 const keepGlobal = (p: PanelState | null) => (p && GLOBAL_PANELS.has(p.kind) ? p : null);
 /** 페이지에 딸린 패널 — 그 페이지를 떠나면 닫힌다. 적지 않은 것은 대화 패널(/chat) */
-const PAGE_OF: Partial<Record<PanelState["kind"], string>> = {
-  event: "/calendar",
-  eventNew: "/calendar",
-  eventEdit: "/calendar",
-  teamEvent: "/calendar",
+const PAGE_OF: Partial<Record<PanelState["kind"], string[]>> = {
+  // 일정 상세·고치기는 회의실 예약(/rooms)의 "내 예약"에서도 연다 (2026-10-01)
+  event: ["/calendar", "/rooms"],
+  eventNew: ["/calendar"],
+  eventEdit: ["/calendar", "/rooms"],
+  teamEvent: ["/calendar"],
+  roomBook: ["/rooms"],
+  roomSlot: ["/rooms"],
 };
-const keepOn = (pathname: string) => (p: PanelState | null) =>
-  p && (GLOBAL_PANELS.has(p.kind) || pathname.startsWith(PAGE_OF[p.kind] ?? "/chat")) ? p : null;
+/** 패널을 연 페이지("/calendar" 등)에 그대로 있을 때만 남긴다 — 일정 상세는 두 페이지에서 열리지만, 일정에서 연 것이 회의실 예약으로 따라오지 않게 */
+const keepOn = (pathname: string, openedOn: string) => (p: PanelState | null) =>
+  p &&
+  (GLOBAL_PANELS.has(p.kind) ||
+    ((PAGE_OF[p.kind] ?? ["/chat"]).some((page) => pathname.startsWith(page)) && pathname.startsWith(openedOn)))
+    ? p
+    : null;
+const pageOf = (pathname: string) => `/${pathname.split("/")[1] ?? ""}`;
 
 export type Me = { name: string };
 
@@ -83,6 +105,12 @@ export function WorkspaceProvider({
   const [panel, setPanel] = useState<PanelState | null>(null);
   const channelId = useRef(DEFAULT_CHANNEL.id);
   const pathname = usePathname();
+  const openedOn = useRef("/");
+  // 지금 주소에서 읽는다 — 새 페이지의 effect 가 이 Provider 의 effect 보다 먼저 돌아서 pathname 상태는 아직 예전 값일 수 있다
+  const openPanel = useCallback((p: PanelState) => {
+    openedOn.current = pageOf(window.location.pathname);
+    setPanel(p);
+  }, []);
 
   // 다른 대화로 옮기면 대화 패널을 닫는다. 이름만 바뀐 것(같은 id)은 그대로 둔다
   const setChannel = useCallback((c: Channel) => {
@@ -96,7 +124,7 @@ export function WorkspaceProvider({
   // 페이지를 떠나면 그 페이지의 패널을 닫는다 — 채팅 화면의 대화 패널, 일정 화면의 일정 패널
   // (돌아와도 다시 열지 않는다 — 2026-09-30 사용자 결정)
   useEffect(() => {
-    setPanel(keepOn(pathname));
+    setPanel(keepOn(pathname, openedOn.current));
   }, [pathname]);
   const [connection, setConnection] = useState<Workspace["connection"]>({
     state: "connecting",
@@ -110,12 +138,12 @@ export function WorkspaceProvider({
       channel,
       setChannel,
       panel,
-      openPanel: setPanel,
+      openPanel,
       closePanel: () => setPanel(null),
       connection,
       setConnection,
     }),
-    [me, signOut, channel, setChannel, panel, connection],
+    [me, signOut, channel, setChannel, panel, openPanel, connection],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

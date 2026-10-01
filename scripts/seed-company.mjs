@@ -81,6 +81,7 @@ async function readAll(build) {
 
 /** 회의실 (seed-company/schedule.mjs 의 ROOMS). 예전 이름(was)의 행이 있으면 이름을 바꿔 쓴다 — 그 방의 예약이 그대로 이어진다 */
 async function seedRooms() {
+<<<<<<< HEAD
   const byName = new Map(must(await admin.from("rooms").select("id, name")).map((r) => [r.name, r]));
   const out = new Map();
   for (const r of ROOMS) {
@@ -92,6 +93,24 @@ async function seedRooms() {
     out.set(r.name, saved.id);
   }
   return out;
+=======
+  // 원격(팀·운영 공용) DB 의 회의실 8개와 같다 — supabase/seed.sql · 마이그레이션 20261001180000_rooms_data (2026-10-01 층·시설·설명)
+  must(
+    await admin.from("rooms").upsert(
+      [
+        { name: "C1 상생", capacity: 30, location: "5층", facilities: ["projector", "video", "mic"], description: "대회의실 · 무선 마이크 2개 · 타운홀·행사", sort_order: 10 },
+        { name: "C2 신뢰", capacity: 12, location: "5층", facilities: ["monitor", "video"], description: "보안 회의 · 임원·고객 미팅 우선", sort_order: 20 },
+        { name: "C3 열정", capacity: 20, location: "3층", facilities: ["projector"], description: "교육실 · 노트북 대여 6대 · 교육·온보딩", sort_order: 30 },
+        { name: "C4 이끔", capacity: 12, location: "6층", facilities: ["monitor", "video"], description: "85인치 TV · 스프린트·배포 상황실", sort_order: 40 },
+        { name: "M1 확산", capacity: 8, location: "5층", facilities: ["video", "mic", "whiteboard"], description: "화상회의 카메라·스피커폰", sort_order: 50 },
+        { name: "M2 공유", capacity: 4, location: "5층", facilities: ["monitor"], description: "C1 옆 · 55인치 TV·화면 공유", sort_order: 60 },
+        { name: "M3 가치", capacity: 4, location: "6층", facilities: ["monitor", "whiteboard"], description: "소회의실 · 면접 가능", sort_order: 70 },
+        { name: "M4 연구", capacity: 2, location: "6층", facilities: ["video"], description: "2인 화상회의 부스 · 방음 · 1:1 면담", sort_order: 80 },
+      ],
+      { onConflict: "name", ignoreDuplicates: true },
+    ),
+  );
+>>>>>>> 7b972a0a2d3aebd31fe8032ac759cd9cd9ef9a66
 }
 
 /** 조직을 넣거나 맞춘다. upsert 는 쓰지 않는다 — 충돌해도 before insert 트리거가 채널을 먼저 만들어 버린다 */
@@ -477,6 +496,7 @@ async function seedEvents(events, ids, rooms, projects) {
   return { removed, inserted: fresh.length, attendees: attendees.length, noRoom, series: new Set(fresh.map((e) => e.seriesId).filter(Boolean)).size, byId };
 }
 
+<<<<<<< HEAD
 /**
  * 프로필 사진 (seed-company/avatars/<handle>.webp). avatars 버킷 <user id>/seed-<내용 해시>.webp 에 올리고 profiles.avatar 를 정한다.
  * 이미 사진·캐릭터를 고른 사람은 그대로 둔다 (--avatars-overwrite 면 바꾼다). 시드 사진이 바뀌면 옛 파일은 지운다
@@ -509,6 +529,29 @@ async function seedAvatars(ids) {
     set++;
   }
   return { set, kept, missing };
+=======
+async function insertEvent(id, ids) {
+  const kst = new Date(Date.now() + 9 * 3600_000);
+  do kst.setUTCDate(kst.getUTCDate() + 1);
+  while (kst.getUTCDay() === 0 || kst.getUTCDay() === 6);
+  const day = kst.toISOString().slice(0, 10);
+  const starts_at = `${day}T14:00:00+09:00`;
+  const ends_at = `${day}T15:00:00+09:00`;
+  const room = must(await admin.from("rooms").select("id").eq("name", "M1 확산").single());
+
+  const event = {
+    id,
+    title: "모바일앱 주간 회의",
+    description: "요구사항 초안 검토와 화면 흐름도 일정 맞추기",
+    starts_at,
+    ends_at,
+    room_id: room.id,
+    created_by: ids.get("dhkim"),
+  };
+  let { error } = await admin.from("events").insert(event);
+  if (error?.code === "23P01") ({ error } = await admin.from("events").insert({ ...event, room_id: null }));
+  if (error) throw error;
+>>>>>>> 7b972a0a2d3aebd31fe8032ac759cd9cd9ef9a66
 }
 
 // --contacts-only: 계정·채널·대화는 건드리지 않고 연락처만 채운다
