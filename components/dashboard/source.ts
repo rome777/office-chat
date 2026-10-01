@@ -45,6 +45,26 @@ export async function finishTodo(id: string) {
   if (error || !data?.length) throw new Error(error?.message ?? "끝냄으로 바꾸지 못했습니다");
 }
 
+export type PendingInvite = { id: string; title: string; starts_at: string; all_day: boolean };
+
+/** 내가 아직 답하지 않은 앞으로의 일정 초대 (내가 만든 일정은 뺀다). 가까운 것부터 (2026-10-01 WU-47) */
+export async function listPendingInvites(me: string): Promise<PendingInvite[]> {
+  const { data, error } = await getSupabase()
+    .from("event_attendees")
+    .select("events!inner(id, title, starts_at, ends_at, all_day, created_by, canceled_at)")
+    .eq("user_id", me)
+    .eq("response", "pending")
+    .is("events.canceled_at", null)
+    .gt("events.ends_at", new Date().toISOString())
+    .neq("events.created_by", me)
+    .limit(200); // 서버는 부모 행을 일정 시각으로 정렬하지 못해 넉넉히 받아 아래에서 정렬한다
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .map((r) => r.events as unknown as PendingInvite)
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    .map(({ id, title, starts_at, all_day }) => ({ id, title, starts_at, all_day }));
+}
+
 export type Recent = {
   id: string;
   kind: "channel" | "dm";

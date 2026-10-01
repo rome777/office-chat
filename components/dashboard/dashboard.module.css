@@ -507,6 +507,108 @@
   overflow-wrap: anywhere;
 }
 
+/* 업무 유형 일정 줄 — 체크박스 자리에 유형 색 일정 아이콘 */
+.workIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.workLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.workLink:hover strong {
+  color: var(--accent);
+}
+
+/* 일정 초대 응답 필요 — 할 일 목록 위 묶음 한 줄 */
+.invites {
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--warn-soft);
+}
+
+.invitesHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  color: var(--warn-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.invitesHead strong {
+  font-weight: 800;
+}
+
+.inviteList {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px 6px;
+}
+
+.inviteList li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+}
+
+.inviteText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.inviteText strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inviteText span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inviteText:hover strong {
+  color: var(--accent);
+}
+
+.inviteBtn {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--primary);
+  color: var(--primary-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inviteNo {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .todoText span,
 .todoText a {
   color: var(--muted);
@@ -532,6 +634,56 @@
 .roomName span {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* 상태별 개수 — 4개만 보여도 전체 상황을 알 수 있게 */
+.roomSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.roomSummary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roomSummary i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot_ok {
+  background: var(--ok);
+}
+
+.dot_warn {
+  background: var(--warn);
+}
+
+.dot_bad {
+  background: var(--bad);
+}
+
+.dot_idle {
+  background: var(--idle);
+}
+
+.mineTag {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  vertical-align: 1px;
 }
 
 /* ── 최근 대화 ── */
