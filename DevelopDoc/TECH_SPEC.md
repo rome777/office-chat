@@ -1017,6 +1017,8 @@ flowchart LR
   - "오프라인으로 표시"면 나간다. 그래서 남에게는 접속을 끊은 사람과 똑같이 보인다.
 - 채널 머리 "총인원 N명 · 접속 N명 ●●●" 은 그 방 멤버 가운데 회사 접속자 채널에 있는 **사람** 수다.
 - `room:<채널>` 에도 presence 가 있다(key 는 탭마다 새 값). 세기는 하지만 지금은 어디에도 그리지 않는다.
+- **이미 접속 중인 계정 경고** (2026-10-01, ② `LoginForm` → `presence.ts` 의 `onlineElsewhere`): 로그인에 성공하면 회사 접속자 채널에 잠깐 들어가(내 기록은 안 보냄) 첫 목록에 내 id 의 75초 안 기록이 있는지 본다. 있으면 경고 화면에서 [다른 계정으로 로그인](이 브라우저 세션만 지움, `scope: "local"`)·[그래도 계속]을 고른다. **막지 않는다** (사용자 결정 — 창을 닫고 로그아웃하지 않아도 계정이 잠기지 않게). 3초 안에 목록이 안 오면 경고 없이 들어간다.
+  - 못 잡는 것: "오프라인으로 표시" 중인 탭(채널에 없다). 반대로 탭을 닫은 직후 최대 75초는 옛 기록 때문에 경고가 뜰 수 있다. 화면 경고라 권한과는 관계없다 — 비밀번호를 아는 사람은 [그래도 계속]으로 들어간다.
 
 ### 6-7. 구독 목록
 
@@ -1437,7 +1439,8 @@ flowchart LR
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 브라우저·서버 | 공개 키 (RLS 적용) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **서버만** | RLS 를 건너뛴다. 시드·첨부 검사 전용 |
 | `OPENAI_API_KEY` | **서버만** | AI 호출 (2026-09-29 제공자 OpenAI 로 결정). 없으면 AI 기능은 "AI 키가 설정되지 않았습니다"를 띄우고 채팅은 그대로 된다 |
-| `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:company`) 비밀번호 |
+| `SEED_PASSWORD` | 로컬만 | 시연 계정(`npm run seed:company`) 비밀번호. 시연 인물 5명을 뺀 32명(수강생 체험 계정 포함) |
+| `DEMO_PASSWORD` | 로컬만 | 시연 인물 5명(이서연·김도현·정하늘·노영훈·배준영) 비밀번호 (2026-10-01 service role `updateUserById` 로 바꿈). 시드는 이미 있는 계정의 비밀번호를 다시 바꾸지 않으므로 시드를 다시 돌려도 그대로다. 어느 스크립트도 이 값을 읽지 않는다 — 팀원에게 따로 전달 |
 
 값은 `.env.local` 과 Vercel 환경 변수에만 둔다. 저장소에는 이름만 적은 `.env.example` 을 올린다.
 
@@ -1557,7 +1560,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/event-notifications-check.mjs` | 일정 알림 검사 (`npm run check:events`, 21개 — 불참 알림 6개 포함). 실제 `pg_cron` 이 도는지 최대 90초 기다린다 |
 | `scripts/ai-check.mjs` | AI API 규칙 검사 (`npm run check:ai`). **개발 서버를 띄운 채로**. 키가 없으면 키가 필요한 항목은 SKIP |
 | `scripts/seed-10k.mjs` | 1만 건 채널 만들기·측정·지우기 (`npm run seed:10k`, `-- --measure`, `-- --delete`) |
-| `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명(프로필 사진·연락처)·프로젝트 채널 4개·#공지사항·DM 12개·9월 대화(2,446건)·회의실 8개·9~10월 일정(219건). 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD` (6자 이상 — Supabase 최소 길이). 여러 번 돌려도 된다 (대화·일정은 없는 것만). 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다). `-- --reset-chats`·`-- --reset-events` 는 시드 메시지(`client_id` 0c000000-)·시드 일정(id 0e000000-)만 지우고 다시 넣는다, `-- --contacts-only` 는 연락처만, `-- --avatars-overwrite` 는 이미 고른 사진·캐릭터도 시드 사진으로 |
+| `scripts/seed-company.mjs` | 회사 데이터 넣기 (`npm run seed:company`, 2026-09-29 `seed-users.mjs` 를 대신함, **운영 DB 에도 쓴다**): 가상 회사 "한결테크 주식회사" 조직 17개·직원 37명(프로필 사진·연락처)·프로젝트 채널 4개·#공지사항·DM 12개·9월~10/1 대화(2,474건)·회의실 8개·9~10월 일정(237건, 시연일 10/2 는 25건). 새 계정 비밀번호는 `.env.local` 의 `SEED_PASSWORD` (6자 이상 — Supabase 최소 길이). 여러 번 돌려도 된다 (대화·일정은 없는 것만). 자기가 만든 계정(가입 정보 `seed: "company"`)만 이름·소속·직급을 맞추고 비밀번호는 다시 안 바꾼다. **그 밖의 기존 계정은 건드리지 않는다** (메일이 겹치면 멈춘다). `-- --reset-chats`·`-- --reset-events` 는 시드 메시지(`client_id` 0c000000-)·시드 일정(id 0e000000-)만 지우고 다시 넣는다, `-- --contacts-only` 는 연락처만, `-- --avatars-overwrite` 는 이미 고른 사진·캐릭터도 시드 사진으로, `-- --demo-reset` 은 리허설 뒤 시연 시작 상태로 (이서연 모바일앱·백엔드팀·김도현 DM 읽음 위치를 10/1 12시 앞으로, 김도현이 화면에서 만든 10/8 이후 "모바일앱 주간 회의" 지움 — 2026-10-01) |
 | `scripts/seed-company/roster.mjs` | 조직·사람·프로젝트 채널(공지 채널 포함) 명단 |
 | `scripts/seed-company/chats.mjs` · `chats/*.mjs` | 대화 데이터(채널별 날짜·시각·스레드·리액션·고정)와 검사 — `node scripts/seed-company/chats.mjs` 가 DB 없이 멤버·멘션·시각·공지 권한을 검사한다 (2026-10-01 34채널 2,446건) |
 | `scripts/seed-company/schedule.mjs` | 회의실 8개와 일정(반복 17묶음·한 번 있는 일정) — `node scripts/seed-company/schedule.mjs` 가 회의실·사람 겹침, 정원, 공휴일, 휴가 중 대화를 검사한다 |
@@ -1609,6 +1612,7 @@ npx supabase db push --db-url $env:DBURL
 - **남이 적용만 하고 올리지 않은 마이그레이션이 원격에 있으면 `db push` 가 거부된다** (2026-10-01 `20261001160000_notice_channel`): 급하면 같은 SQL 을 트랜잭션으로 적용하고 `supabase_migrations.schema_migrations`(version·name·statements)에 기록을 넣는다 — CLI 가 하는 일과 같다. 내 파일 번호는 원격의 마지막 번호보다 뒤로 정한다. **같은 번호로 두 사람이 따로 만들면** 늦게 올린 쪽은 원격에서 적용된 것으로 보이고 건너뛰어진다 — 적용 전인 쪽 번호를 바꾼다 (2026-10-01 `close_step1_anon` 을 `190000` → `200000`, 원격 `190000` 은 `rooms_policy_fix`) 적용 전에 `npx supabase migration list --db-url $env:POSTGRES_URL_NON_POOLING` 로 원격에만 있는 것을 본다
 - **Next.js 16 은 같은 폴더에 `next dev` 를 둘 띄우지 못한다** (2026-10-01): 다른 창의 개발 서버가 있으면 "Another next dev server is already running" 으로 끝난다. 그 서버(`localhost:3000`)가 같은 폴더라 바뀐 코드가 그대로 보이니 그 주소로 확인한다
 
+- **`localhost` 로그인 쿠키는 포트를 가리지 않는다** (2026-10-01): `localhost:3000` 에서 로그인한 브라우저는 `localhost:3200` 에서도 로그인돼 있다. 다른 계정으로 시험하려면 `127.0.0.1:<포트>` 를 쓴다 — 단 Next.js 16 개발 서버는 `allowedDevOrigins` 에 없는 주소의 스크립트 요청을 막아 화면이 멈춘 채 버튼이 안 눌린다 (`next.config.mjs` 는 이 컴퓨터의 네트워크 IP 만 허용한다).
 - **Vercel 미리보기 URL 은 로그인해야 열린다**: 팀원에게 공유하려면 `--prod` 로 배포한 주소를 쓴다.
 - **머지 직후 `vercel deploy --prod` 를 치면 중복 배포가 된다**: 이미 GitHub 연동이 배포하고 있다. 2026-09-29 에 모르고 쳐서 같은 코드의 운영 배포가 3개 생겼다 (해는 없음). 그중 첫 번째 명령은 `Not authorized` 로 실패했고, 다시 치니 성공했다 — 원인은 확인하지 못했다.
 - **Supabase 연동을 처음 설치할 때 약관 동의가 필요하다**: CLI 가 링크를 주고 멈춘다. 계정 주인이 브라우저에서 동의해야 한다.
@@ -1638,6 +1642,10 @@ npx supabase db push --db-url $env:DBURL
 - **`--reset-chats` 는 시드 메시지에 단 사람의 답글도 지운다**: 답글은 부모를 따라 cascade 로 지워진다 (2026-10-01 영업1팀 시험 답글 1건). 시드 채널에 사람이 쓴 최상위 메시지는 남지만, id 가 작아 9월 대화보다 위에 보인다 (지우면 순서는 저절로 맞는다)
 - **공지 채널 트리거는 service role 에도 걸린다**: 검사 스크립트가 `#공지사항` 에 최상위 메시지를 넣으려면 담당 부서(경영지원본부) 계정을 써야 한다. 시드 대화 검사(`chats.mjs`)도 같은 규칙으로 막는다
 - **회의실 이름을 바꿨다** (2026-10-01 사용자 결정): `회의실 1 (소)`→`M2 공유`, `회의실 2 (중)`→`M1 확산`, `회의실 3 (대)`→`C1 상생` (행은 그대로라 예약이 이어진다). 옛 이름은 지난 기록에만 남는다
+- **시드는 지금보다 늦은 시각의 대화를 넣지 않는다**: 10/2 아침 대화(백엔드팀 07:52·모바일앱 07:48)는 그 시각이 지난 뒤 `seed:company` 를 다시 돌려야 들어간다 (2026-10-01). 시연 직전 `--demo-reset` 이 그 역할도 한다
+- **시드 일정과 시연에서 만들 일정이 겹치면 시연이 거부된다** (2026-10-01 찾음): 시드의 반복 "모바일앱 주간 회의"(목 14시 M1 확산)가 10/29 까지 있어 PRD 시연 순서 7(김도현이 10/8 14시 M1 확산에 같은 회의를 잡음)이 회의실 겹침으로 막혔다 → 반복을 10/1 에서 끝내고 이서연 연차도 10/8 → 10/16. 리허설로 만든 회의는 `--demo-reset` 이 지운다
+- **시드 메시지 본문을 고쳐도 다시 돌리면 반영되지 않는다**: 시드는 없는 메시지만 넣는다. 본문을 service role 로 고치면 `messages_touch_edited` 가 `edited_at` 을 채워 "수정됨"이 붙으므로, 고친 뒤 `edited_at` 을 null 로 한 번 더 바꾼다 (2026-10-01 이서연 연차 DM 1건)
+- **`3073488` 머지가 `seed-company.mjs`·`seed.sql` 에 충돌 표시를 남긴 채 올라갔었다** (2026-10-01 풂): 그 사이 `npm run seed:company` 는 문법 오류로 돌지 않았다. 머지 뒤 `node --check scripts/seed-company.mjs` 와 `grep -rn "^<<<<<<<"` 로 확인한다
 - **2026-10-05(월)은 대체 공휴일이다** (개천절이 토요일): 시드 일정·대화의 마감을 이날에 두지 않는다 (`components/calendar/kinds.ts` 의 `HOLIDAYS`)
 - **시드 비밀번호를 파일에 안 남기면 아무도 로그인 못 한다**: 2026-09-29 회사 시드를 터미널의 `$env:SEED_PASSWORD` 로 돌려서 값이 어디에도 남지 않았다. 시드는 기존 계정 비밀번호를 다시 바꾸지 않으므로, 다시 돌려도 소용없다. 2026-09-30 에 service role(`auth.admin.updateUserById`)로 37명을 새 값으로 바꿨다. 값은 `.env.local` 의 `SEED_PASSWORD` 에 적어 두고 팀원에게 따로 전달한다.
 - **비밀번호는 6자 미만이면 거부된다**: Supabase 기본 최소 길이가 6자라 관리자 API 로 바꿔도 `422 weak_password` 가 난다 (2026-09-30, `1234` 시도). 대시보드 Authentication → Sign In / Providers → Email 의 **Minimum password length** 가 이 값이다. Supabase 대시보드는 Vercel → Storage → `office-chat-db` → **Open in Supabase** 로 들어간다.

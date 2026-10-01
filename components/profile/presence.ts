@@ -126,6 +126,34 @@ async function apply() {
   else await channel.track({ status: mine, at: Date.now() } satisfies Meta);
 }
 
+/**
+ * 이 사람이 지금 다른 곳(다른 브라우저·기기)에서 접속 중인가. 로그인 화면이 로그인 직후 부른다 — 같은 계정을 두 사람이 쓰는지 경고하려고.
+ * 접속자 채널에 들어가 첫 목록만 보고 나온다 (내 기록은 보내지 않는다). 채널에 못 들어가면(timeoutMs) 접속 중이 아닌 것으로 본다.
+ * "오프라인으로 표시" 중인 탭은 채널에 없어서 못 잡는다. 탭을 닫은 직후 최대 75초(STALE_MS)는 옛 기록 때문에 접속 중으로 보일 수 있다
+ */
+export async function onlineElsewhere(userId: string, timeoutMs = 3000): Promise<boolean> {
+  const supabase = getSupabase();
+  const ch = supabase.channel(CHANNEL, { config: { presence: { key: `login-${userId}` } } });
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      ch.on("presence", { event: "sync" }, () => {
+        clearTimeout(timer);
+        const fresh = Date.now() - STALE_MS;
+        const metas = ch.presenceState<Meta>()[userId] ?? [];
+        resolve(metas.some((m) => (m.at ?? 0) > fresh));
+      }).subscribe((s) => {
+        if (s === "CHANNEL_ERROR" || s === "TIMED_OUT") {
+          clearTimeout(timer);
+          resolve(false);
+        }
+      });
+    });
+  } finally {
+    void supabase.removeChannel(ch);
+  }
+}
+
 /** 내 상태가 정해지거나 바뀔 때 부른다 (헤더의 내 이름 메뉴가 부른다) */
 export function setMyPresence(status: Status) {
   mine = status;

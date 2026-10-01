@@ -79,3 +79,36 @@
   letter-spacing: 0.02em;
   text-align: center;
 }
+
+/* 이미 접속 중인 계정 경고 (2026-10-01) — 로그인은 된 상태에서 계속할지 고른다 */
+.card .warnTitle {
+  font-size: 18px;
+  color: var(--warn-text);
+}
+
+.card .warnText {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  word-break: keep-all;
+}
+
+.card .primaryBtn,
+.card .secondary {
+  font: inherit;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+}
+
+.card .primaryBtn {
+  background: var(--primary);
+  color: var(--primary-text);
+  border: none;
+}
+
+.card .secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
