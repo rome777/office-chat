@@ -1354,7 +1354,7 @@ flowchart LR
 4. **지어내지 않게 한다** — 할 일의 기한은 모델이 근거 문장에서 그대로 옮긴 `due_quote` 가 실제 메시지에 있을 때만 인정하고, 아니면 "미정"으로 바꾼다. 담당자도 그 채널 멤버가 아니면 "미정".
 5. **승인 후 실행** — 할 일 저장과 말투 변환 전송은 사용자가 버튼을 눌러야 한다.
 6. **실패해도 채팅은 산다** — 제한 시간 20초. 넘으면 "AI 응답이 늦습니다" 를 보여 주고, 채팅 기능과는 분리한다.
-7. **상한과 기록** — 사용자당 분당 5회, 하루 100회 (초안). 모든 호출을 `ai_usage_logs` 에 남긴다.
+7. **상한과 기록** — 사용자당 분당 5회, 하루 100회. 모든 호출을 `ai_usage_logs` 에 남긴다.
 
 ### 공통 모듈과 말투 변환 (2026-09-29)
 
@@ -1383,7 +1383,6 @@ flowchart LR
 ## 9. 폴더 구조
 
 폴더마다 주인이 있다 (①②③ 은 [WORK_UNITS.md](WORK_UNITS.md) "역할 분담"). 파일을 겹치지 않게 고치는 규칙은 11절.
-`(예정)` 은 그 기능을 만들 때 주인이 새로 만드는 곳이다.
 
 ```
 /
@@ -1396,7 +1395,7 @@ flowchart LR
 │  └─ api/
 │     ├─ attachments/             ① 첨부 — sign · confirm · [id](내려받기) · _lib(서버 공통)
 │     └─ ai/
-│        ├─ tone/                 ① 말투 변환 (예정)
+│        ├─ tone/                 ① 말투 변환
 │        └─ summarize/ · todos/   ③ AI 요약 · 할 일 (2026-09-29)
 ├─ components/
 │  ├─ brand/                      ② WorkOnLogo · logoPaths(로고 모양, 사용자가 준 SVG 에서 옮김, 2026-09-30) — 왼쪽 메뉴·로그인이 가져다 씀
@@ -1522,7 +1521,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 |---|---|
 | `supabase/migrations/20260928090000_step1_messages.sql` | Step 1 `messages` 테이블 (다음 파일이 이름을 바꾸고 새로 만든다) |
 | `supabase/migrations/20260929100000_db_v1.sql` | DB v1: 테이블 13개·인덱스·확장·RLS·컬럼 권한·트리거·`create_dm`·`create_event`·`room_busy`·첨부 버킷·실시간 등록 |
-| `supabase/migrations/20260929100100_step1_compat.sql` | **Step 1 임시 호환** (아래). `#일반` 채널을 만들고 Step 1 메시지 14건을 id 그대로 옮겼다 |
+| `supabase/migrations/20260929100100_step1_compat.sql` | **Step 1 임시 호환** (아래, 2026-10-01 모두 없앰). `#일반` 채널을 만들고 Step 1 메시지 14건을 id 그대로 옮겼다 |
 | `supabase/migrations/20260929100200_mark_read.sql` | 읽음 표시 함수 `mark_read()` |
 | `supabase/migrations/20260929100300_backfill_profiles.sql` | 가입 트리거보다 먼저 가입한 계정의 profiles 채우기 |
 | `supabase/migrations/20260929100400_join_general.sql` | 모든 사람을 `#일반` 멤버로 |
@@ -1548,7 +1547,7 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `supabase/migrations/20260930170000_chat_extras.sql` | 즐겨찾기·채널 설명·고정 메시지·리액션·채널별 알림 끄기 (4절 "채팅 개편") |
 | `supabase/migrations/20260930230000_schedule_v2.sql` | 일정 개편: `events` 유형·세부 유형·종일·장소·공개 범위·채널·분류, 사람별 알림 `remind_minutes`, 분류 트리거, `create_event` 새 판, `list_team_events` (4절 "일정 개편", WU-42) |
 | `supabase/migrations/20261001130000_event_chat_series.sql` | 반복 일정은 대화방 하나를 같이 쓴다 (`open_event_chat` 고침, WU-44) |
-| `supabase/migrations/20261001160000_notice_channel.sql` | 공지 채널 `channels.notice_unit_id` — 새 글은 담당 부서·리더·부리더·관리자만(트리거 `messages_check_notice`), 모든 사람 자동 가입·나가기 막기, 화면용 `can_post_in()` (WU-46, 2026-10-01 트랜잭션 시험 18개 뒤 원격 적용. 파일 머리말의 "WU-45" 는 같은 날 대시보드 개편이 먼저 WU-45 를 써서 바뀐 번호 — 적용한 파일이라 고치지 않았다) |
+| `supabase/migrations/20261001160000_notice_channel.sql` | 공지 채널 `channels.notice_unit_id` — 새 글은 담당 부서·리더·부리더·관리자만(트리거 `messages_check_notice`), 모든 사람 자동 가입·나가기 막기, 화면용 `can_post_in()` (WU-52 — 처음 WU-46 이었다가 2026-10-02 에 바꿈, 2026-10-01 트랜잭션 시험 18개 뒤 원격 적용. 파일 머리말의 "WU-45" 는 같은 날 대시보드 개편이 먼저 WU-45 를 써서 바뀐 번호 — 적용한 파일이라 고치지 않았다) |
 | `supabase/migrations/20261001120000_schedule_series_chat.sql` | 반복 일정(`series_id`·`recurrence`, `create_event_series`·`update_event_series`·`cancel_event_series`, 묶음 알림 한 번)과 참석자와 대화(`chat_channel_id`, `open_event_chat`) (4절 "일정 개편", WU-43·44) |
 | `supabase/migrations/20261001090000_schedule_fixes.sql` | 일정 개편 검토 반영: "바쁨"은 `kind` 도 가림, 1시간·하루 전 알림은 제때(5분 안)만, 종일 일정 초대자는 알림 없음 (WU-42) |
 | `supabase/migrations/20260930210000_channel_leaders.sql` | 일반 채널 리더·부리더 `memberships.role`, 수정·초대·내보내기 정책, `set_sub_leader`·`transfer_leader`, 리더 자동 위임 트리거 (5절 "리더·부리더", WU-39) |
@@ -1568,12 +1567,12 @@ Vercel 은 서버리스라 Socket.IO 같은 상시 연결 서버를 못 띄우�
 | `scripts/schedule-check.mjs` | 일정 개편 검사 (`npm run check:schedule`, 29개 — 반복 만들기·이후 모두 고치기·취소·초대 한 번, 참석자와 대화 DM·비공개 채널 포함): 분류, 남의 채널 거부, category 못 고침, 팀원에게 보이는 칸(바쁨·외근·병가·휴직·나만 보기), 다른 부서 못 봄, 종일 초대자 알림 없음. 시험 팀·가상 사용자 3명을 끝나면 지운다 |
 | `scripts/attachments-check.mjs` | 첨부 검사 (`npm run check:attach`). **개발 서버를 띄운 채로** 돌린다 (API 를 부른다, 다른 주소는 `BASE_URL`). 가상 사용자 3명·DM·올린 파일을 끝나면 지운다 |
 
-### Step 1 임시 호환 — 운영 배포가 로그인 화면으로 바뀌면 반드시 없앤다
+### Step 1 임시 호환 (기록 — 2026-10-01 모두 없앰)
 
 > **2026-10-01 모두 없앴다** — 1단계 `20261001200000_close_step1_anon`(익명 권한·정책), 2단계 `20261001210000_drop_step1_author`(`author` 칸·제약). 지금 로그인 안 한 사람은 어느 표도 못 읽고 못 쓴다 (5절). 아래는 기록이다.
 > 없애기 전 2026-10-01 전체 통과 테스트에서 운영에 실제로 남아 있던 것을 확인했다: 공개 키만으로 `#일반` 메시지 71건이 읽혔고, `author` 를 "정대현"으로 넣어 쓴 글이 운영 화면에 정대현이 쓴 것으로 보였다 (시험 글은 바로 지움, 남은 익명 메시지 0건).
 
-DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도록 남겨 둔 것이다 (`20260929100100_step1_compat.sql`, 2026-09-29).
+DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도록 남겨 두었던 것이다 (`20260929100100_step1_compat.sql`, 2026-09-29). 아래 표와 설명은 없애기 전 상태다.
 
 | 누가 | 할 수 있는 것 |
 |---|---|
@@ -1582,8 +1581,46 @@ DB v1 을 적용해도 운영 배포(Step 1 화면, 로그인 없음)가 돌도�
 
 - 이 동안 `messages.user_id` 는 비어 있을 수 있고(익명 메시지), 익명 메시지의 작성자는 `author` 컬럼(닉네임 1~20자)에 있다. 화면은 `author` 가 있으면 그것을, 없으면 profiles 의 이름을 쓴다.
 - **누구나 `#일반` 에 쓸 수 있고 요청 수 제한이 없다.** 도배를 막지 못하므로 URL 을 널리 퍼뜨리지 않는다.
-- **없애는 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤 — **2026-09-29 16:01 에 바뀌었다 (PR #14). 이제 없애도 된다.** 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌린다 (할 일 목록은 호환 파일 머리말). 그때 `check:step1` 도 로그인 기준으로 바꾸거나 지운다.
+- **없앤 때**: `develop`(로그인 화면)이 `main` 에 머지돼 운영 배포가 바뀐 뒤 — 2026-09-29 16:01 에 바뀌었고 (PR #14), 2026-10-01 에 없앴다. 새 마이그레이션으로 anon 정책·권한을 없애고, 익명 메시지를 정리하고, `author` 컬럼과 `messages_step1_anon` 제약을 없애고 `user_id` 를 not null 로 되돌렸다 (할 일 목록은 호환 파일 머리말). `check:step1` 도 로그인 기준으로 바꿨다.
 - **1단계 적용 (2026-10-01)**: `20261001200000_close_step1_anon.sql`(이호섭 작성, 번호는 `190000` 과 겹쳐 바꿈) — anon 정책 두 개·권한을 없애고 `user_id` not null, `channel_id` 기본값 제거. 작성자 없는 메시지는 0건이라 지운 것이 없다. 원격 적용 첫 시도는 실시간 연결과 잠금이 겹쳐 `deadlock detected` 로 되돌려졌고 `lock_timeout 10s` 로 다시 적용. `check:step1` 을 로그인 기준으로 바꿈(12개 통과). **2단계 (2026-10-01)**: 화면(채팅·스레드·알림·검색·대시보드·AI 요약/할 일)이 `author` 를 읽지 않게 바꾸고(작성자 이름은 `user_id` → profiles 에서만) 운영에 배포한 뒤 `20261001210000_drop_step1_author.sql` 로 `author` 칸과 `messages_step1_anon` 제약을 지운다 (트랜잭션 시험: author 있는 메시지 0건, author 를 쓰는 DB 함수 0개). 보내는 중인 메시지의 `PendingMessage.author` 는 화면 안의 내 이름이라 그대로 둔다
+
+### 로컬 실행
+
+Node.js 20 이상과, Vercel 프로젝트(`office-chat`)에 접근할 수 있는 Vercel 계정이 필요합니다.
+DB는 원격 Supabase 하나를 팀과 배포가 함께 쓰므로, 테스트 데이터는 끝나면 지웁니다.
+
+```powershell
+npm install
+```
+
+```powershell
+npx vercel link --project office-chat
+```
+
+```powershell
+npx vercel env pull .env.local
+```
+
+```powershell
+npm run dev
+```
+
+http://localhost:3000을 엽니다. 창 두 개(또는 일반 창 + 시크릿 창)로 들어가면 서로 대화할 수 있습니다.
+
+직접 만든 Supabase로 띄우려면 [.env.example](../.env.example)의 값을 `.env.local`에 채우고 `supabase/migrations/`를 시간순으로 적용합니다. 빈 DB에서 처음부터 적용해 본 적은 없습니다.
+
+#### 검사와 시드
+
+```powershell
+npm run check:step1
+```
+
+```powershell
+npm run check:db
+```
+
+나머지 `check:*`와 `seed:*` 스크립트는 `package.json`에, 설명은 13절 파일 표에 있습니다.
+시연용 회사 데이터와 직원 계정(`<handle>@example.com`)은 `.env.local`에 `SEED_PASSWORD`를 넣고 `npm run seed:company`로 만듭니다.
 
 ### 배포 방법
 
